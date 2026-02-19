@@ -237,35 +237,35 @@ The scaffold from spec 0001 is extended:
 
 ## Tasks
 
-- [x] Implement Wyoming protocol event reader/writer
-  - [x] Define `Event` struct (Type, Data, Payload)
-  - [x] Implement `ReadEvent(reader)` -- JSON header line + optional data bytes + optional payload bytes
-  - [x] Implement `WriteEvent(writer, event)` -- reverse of read
-  - [x] Write round-trip tests (serialize -> deserialize -> compare)
-  - [x] Test edge cases: empty data, large payloads, missing optional fields
-- [x] Define Wyoming TTS event types
-  - [x] `Synthesize` (text, voice name, speaker, language)
-  - [x] `AudioStart` (rate, width, channels)
-  - [x] `AudioChunk` (rate, width, channels, payload)
-  - [x] `AudioStop`
-  - [x] `Describe` / `Info` (with TtsProgram, TtsVoice, TtsVoiceSpeaker)
-  - [x] `Ping` / `Pong`
-  - [x] `Error` (text, code)
-  - [x] Conversion methods: typed struct <-> generic Event
-- [ ] Implement domain models
-  - [ ] `model.Endpoint` with JSON array fields (Models)
-  - [ ] `model.VoiceAlias` with JSON array fields (Languages)
-  - [ ] `model.ResolvedVoice` (Name, EndpointID, Model, Voice, Speed, Instructions, Languages, IsAlias)
-  - [ ] JSON serialization/deserialization tests for array fields
-- [ ] Implement database Store interface and SQLite backend
-  - [ ] Define `Store` interface in `internal/store/store.go`
-  - [ ] Create embedded SQL migrations (endpoints + voice_aliases tables)
-  - [ ] Implement `SQLiteStore` with `modernc.org/sqlite`
-  - [ ] Implement all CRUD methods for endpoints
-  - [ ] Implement all CRUD methods for voice aliases
-  - [ ] Implement `Migrate()` (idempotent, runs on startup)
-  - [ ] Write tests with in-memory SQLite (`:memory:`)
-  - [ ] Test constraint violations (duplicate names, FK references)
+- [ ] Implement Wyoming protocol event reader/writer
+  - [ ] Define `Event` struct (Type, Data, Payload)
+  - [ ] Implement `ReadEvent(reader)` -- JSON header line + optional data bytes + optional payload bytes
+  - [ ] Implement `WriteEvent(writer, event)` -- reverse of read
+  - [ ] Write round-trip tests (serialize -> deserialize -> compare)
+  - [ ] Test edge cases: empty data, large payloads, missing optional fields
+- [ ] Define Wyoming TTS event types
+  - [ ] `Synthesize` (text, voice name, speaker, language)
+  - [ ] `AudioStart` (rate, width, channels)
+  - [ ] `AudioChunk` (rate, width, channels, payload)
+  - [ ] `AudioStop`
+  - [ ] `Describe` / `Info` (with TtsProgram, TtsVoice, TtsVoiceSpeaker)
+  - [ ] `Ping` / `Pong`
+  - [ ] `Error` (text, code)
+  - [ ] Conversion methods: typed struct <-> generic Event
+- [x] Implement domain models
+  - [x] `model.Endpoint` with JSON array fields (Models)
+  - [x] `model.VoiceAlias` with JSON array fields (Languages)
+  - [x] `model.ResolvedVoice` (Name, EndpointID, Model, Voice, Speed, Instructions, Languages, IsAlias)
+  - [x] JSON serialization/deserialization tests for array fields
+- [x] Implement database Store interface and SQLite backend
+  - [x] Define `Store` interface in `internal/store/store.go`
+  - [x] Create embedded SQL migrations (endpoints + voice_aliases tables)
+  - [x] Implement `SQLiteStore` with `modernc.org/sqlite`
+  - [x] Implement all CRUD methods for endpoints
+  - [x] Implement all CRUD methods for voice aliases
+  - [x] Implement `Migrate()` (idempotent, runs on startup)
+  - [x] Write tests with in-memory SQLite (`:memory:`)
+  - [x] Test constraint violations (duplicate names, FK references)
 - [ ] Implement PostgreSQL Store backend
   - [ ] Implement `PostgresStore` with `github.com/jackc/pgx/v5`
   - [ ] Reuse same SQL migrations (compatible syntax)
