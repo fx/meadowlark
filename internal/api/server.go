@@ -70,6 +70,8 @@ func (s *Server) Start(ctx context.Context) error {
 		Addr:              s.listenAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	srvErr := make(chan error, 1)
