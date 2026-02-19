@@ -1,13 +1,14 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
 	"time"
 
+	"github.com/fx/meadowlark/internal/model"
+	"github.com/fx/meadowlark/internal/tts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,49 +21,13 @@ func newTestServer(webFS *fstest.MapFS) *Server {
 		webFS:     webFS,
 		dbDriver:  "sqlite",
 		startTime: time.Now(),
+		clientFactory: func(ep *model.Endpoint) *tts.Client {
+			return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
+		},
 	}
 }
 
-// TestAPIRoutes_NotImplemented verifies all stub routes return 501.
-func TestAPIRoutes_NotImplemented(t *testing.T) {
-	webFS := &fstest.MapFS{
-		"index.html": {Data: []byte("<html></html>")},
-	}
-	srv := newTestServer(webFS)
-	router := srv.setupRoutes()
-	ts := httptest.NewServer(router)
-	defer ts.Close()
-
-	routes := []struct {
-		method string
-		path   string
-	}{
-		{http.MethodGet, "/api/v1/endpoints"},
-		{http.MethodPost, "/api/v1/endpoints"},
-		{http.MethodGet, "/api/v1/endpoints/123"},
-		{http.MethodPut, "/api/v1/endpoints/123"},
-		{http.MethodDelete, "/api/v1/endpoints/123"},
-		{http.MethodPost, "/api/v1/endpoints/123/test"},
-		{http.MethodGet, "/api/v1/endpoints/123/voices"},
-	}
-
-	for _, rt := range routes {
-		t.Run(rt.method+" "+rt.path, func(t *testing.T) {
-			req, err := http.NewRequest(rt.method, ts.URL+rt.path, nil)
-			require.NoError(t, err)
-
-			resp, err := http.DefaultClient.Do(req)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-
-			assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
-
-			var body map[string]apiError
-			require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-			assert.Equal(t, "not_implemented", body["error"].Code)
-		})
-	}
-}
+// All API routes are now implemented — no more not-implemented stubs to test.
 
 // TestSPAFallback_IndexHTML verifies root serves index.html.
 func TestSPAFallback_IndexHTML(t *testing.T) {
