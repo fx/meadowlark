@@ -45,8 +45,8 @@ function VoicesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((voice) => (
-              <TableRow key={voice.name}>
+            {filtered.map((voice, index) => (
+              <TableRow key={`${voice.endpoint}-${voice.model}-${voice.name}-${index}`}>
                 <TableCell>{voice.name}</TableCell>
                 <TableCell>{voice.endpoint}</TableCell>
                 <TableCell>{voice.model}</TableCell>
