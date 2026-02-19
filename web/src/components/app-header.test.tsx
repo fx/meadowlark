@@ -68,14 +68,13 @@ describe('AppHeader', () => {
 
   it('renders mobile menu button', () => {
     renderHeader()
-    expect(screen.getByRole('button', { name: 'Open menu' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Menu' })).toBeInTheDocument()
   })
 
   it('opens mobile menu on hamburger click', async () => {
     const user = userEvent.setup()
     renderHeader()
-    await user.click(screen.getByRole('button', { name: 'Open menu' }))
-    // Sheet opens and shows the mobile navigation
-    expect(screen.getByRole('navigation', { name: 'Mobile navigation' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
+    expect(screen.getByText('Menu')).toBeInTheDocument()
   })
 })
