@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource/jetbrains-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Zero border radius (sharp edges) */
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+
+  /* JetBrains Mono everywhere */
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "JetBrains Mono", ui-sans-serif, system-ui, sans-serif;
+
+  /* OKLch color palette -- cyan primary, neutral base */
+  --color-primary: oklch(0.68 0.13 184);
+  --color-primary-dark: oklch(0.56 0.12 184);
+}
