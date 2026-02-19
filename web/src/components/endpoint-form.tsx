@@ -1,10 +1,12 @@
 import { Eye, EyeSlash } from '@phosphor-icons/react'
 import { useCallback, useState } from 'preact/hooks'
 import { Button } from '@/components/ui/button'
+import { ComboBox } from '@/components/ui/combo-box'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { useEndpointProbe } from '@/hooks/use-endpoint-probe'
 import type { CreateEndpoint, Endpoint, UpdateEndpoint } from '@/lib/api'
 
 type EndpointFormProps = {
@@ -24,6 +26,14 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const [speed, setSpeed] = useState(endpoint?.default_speed?.toString() ?? '')
   const [instructions, setInstructions] = useState(endpoint?.default_instructions ?? '')
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
+
+  const probe = useEndpointProbe(baseUrl, apiKey)
+
+  const modelOptions = probe.models.map((m) => ({ value: m.id, label: m.id }))
+  const voiceOptions = probe.voices.map((v) => ({
+    value: v.id,
+    label: v.name ? `${v.name} (${v.id})` : v.id,
+  }))
 
   const handleSubmit = useCallback(
     (e: Event) => {
@@ -92,14 +102,25 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
 
       <div className="space-y-2">
         <Label htmlFor="ep-models">Models (comma-separated)</Label>
-        <Input
+        <ComboBox
           id="ep-models"
           value={models}
-          onInput={(e) => setModels((e.target as HTMLInputElement).value)}
+          onChange={setModels}
+          options={modelOptions}
+          loading={probe.loading}
           placeholder="tts-1, tts-1-hd"
           required={isCreate}
         />
+        {probe.error && <p className="text-sm text-destructive">Probe error: {probe.error}</p>}
       </div>
+
+      {voiceOptions.length > 0 && (
+        <div className="space-y-2">
+          <span className="text-sm text-muted-foreground">
+            Available voices: {voiceOptions.map((v) => v.value).join(', ')}
+          </span>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">

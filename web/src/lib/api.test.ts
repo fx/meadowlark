@@ -106,6 +106,21 @@ describe('api.endpoints', () => {
     expect(result).toEqual(voices)
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices', undefined)
   })
+
+  it('probe calls POST /api/v1/endpoints/probe with url and api_key', async () => {
+    const probeResult = {
+      models: [{ id: 'tts-1' }],
+      voices: [{ id: 'alloy', name: 'Alloy' }],
+    }
+    mockFetch.mockReturnValueOnce(jsonResponse(probeResult))
+    const result = await api.endpoints.probe('https://api.example.com/v1', 'sk-test')
+    expect(result).toEqual(probeResult)
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://api.example.com/v1', api_key: 'sk-test' }),
+    })
+  })
 })
 
 describe('api.aliases', () => {

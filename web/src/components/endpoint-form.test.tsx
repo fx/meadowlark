@@ -4,6 +4,18 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Endpoint } from '@/lib/api'
 import { EndpointForm } from './endpoint-form'
 
+// Mock useEndpointProbe to avoid real fetch calls and allow per-test overrides
+const mockProbe = {
+  models: [] as { id: string }[],
+  voices: [] as { id: string; name: string }[],
+  loading: false,
+  error: undefined as string | undefined,
+}
+
+vi.mock('@/hooks/use-endpoint-probe', () => ({
+  useEndpointProbe: () => mockProbe,
+}))
+
 const mockEndpoint: Endpoint = {
   id: 'ep-1',
   name: 'Test EP',
@@ -168,5 +180,31 @@ describe('EndpointForm', () => {
         default_instructions: undefined,
       }),
     )
+  })
+
+  it('shows probe error when present', () => {
+    mockProbe.error = 'connection refused'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByText('Probe error: connection refused')).toBeInTheDocument()
+    mockProbe.error = undefined
+  })
+
+  it('shows available voices when probe returns voices', () => {
+    mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.voices = [
+      { id: 'alloy', name: 'Alloy' },
+      { id: 'nova', name: 'Nova' },
+    ]
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByText('Available voices: alloy, nova')).toBeInTheDocument()
+    mockProbe.models = []
+    mockProbe.voices = []
+  })
+
+  it('shows voice id as label when name is empty', () => {
+    mockProbe.voices = [{ id: 'alloy', name: '' }]
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByText('Available voices: alloy')).toBeInTheDocument()
+    mockProbe.voices = []
   })
 })
