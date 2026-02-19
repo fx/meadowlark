@@ -182,21 +182,21 @@ clean:
   - [x] Create `web/index.html`
   - [x] Create placeholder test that passes
   - [x] Verify `bun run build` produces `web/dist/`
-- [ ] Wire Go embed and static binary build
-  - [ ] Add `//go:embed web/dist/*` in appropriate package
-  - [ ] Verify `CGO_ENABLED=0 go build` produces static amd64 binary
-  - [ ] Verify binary starts, logs config, exits cleanly on SIGINT
-- [ ] Create Dockerfile
-  - [ ] Multi-stage build: bun frontend -> golang backend -> scratch runtime
-  - [ ] Include CA certificates, OCI labels, EXPOSE directives
-  - [ ] Verify `docker build .` succeeds
-- [ ] Set up CI workflows
-  - [ ] Create `.github/workflows/ci.yml` (backend + frontend parallel jobs, mise-action)
-  - [ ] Create `.github/workflows/docker.yml` (GHCR publish with semver tags)
-  - [ ] Create `.github/workflows/release-please.yml`
-  - [ ] Create `release-please-config.json` (release-type: go)
-  - [ ] Create `.release-please-manifest.json` (starting at 0.1.0)
-  - [ ] Create initial `CHANGELOG.md`
+- [x] Wire Go embed and static binary build
+  - [x] Add `//go:embed web/dist/*` in appropriate package
+  - [x] Verify `CGO_ENABLED=0 go build` produces static amd64 binary
+  - [x] Verify binary starts, logs config, exits cleanly on SIGINT
+- [x] Create Dockerfile
+  - [x] Multi-stage build: bun frontend -> golang backend -> scratch runtime
+  - [x] Include CA certificates, OCI labels, EXPOSE directives
+  - [x] Verify `docker build .` succeeds
+- [x] Set up CI workflows
+  - [x] Create `.github/workflows/ci.yml` (backend + frontend parallel jobs, mise-action)
+  - [x] Create `.github/workflows/docker.yml` (GHCR publish with semver tags)
+  - [x] Create `.github/workflows/release-please.yml`
+  - [x] Create `release-please-config.json` (release-type: go)
+  - [x] Create `.release-please-manifest.json` (starting at 0.1.0)
+  - [x] Create initial `CHANGELOG.md`
 - [x] Add task-completion instructions
   - [x] Create `CLAUDE.md` at project root with task-completion language
   - [x] Create `.github/copilot-instructions.md` with task-completion rule
