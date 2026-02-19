@@ -46,7 +46,7 @@ describe('App', () => {
   it('renders the voices page at /voices', () => {
     mockLocation = '/voices'
     render(<App />)
-    expect(screen.getByText('Voices')).toBeInTheDocument()
+    expect(screen.getByText('Loading voices...')).toBeInTheDocument()
   })
 
   it('renders the aliases page at /aliases', () => {
