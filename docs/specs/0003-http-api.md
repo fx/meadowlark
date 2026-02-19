@@ -217,18 +217,18 @@ Extend the startup sequence from spec 0002:
   - [x] Define consistent JSON error format (`{error: {code, message}}`)
   - [x] Create helper functions: `respondJSON`, `respondError`, `respondNoContent`
   - [x] Standard error codes: `bad_request`, `not_found`, `conflict`, `internal_error`
-- [ ] Implement Endpoints CRUD handlers
-  - [ ] `GET /api/v1/endpoints` -- list all endpoints
-  - [ ] `POST /api/v1/endpoints` -- create endpoint (validate: name required+unique, base_url required+valid URL, models required+non-empty, speed range 0.25-4.0)
-  - [ ] `GET /api/v1/endpoints/:id` -- get single endpoint
-  - [ ] `PUT /api/v1/endpoints/:id` -- update endpoint (same validations)
-  - [ ] `DELETE /api/v1/endpoints/:id` -- delete endpoint (cascade check: warn if aliases reference it)
-  - [ ] Trigger voice list rebuild after each mutation
-  - [ ] Write handler tests with mock Store and httptest
-- [ ] Implement endpoint test and voice discovery
-  - [ ] `POST /api/v1/endpoints/:id/test` -- make lightweight TTS request to verify connectivity, return `{ok, error?, latency_ms}`
-  - [ ] `GET /api/v1/endpoints/:id/voices` -- call endpoint API to discover available voices, return `[]string`
-  - [ ] Write tests with mock upstream HTTP server
+- [x] Implement Endpoints CRUD handlers
+  - [x] `GET /api/v1/endpoints` -- list all endpoints
+  - [x] `POST /api/v1/endpoints` -- create endpoint (validate: name required+unique, base_url required+valid URL, models required+non-empty, speed range 0.25-4.0)
+  - [x] `GET /api/v1/endpoints/:id` -- get single endpoint
+  - [x] `PUT /api/v1/endpoints/:id` -- update endpoint (same validations)
+  - [x] `DELETE /api/v1/endpoints/:id` -- delete endpoint (cascade check: warn if aliases reference it)
+  - [x] Trigger voice list rebuild after each mutation
+  - [x] Write handler tests with mock Store and httptest
+- [x] Implement endpoint test and voice discovery
+  - [x] `POST /api/v1/endpoints/:id/test` -- make lightweight TTS request to verify connectivity, return `{ok, error?, latency_ms}`
+  - [x] `GET /api/v1/endpoints/:id/voices` -- call endpoint API to discover available voices, return `[]string`
+  - [x] Write tests with mock upstream HTTP server
 - [x] Implement Voice Aliases CRUD handlers
   - [x] `GET /api/v1/aliases` -- list all aliases
   - [x] `POST /api/v1/aliases` -- create alias (validate: name required+unique, endpoint_id must exist, model+voice required, speed range)

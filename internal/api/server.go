@@ -111,13 +111,13 @@ func (s *Server) setupRoutes() *chi.Mux {
 		r.Use(jsonContentType)
 
 		// Endpoints
-		r.Get("/endpoints", s.notImplemented)
-		r.Post("/endpoints", s.notImplemented)
-		r.Get("/endpoints/{id}", s.notImplemented)
-		r.Put("/endpoints/{id}", s.notImplemented)
-		r.Delete("/endpoints/{id}", s.notImplemented)
-		r.Post("/endpoints/{id}/test", s.notImplemented)
-		r.Get("/endpoints/{id}/voices", s.notImplemented)
+		r.Get("/endpoints", s.ListEndpoints)
+		r.Post("/endpoints", s.CreateEndpoint)
+		r.Get("/endpoints/{id}", s.GetEndpoint)
+		r.Put("/endpoints/{id}", s.UpdateEndpoint)
+		r.Delete("/endpoints/{id}", s.DeleteEndpoint)
+		r.Post("/endpoints/{id}/test", s.TestEndpoint)
+		r.Get("/endpoints/{id}/voices", s.DiscoverVoices)
 
 		// Aliases
 		r.Get("/aliases", s.ListAliases)
