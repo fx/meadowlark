@@ -368,10 +368,10 @@ coverage: {
   - [ ] Test connectivity button (calls POST /test, shows result)
   - [ ] Discover voices button (calls GET /voices, shows result)
   - [ ] Write page tests: render list, create flow, edit flow, delete flow, test connectivity, discover voices
-- [x] Implement Voices page
-  - [x] Fetch and display resolved voices in a table (name, endpoint, model, type badge)
-  - [x] Client-side search/filter by voice name
-  - [x] Write tests: render table, search filters correctly, empty state
+- [ ] Implement Voices page
+  - [ ] Fetch and display resolved voices in a table (name, endpoint, model, type badge)
+  - [ ] Client-side search/filter by voice name
+  - [ ] Write tests: render table, search filters correctly, empty state
 - [ ] Implement Aliases page
   - [ ] List aliases with collapsed rows (name, target voice, endpoint badge, enabled switch)
   - [ ] Inline create/edit form with cascading selects (endpoint -> model -> voice)
