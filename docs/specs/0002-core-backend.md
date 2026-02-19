@@ -295,13 +295,13 @@ The scaffold from spec 0001 is extended:
   - [x] Plain text fallback: entire string is the input
   - [x] Parameter merge: input overrides > alias defaults > endpoint defaults
   - [x] Write tests for all formats including malformed input, nested brackets, edge cases
-- [ ] Implement synthesis proxy orchestration
-  - [ ] Receive `synthesize` event -> resolve voice -> parse input -> merge params -> call TTS client -> stream audio events
-  - [ ] Send `audio-start` with format from WAV header
-  - [ ] Send `audio-chunk` events (2048-byte chunks) with PCM data
-  - [ ] Send `audio-stop` when done
-  - [ ] Send `error` event on failure (do not crash)
-  - [ ] Write integration test with mock HTTP server
+- [x] Implement synthesis proxy orchestration
+  - [x] Receive `synthesize` event -> resolve voice -> parse input -> merge params -> call TTS client -> stream audio events
+  - [x] Send `audio-start` with format from WAV header
+  - [x] Send `audio-chunk` events (2048-byte chunks) with PCM data
+  - [x] Send `audio-stop` when done
+  - [x] Send `error` event on failure (do not crash)
+  - [x] Write integration test with mock HTTP server
 - [ ] Implement Wyoming TCP server
   - [ ] TCP listener on configurable host:port
   - [ ] One goroutine per connection with event loop
