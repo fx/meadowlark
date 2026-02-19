@@ -193,6 +193,31 @@ describe('ThemeProvider', () => {
     expect(screen.getByTestId('bare').textContent).toBe('system')
   })
 
+  describe('dark mode CSS selector', () => {
+    it('demonstrates .dark * does not match the html element itself', () => {
+      document.documentElement.classList.add('dark')
+
+      // Bug: `.dark *` only matches descendants of .dark, not .dark itself
+      expect(document.documentElement.matches('.dark *')).toBe(false)
+      // Fix: `:where(.dark, .dark *)` matches both .dark and its descendants
+      expect(document.documentElement.matches(':where(.dark, .dark *)')).toBe(true)
+    })
+
+    it('matches child elements with both selectors', () => {
+      document.documentElement.classList.add('dark')
+      const child = document.createElement('div')
+      document.documentElement.appendChild(child)
+
+      try {
+        // Both selectors match descendants
+        expect(child.matches('.dark *')).toBe(true)
+        expect(child.matches(':where(.dark, .dark *)')).toBe(true)
+      } finally {
+        child.remove()
+      }
+    })
+  })
+
   it('does not listen for system changes when not on system theme', async () => {
     const user = userEvent.setup()
     const removeListener = vi.fn()
