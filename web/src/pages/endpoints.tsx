@@ -37,15 +37,15 @@ function EndpointsPage() {
   )
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading endpoints...</div>
+    return <div className="p-4 text-muted-foreground">Loading endpoints...</div>
   }
 
   if (error) {
-    return <div className="p-6 text-destructive">Error: {error.message}</div>
+    return <div className="p-4 text-destructive">Error: {error.message}</div>
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 space-y-4">
       <Button onClick={() => setExpandedId(expandedId === 'new' ? null : 'new')}>
         + Add Endpoint
       </Button>

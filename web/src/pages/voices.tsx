@@ -19,15 +19,15 @@ function VoicesPage() {
   const filtered = voices?.filter((v) => v.name.toLowerCase().includes(search.toLowerCase()))
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading voices...</div>
+    return <div className="p-4 text-muted-foreground">Loading voices...</div>
   }
 
   if (error) {
-    return <div className="p-6 text-destructive">Error: {error.message}</div>
+    return <div className="p-4 text-destructive">Error: {error.message}</div>
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 space-y-4">
       <Input
         placeholder="Search voices..."
         value={search}
