@@ -113,7 +113,6 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("init database: %w", err)
 	}
-	defer db.Close()
 
 	// 2. Run migrations.
 	if err := db.Migrate(ctx); err != nil {
