@@ -353,11 +353,11 @@ coverage: {
   - [ ] Set up wouter routing (4 routes + redirect `/` -> `/endpoints`)
   - [ ] Create `App` root component wrapping router + providers
   - [ ] Write tests: nav renders, links navigate, mobile menu opens/closes, active route highlighted
-- [ ] Implement data fetching hooks
-  - [ ] Create `useFetch<T>(url)` hook with caching, deduplication, loading/error states, mutate()
-  - [ ] Create `useMutation(url, method)` hook with cache invalidation
-  - [ ] Create typed API client (`lib/api.ts`) for all endpoints
-  - [ ] Write tests: loading states, cache hits, error handling, refetch on mutate
+- [x] Implement data fetching hooks
+  - [x] Create `useFetch<T>(url)` hook with caching, deduplication, loading/error states, mutate()
+  - [x] Create `useMutation(url, method)` hook with cache invalidation
+  - [x] Create typed API client (`lib/api.ts`) for all endpoints
+  - [x] Write tests: loading states, cache hits, error handling, refetch on mutate
 - [ ] Implement shared CRUD components
   - [ ] Create `ExpandableRow` component (collapsed summary, expand on click, one-at-a-time logic)
   - [ ] Write tests: expand/collapse, only-one-expanded invariant, create mode ('new' id)
