@@ -283,18 +283,18 @@ The scaffold from spec 0001 is extended:
   - [x] Handle non-standard WAV headers (extra chunks before `data`)
   - [x] Strip header, pass through raw PCM
   - [x] Write tests with real WAV file fragments
-- [ ] Implement voice resolver
-  - [ ] Resolve by alias name (lookup in Store, must be enabled)
-  - [ ] Resolve by canonical name (`"voice (endpoint, model)"` format parsing)
-  - [ ] Fall back to first enabled endpoint's first voice
-  - [ ] Build canonical voice list from all endpoints (endpoint x model x voice)
-  - [ ] Write tests for each resolution path and edge cases
-- [ ] Implement custom input parser
-  - [ ] JSON parser: detect `{` prefix, parse, extract input/instructions/speed/voice/model
-  - [ ] Tag parser: detect `[` prefix, parse `[key: value, key2: value2]` syntax, extract overrides + remaining text
-  - [ ] Plain text fallback: entire string is the input
-  - [ ] Parameter merge: input overrides > alias defaults > endpoint defaults
-  - [ ] Write tests for all formats including malformed input, nested brackets, edge cases
+- [x] Implement voice resolver
+  - [x] Resolve by alias name (lookup in Store, must be enabled)
+  - [x] Resolve by canonical name (`"voice (endpoint, model)"` format parsing)
+  - [x] Fall back to first enabled endpoint's first voice
+  - [x] Build canonical voice list from all endpoints (endpoint x model x voice)
+  - [x] Write tests for each resolution path and edge cases
+- [x] Implement custom input parser
+  - [x] JSON parser: detect `{` prefix, parse, extract input/instructions/speed/voice/model
+  - [x] Tag parser: detect `[` prefix, parse `[key: value, key2: value2]` syntax, extract overrides + remaining text
+  - [x] Plain text fallback: entire string is the input
+  - [x] Parameter merge: input overrides > alias defaults > endpoint defaults
+  - [x] Write tests for all formats including malformed input, nested brackets, edge cases
 - [ ] Implement synthesis proxy orchestration
   - [ ] Receive `synthesize` event -> resolve voice -> parse input -> merge params -> call TTS client -> stream audio events
   - [ ] Send `audio-start` with format from WAV header
