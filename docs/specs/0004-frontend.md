@@ -379,9 +379,9 @@ coverage: {
   - [ ] Delete with AlertDialog confirmation
   - [ ] Test TTS button (calls POST /test, shows result)
   - [ ] Write page tests: render list, cascading selects, create flow, edit flow, delete flow, test TTS
-- [ ] Implement Settings page
-  - [ ] Fetch and display server status in cards (version, uptime, ports, DB driver, voice/endpoint/alias counts)
-  - [ ] Write tests: renders all status fields, handles loading/error
+- [x] Implement Settings page
+  - [x] Fetch and display server status in cards (version, uptime, ports, DB driver, voice/endpoint/alias counts)
+  - [x] Write tests: renders all status fields, handles loading/error
 - [ ] Achieve 100% test coverage
   - [ ] Audit coverage report, identify uncovered branches/lines
   - [ ] Add missing tests until all thresholds hit 100%
