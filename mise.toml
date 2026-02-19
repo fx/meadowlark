@@ -4,4 +4,5 @@ bun = "latest"
 biome = "latest"
 
 [env]
-CGO_ENABLED = "0"
+# CGO_ENABLED is set explicitly in Makefile/Dockerfile for static builds
+# to avoid interfering with `go test -race` which requires CGO
