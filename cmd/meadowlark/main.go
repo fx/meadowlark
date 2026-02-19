@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,6 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/fx/meadowlark/internal/model"
+	"github.com/fx/meadowlark/internal/store"
+	"github.com/fx/meadowlark/internal/tts"
+	"github.com/fx/meadowlark/internal/voice"
+	"github.com/fx/meadowlark/internal/wyoming"
 )
 
 var (
@@ -82,6 +89,9 @@ func run(cmd *cobra.Command, args []string) error {
 	)
 	slog.SetDefault(logger)
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
 	// Log configuration summary
 	slog.Info("starting meadowlark",
 		"version", version,
@@ -98,15 +108,133 @@ func run(cmd *cobra.Command, args []string) error {
 		"log_format", viper.GetString("log_format"),
 	)
 
-	// Wait for shutdown signal
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
+	// 1. Initialize database store.
+	db, err := openStore(ctx, viper.GetString("db_driver"), viper.GetString("db_dsn"))
+	if err != nil {
+		return fmt.Errorf("init database: %w", err)
+	}
+	defer db.Close()
 
-	slog.Info("ready, waiting for signal")
-	<-ctx.Done()
+	// 2. Run migrations.
+	if err := db.Migrate(ctx); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+	slog.Info("database migrations complete")
+
+	// 3. Create voice resolver and TTS proxy.
+	resolver := voice.NewResolver(db, db)
+	infoBuilder := wyoming.NewInfoBuilder(db, db, version)
+	proxy := tts.NewProxy(resolver, db, defaultClientFactory, logger)
+
+	// 4. Build Wyoming handler.
+	handler := newWyomingHandler(infoBuilder, proxy, logger)
+
+	// 5. Start Wyoming TCP server.
+	wyomingAddr := fmt.Sprintf("%s:%d", viper.GetString("wyoming_host"), viper.GetInt("wyoming_port"))
+	srv := wyoming.NewServer(wyomingAddr, handler, logger)
+
+	srvErr := make(chan error, 1)
+	go func() {
+		srvErr <- srv.ListenAndServe(ctx)
+	}()
+
+	// 6. Register Zeroconf (unless disabled).
+	var zc *wyoming.ZeroconfService
+	if !viper.GetBool("no_zeroconf") {
+		zc, err = wyoming.RegisterZeroconf(wyoming.ZeroconfConfig{
+			ServiceName: viper.GetString("zeroconf_name"),
+			Port:        viper.GetInt("wyoming_port"),
+		}, logger)
+		if err != nil {
+			slog.Warn("zeroconf registration failed", "error", err)
+		}
+	}
+
+	slog.Info("ready")
+
+	// 7. Block until shutdown signal or server error.
+	select {
+	case <-ctx.Done():
+		slog.Info("shutdown signal received")
+	case err := <-srvErr:
+		if err != nil {
+			slog.Error("wyoming server error", "error", err)
+		}
+	}
+
+	// 8. Graceful shutdown sequence.
 	slog.Info("shutting down")
 
+	// Stop Wyoming server (stop accepting, drain connections).
+	srv.Shutdown()
+
+	// Deregister Zeroconf.
+	if zc != nil {
+		zc.Shutdown()
+	}
+
+	// Close database.
+	if err := db.Close(); err != nil {
+		slog.Error("close database", "error", err)
+	}
+
+	slog.Info("shutdown complete")
 	return nil
+}
+
+// openStore initializes the correct store backend based on the driver flag.
+func openStore(ctx context.Context, driver, dsn string) (store.Store, error) {
+	switch driver {
+	case "sqlite":
+		return store.NewSQLiteStore(dsn)
+	case "postgres":
+		return store.NewPostgresStore(ctx, dsn)
+	default:
+		return nil, fmt.Errorf("unsupported database driver: %q (use sqlite or postgres)", driver)
+	}
+}
+
+// defaultClientFactory creates a TTS client from an endpoint configuration.
+func defaultClientFactory(ep *model.Endpoint) *tts.Client {
+	return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
+}
+
+// wyomingHandler dispatches Wyoming protocol events.
+type wyomingHandler struct {
+	info   *wyoming.InfoBuilder
+	proxy  *tts.Proxy
+	logger *slog.Logger
+}
+
+func newWyomingHandler(info *wyoming.InfoBuilder, proxy *tts.Proxy, logger *slog.Logger) *wyomingHandler {
+	return &wyomingHandler{info: info, proxy: proxy, logger: logger}
+}
+
+func (h *wyomingHandler) HandleEvent(ctx context.Context, ev *wyoming.Event, w io.Writer) error {
+	switch ev.Type {
+	case wyoming.TypeDescribe:
+		info, err := h.info.Build(ctx)
+		if err != nil {
+			return fmt.Errorf("build info: %w", err)
+		}
+		return wyoming.WriteEvent(w, info.ToEvent())
+
+	case wyoming.TypeSynthesize:
+		synth, err := wyoming.SynthesizeFromEvent(ev)
+		if err != nil {
+			return fmt.Errorf("parse synthesize: %w", err)
+		}
+		h.proxy.HandleSynthesize(ctx, synth, w)
+		return nil
+
+	case wyoming.TypePing:
+		pong := &wyoming.Pong{}
+		return wyoming.WriteEvent(w, pong.ToEvent())
+
+	default:
+		h.logger.Debug("ignoring unknown event type", "type", ev.Type)
+		return nil
+	}
 }
 
 func configureLogger(level, format string) *slog.Logger {
