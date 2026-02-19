@@ -1,6 +1,41 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clearCache } from '@/hooks/use-fetch'
+
+// Store onValueChange callbacks keyed by select trigger id
+const selectCallbacks: Record<string, (value: string) => void> = {}
+
+// Mock Select to capture onValueChange callbacks for testing
+vi.mock('@/components/ui/select', () => {
+  let currentOnValueChange: ((value: string) => void) | undefined
+
+  return {
+    Select: ({
+      children,
+      onValueChange,
+    }: {
+      children: preact.ComponentChildren
+      value?: string
+      onValueChange?: (value: string) => void
+      disabled?: boolean
+    }) => {
+      currentOnValueChange = onValueChange
+      return <div data-testid="mock-select">{children}</div>
+    },
+    SelectTrigger: ({ children, id }: { children: preact.ComponentChildren; id?: string }) => {
+      if (id && currentOnValueChange) {
+        selectCallbacks[id] = currentOnValueChange
+      }
+      return <div data-testid={`select-trigger-${id}`}>{children}</div>
+    },
+    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
+    SelectContent: ({ children }: { children: preact.ComponentChildren }) => <div>{children}</div>,
+    SelectItem: ({ children, value }: { children: preact.ComponentChildren; value: string }) => (
+      <option value={value}>{children}</option>
+    ),
+  }
+})
+
 import { AliasesPage } from './aliases'
 
 const mockAliases = [
@@ -104,7 +139,7 @@ describe('AliasesPage', () => {
             return Promise.resolve({
               ok: true,
               status: 200,
-              json: () => Promise.resolve({ ok: true, latency_ms: 150 }),
+              json: () => Promise.resolve({ ok: true }),
             })
           }
           return Promise.resolve({
@@ -133,6 +168,9 @@ describe('AliasesPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     clearCache()
+    for (const key of Object.keys(selectCallbacks)) {
+      delete selectCallbacks[key]
+    }
   })
 
   it('shows loading state', () => {
@@ -150,7 +188,8 @@ describe('AliasesPage', () => {
           return Promise.resolve({
             ok: false,
             status: 500,
-            json: () => Promise.resolve({ error: { message: 'Server error' } }),
+            json: () =>
+              Promise.resolve({ error: { code: 'server_error', message: 'Server error' } }),
           })
         }
         return mockFetch(urlStr)
@@ -235,6 +274,14 @@ describe('AliasesPage', () => {
     })
     fireEvent.click(screen.getByText('+ Add Alias'))
 
+    // Select endpoint and model via captured callbacks
+    act(() => {
+      selectCallbacks['alias-endpoint']('ep-1')
+    })
+    act(() => {
+      selectCallbacks['alias-model']('tts-1')
+    })
+
     fireEvent.input(screen.getByLabelText('Alias Name'), { target: { value: 'New Alias' } })
     fireEvent.input(screen.getByLabelText('Voice'), { target: { value: 'echo' } })
 
@@ -258,7 +305,8 @@ describe('AliasesPage', () => {
           return Promise.resolve({
             ok: false,
             status: 400,
-            json: () => Promise.resolve({ error: { message: 'Validation error' } }),
+            json: () =>
+              Promise.resolve({ error: { code: 'validation_error', message: 'Validation error' } }),
           })
         }
         return mockFetch(urlStr)
@@ -270,6 +318,14 @@ describe('AliasesPage', () => {
       expect(screen.getByText('+ Add Alias')).toBeInTheDocument()
     })
     fireEvent.click(screen.getByText('+ Add Alias'))
+
+    // Select endpoint and model via captured callbacks
+    act(() => {
+      selectCallbacks['alias-endpoint']('ep-1')
+    })
+    act(() => {
+      selectCallbacks['alias-model']('tts-1')
+    })
 
     fireEvent.input(screen.getByLabelText('Alias Name'), { target: { value: 'Bad Alias' } })
     fireEvent.input(screen.getByLabelText('Voice'), { target: { value: 'echo' } })
@@ -355,7 +411,40 @@ describe('AliasesPage', () => {
     fireEvent.click(screen.getByText('Test TTS'))
 
     await waitFor(() => {
-      expect(screen.getByText('OK (150ms)')).toBeInTheDocument()
+      expect(screen.getByText('OK')).toBeInTheDocument()
+    })
+  })
+
+  it('shows latency when test result includes latency_ms', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && urlStr.includes('/test')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ ok: true, latency_ms: 42 }),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Friendly Voice'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Test TTS')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Test TTS'))
+
+    await waitFor(() => {
+      expect(screen.getByText('OK (42ms)')).toBeInTheDocument()
     })
   })
 
@@ -421,6 +510,35 @@ describe('AliasesPage', () => {
     })
   })
 
+  it('shows fallback error when test throws non-Error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && urlStr.includes('/test')) {
+          return Promise.reject('unexpected')
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Friendly Voice'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Test TTS')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Test TTS'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed: Network error')).toBeInTheDocument()
+    })
+  })
+
   it('shows error when test returns non-OK HTTP response', async () => {
     vi.stubGlobal(
       'fetch',
@@ -430,8 +548,10 @@ describe('AliasesPage', () => {
           return Promise.resolve({
             ok: false,
             status: 500,
-            statusText: 'Internal Server Error',
-            json: () => Promise.resolve({ error: { message: 'TTS service unavailable' } }),
+            json: () =>
+              Promise.resolve({
+                error: { code: 'tts_error', message: 'TTS service unavailable' },
+              }),
           })
         }
         return mockFetch(urlStr)
@@ -452,74 +572,6 @@ describe('AliasesPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed: TTS service unavailable')).toBeInTheDocument()
-    })
-  })
-
-  it('shows statusText when test returns non-OK without error body', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string | URL | Request, init?: RequestInit) => {
-        const urlStr = typeof url === 'string' ? url : url.toString()
-        if (init?.method === 'POST' && urlStr.includes('/test')) {
-          return Promise.resolve({
-            ok: false,
-            status: 500,
-            statusText: 'Internal Server Error',
-            json: () => Promise.reject(new Error('invalid json')),
-          })
-        }
-        return mockFetch(urlStr)
-      }) as typeof fetch,
-    )
-
-    render(<AliasesPage />)
-    await waitFor(() => {
-      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
-    })
-    fireEvent.click(screen.getByText('Friendly Voice'))
-
-    await waitFor(() => {
-      expect(screen.getByText('Test TTS')).toBeInTheDocument()
-    })
-
-    fireEvent.click(screen.getByText('Test TTS'))
-
-    await waitFor(() => {
-      expect(screen.getByText('Failed: Internal Server Error')).toBeInTheDocument()
-    })
-  })
-
-  it('shows fallback message when test returns non-OK with no statusText or error body', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((url: string | URL | Request, init?: RequestInit) => {
-        const urlStr = typeof url === 'string' ? url : url.toString()
-        if (init?.method === 'POST' && urlStr.includes('/test')) {
-          return Promise.resolve({
-            ok: false,
-            status: 500,
-            statusText: '',
-            json: () => Promise.resolve({}),
-          })
-        }
-        return mockFetch(urlStr)
-      }) as typeof fetch,
-    )
-
-    render(<AliasesPage />)
-    await waitFor(() => {
-      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
-    })
-    fireEvent.click(screen.getByText('Friendly Voice'))
-
-    await waitFor(() => {
-      expect(screen.getByText('Test TTS')).toBeInTheDocument()
-    })
-
-    fireEvent.click(screen.getByText('Test TTS'))
-
-    await waitFor(() => {
-      expect(screen.getByText('Failed: Request failed')).toBeInTheDocument()
     })
   })
 

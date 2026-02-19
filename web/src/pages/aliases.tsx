@@ -18,12 +18,13 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useFetch } from '@/hooks/use-fetch'
 import { useMutation } from '@/hooks/use-mutation'
-import type {
-  CreateVoiceAlias,
-  Endpoint,
-  TestResult,
-  UpdateVoiceAlias,
-  VoiceAlias,
+import {
+  api,
+  type CreateVoiceAlias,
+  type Endpoint,
+  type TestResult,
+  type UpdateVoiceAlias,
+  type VoiceAlias,
 } from '@/lib/api'
 
 function AliasesPage() {
@@ -58,29 +59,13 @@ function AliasesPage() {
   const handleTest = useCallback(async (id: string) => {
     setTestingIds((prev) => new Set([...prev, id]))
     try {
-      const res = await fetch(`/api/v1/aliases/${id}/test`, { method: 'POST' })
-      if (!res.ok) {
-        let message = res.statusText || 'Request failed'
-        try {
-          const data = await res.json()
-          if (data?.error?.message) {
-            message = data.error.message
-          }
-        } catch {
-          // ignore parse errors
-        }
-        setTestResults((prev) => ({
-          ...prev,
-          [id]: { ok: false, error: message },
-        }))
-        return
-      }
-      const result = (await res.json()) as TestResult
+      const result = await api.aliases.test(id)
       setTestResults((prev) => ({ ...prev, [id]: result }))
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error'
       setTestResults((prev) => ({
         ...prev,
-        [id]: { ok: false, error: 'Network error' },
+        [id]: { ok: false, error: message },
       }))
     } finally {
       setTestingIds((prev) => {
@@ -262,7 +247,11 @@ function AliasRow({
               <span
                 className={testResult.ok ? 'text-sm text-green-600' : 'text-sm text-destructive'}
               >
-                {testResult.ok ? `OK (${testResult.latency_ms}ms)` : `Failed: ${testResult.error}`}
+                {testResult.ok
+                  ? testResult.latency_ms
+                    ? `OK (${testResult.latency_ms}ms)`
+                    : 'OK'
+                  : `Failed: ${testResult.error}`}
               </span>
             )}
           </div>
