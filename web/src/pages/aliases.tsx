@@ -44,9 +44,13 @@ function AliasesPage() {
 
   const handleCreate = useCallback(
     async (data: CreateVoiceAlias | UpdateVoiceAlias) => {
-      await createMutation.trigger(data as CreateVoiceAlias)
-      setExpandedId(null)
-      mutate()
+      try {
+        await createMutation.trigger(data as CreateVoiceAlias)
+        setExpandedId(null)
+        mutate()
+      } catch {
+        // Error is tracked via createMutation.error
+      }
     },
     [createMutation, mutate],
   )
@@ -55,6 +59,22 @@ function AliasesPage() {
     setTestingIds((prev) => new Set([...prev, id]))
     try {
       const res = await fetch(`/api/v1/aliases/${id}/test`, { method: 'POST' })
+      if (!res.ok) {
+        let message = res.statusText || 'Request failed'
+        try {
+          const data = await res.json()
+          if (data?.error?.message) {
+            message = data.error.message
+          }
+        } catch {
+          // ignore parse errors
+        }
+        setTestResults((prev) => ({
+          ...prev,
+          [id]: { ok: false, error: message },
+        }))
+        return
+      }
       const result = (await res.json()) as TestResult
       setTestResults((prev) => ({ ...prev, [id]: result }))
     } catch {
@@ -145,9 +165,13 @@ function AliasRow({
 
   const handleUpdate = useCallback(
     async (data: CreateVoiceAlias | UpdateVoiceAlias) => {
-      await updateMutation.trigger(data as UpdateVoiceAlias)
-      onToggle(null)
-      onUpdate()
+      try {
+        await updateMutation.trigger(data as UpdateVoiceAlias)
+        onToggle(null)
+        onUpdate()
+      } catch {
+        // Error is tracked via updateMutation.error
+      }
     },
     [updateMutation, onToggle, onUpdate],
   )
@@ -184,6 +208,7 @@ function AliasRow({
             <Switch
               checked={alias.enabled}
               onCheckedChange={handleToggleEnabled}
+              disabled={updateMutation.isMutating}
               aria-label={`Toggle ${alias.name}`}
             />
           </div>

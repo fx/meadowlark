@@ -243,6 +243,41 @@ describe('AliasesPage', () => {
     })
   })
 
+  it('handles create failure gracefully', async () => {
+    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === 'string' ? url : url.toString()
+      if (init?.method === 'POST' && !urlStr.includes('/test')) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: () => Promise.resolve({ error: { message: 'Validation error' } }),
+        })
+      }
+      return mockFetch(urlStr)
+    }) as typeof fetch
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('+ Add Alias')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('+ Add Alias'))
+
+    fireEvent.input(screen.getByLabelText('Alias Name'), { target: { value: 'Bad Alias' } })
+    fireEvent.input(screen.getByLabelText('Voice'), { target: { value: 'echo' } })
+
+    const form = screen.getByLabelText('Alias Name').closest('form') as HTMLFormElement
+    fireEvent.submit(form)
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/api/v1/aliases',
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+    // Form should still be visible (not collapsed) since create failed
+    expect(screen.getByLabelText('Alias Name')).toBeInTheDocument()
+  })
+
   it('updates an alias via the edit form', async () => {
     render(<AliasesPage />)
     await waitFor(() => {
@@ -368,6 +403,99 @@ describe('AliasesPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed: Network error')).toBeInTheDocument()
+    })
+  })
+
+  it('shows error when test returns non-OK HTTP response', async () => {
+    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === 'string' ? url : url.toString()
+      if (init?.method === 'POST' && urlStr.includes('/test')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          json: () => Promise.resolve({ error: { message: 'TTS service unavailable' } }),
+        })
+      }
+      return mockFetch(urlStr)
+    }) as typeof fetch
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Friendly Voice'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Test TTS')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Test TTS'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed: TTS service unavailable')).toBeInTheDocument()
+    })
+  })
+
+  it('shows statusText when test returns non-OK without error body', async () => {
+    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === 'string' ? url : url.toString()
+      if (init?.method === 'POST' && urlStr.includes('/test')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          json: () => Promise.reject(new Error('invalid json')),
+        })
+      }
+      return mockFetch(urlStr)
+    }) as typeof fetch
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Friendly Voice'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Test TTS')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Test TTS'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed: Internal Server Error')).toBeInTheDocument()
+    })
+  })
+
+  it('shows fallback message when test returns non-OK with no statusText or error body', async () => {
+    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = typeof url === 'string' ? url : url.toString()
+      if (init?.method === 'POST' && urlStr.includes('/test')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: '',
+          json: () => Promise.resolve({}),
+        })
+      }
+      return mockFetch(urlStr)
+    }) as typeof fetch
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Friendly Voice'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Test TTS')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Test TTS'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed: Request failed')).toBeInTheDocument()
     })
   })
 

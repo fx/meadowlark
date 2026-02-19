@@ -39,10 +39,12 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
   useEffect(() => {
     if (!endpointId) {
       setVoices([])
+      setVoicesLoading(false)
       return
     }
+    const controller = new AbortController()
     setVoicesLoading(true)
-    fetch(`/api/v1/endpoints/${endpointId}/voices`)
+    fetch(`/api/v1/endpoints/${endpointId}/voices`, { signal: controller.signal })
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json()
@@ -53,6 +55,7 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
       })
       .catch(() => setVoices([]))
       .finally(() => setVoicesLoading(false))
+    return () => controller.abort()
   }, [endpointId])
 
   const handleEndpointChange = (value: string) => {

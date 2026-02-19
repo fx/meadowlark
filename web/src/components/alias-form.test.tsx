@@ -234,7 +234,10 @@ describe('AliasForm', () => {
       />,
     )
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices')
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/endpoints/ep-1/voices',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
     })
     // With voices loaded, it should show select trigger instead of input
     rerender(
@@ -263,7 +266,10 @@ describe('AliasForm', () => {
       />,
     )
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/v1/endpoints/ep-2/voices')
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/endpoints/ep-2/voices',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
     })
     // Should fall back to input
     await waitFor(() => {
@@ -286,7 +292,10 @@ describe('AliasForm', () => {
       />,
     )
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/v1/endpoints/ep-2/voices')
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/endpoints/ep-2/voices',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
     })
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Enter voice name')).toBeInTheDocument()
