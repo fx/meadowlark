@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -13,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	meadowlark "github.com/fx/meadowlark"
+	"github.com/fx/meadowlark/internal/api"
 	"github.com/fx/meadowlark/internal/model"
 	"github.com/fx/meadowlark/internal/store"
 	"github.com/fx/meadowlark/internal/tts"
@@ -137,7 +140,30 @@ func run(cmd *cobra.Command, args []string) error {
 		srvErr <- srv.ListenAndServe(ctx)
 	}()
 
-	// 6. Register Zeroconf (unless disabled).
+	// 6. Start HTTP API server.
+	httpAddr := fmt.Sprintf("%s:%d", viper.GetString("http_host"), viper.GetInt("http_port"))
+	webFS, err := fs.Sub(meadowlark.WebFS, "web/dist")
+	if err != nil {
+		return fmt.Errorf("embedded web filesystem: %w", err)
+	}
+	httpSrv := api.NewServer(
+		db,
+		infoBuilder,
+		apiClientFactory,
+		httpAddr,
+		version,
+		viper.GetInt("wyoming_port"),
+		viper.GetInt("http_port"),
+		viper.GetString("db_driver"),
+		webFS,
+	)
+
+	httpErr := make(chan error, 1)
+	go func() {
+		httpErr <- httpSrv.Start(ctx)
+	}()
+
+	// 7. Register Zeroconf (unless disabled).
 	var zc *wyoming.ZeroconfService
 	if !viper.GetBool("no_zeroconf") {
 		zc, err = wyoming.RegisterZeroconf(wyoming.ZeroconfConfig{
@@ -151,7 +177,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	slog.Info("ready")
 
-	// 7. Block until shutdown signal or server error.
+	// 8. Block until shutdown signal or server error.
 	select {
 	case <-ctx.Done():
 		slog.Info("shutdown signal received")
@@ -159,10 +185,17 @@ func run(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			slog.Error("wyoming server error", "error", err)
 		}
+	case err := <-httpErr:
+		if err != nil {
+			slog.Error("http server error", "error", err)
+		}
 	}
 
-	// 8. Graceful shutdown sequence.
+	// 9. Graceful shutdown sequence.
 	slog.Info("shutting down")
+
+	// Stop HTTP server first (with timeout via Start's internal shutdown).
+	stop()
 
 	// Stop Wyoming server (stop accepting, drain connections).
 	srv.Shutdown()
@@ -196,6 +229,11 @@ func openStore(ctx context.Context, driver, dsn string) (store.Store, error) {
 // defaultClientFactory creates a TTS client from an endpoint configuration.
 func defaultClientFactory(ep *model.Endpoint) *tts.Client {
 	return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
+}
+
+// apiClientFactory adapts defaultClientFactory to the api.ClientFactory type.
+func apiClientFactory(ep *model.Endpoint) *tts.Client {
+	return defaultClientFactory(ep)
 }
 
 // wyomingHandler dispatches Wyoming protocol events.

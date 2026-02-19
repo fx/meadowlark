@@ -11,6 +11,8 @@ web/dist/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 
 # OS
 .DS_Store
