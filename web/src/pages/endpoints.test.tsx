@@ -41,7 +41,7 @@ function mockFetchWith(data: unknown) {
 
 beforeEach(() => {
   clearCache()
-  global.fetch = mockFetchWith(mockEndpoints)
+  vi.stubGlobal('fetch', mockFetchWith(mockEndpoints))
 })
 
 afterEach(() => {
@@ -62,11 +62,11 @@ describe('EndpointsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('2 models')).toBeInTheDocument()
     })
-    expect(screen.getByText('1 models')).toBeInTheDocument()
+    expect(screen.getByText('1 model')).toBeInTheDocument()
   })
 
   it('shows empty state when no endpoints', async () => {
-    global.fetch = mockFetchWith([])
+    vi.stubGlobal('fetch', mockFetchWith([]))
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText(/No endpoints configured/)).toBeInTheDocument()
@@ -87,7 +87,7 @@ describe('EndpointsPage', () => {
   it('creates an endpoint', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetchWith(mockEndpoints)
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -119,7 +119,7 @@ describe('EndpointsPage', () => {
   it('updates an endpoint', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetchWith(mockEndpoints)
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -151,7 +151,7 @@ describe('EndpointsPage', () => {
   it('deletes an endpoint after confirmation', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetchWith(mockEndpoints)
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -194,7 +194,7 @@ describe('EndpointsPage', () => {
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -218,7 +218,7 @@ describe('EndpointsPage', () => {
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -238,7 +238,7 @@ describe('EndpointsPage', () => {
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -246,7 +246,27 @@ describe('EndpointsPage', () => {
     await user.click(screen.getByText('OpenAI'))
     await user.click(screen.getByRole('button', { name: 'Test OpenAI' }))
     await waitFor(() => {
-      expect(screen.getByText('Test: Network error')).toBeInTheDocument()
+      expect(screen.getByText('Test: fetch failed')).toBeInTheDocument()
+    })
+  })
+
+  it('tests connectivity and handles non-Error throw', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockImplementation((url: string, opts?: RequestInit) => {
+      if (url.endsWith('/test') && opts?.method === 'POST') {
+        return Promise.reject('string error')
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EndpointsPage />)
+    await waitFor(() => {
+      expect(screen.getByText('OpenAI')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('OpenAI'))
+    await user.click(screen.getByRole('button', { name: 'Test OpenAI' }))
+    await waitFor(() => {
+      expect(screen.getByText('Test: string error')).toBeInTheDocument()
     })
   })
 
@@ -262,7 +282,7 @@ describe('EndpointsPage', () => {
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -282,7 +302,7 @@ describe('EndpointsPage', () => {
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -302,7 +322,7 @@ describe('EndpointsPage', () => {
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -310,14 +330,34 @@ describe('EndpointsPage', () => {
     await user.click(screen.getByText('OpenAI'))
     await user.click(screen.getByRole('button', { name: 'Discover voices for OpenAI' }))
     await waitFor(() => {
-      expect(screen.getByText('Voices: None found')).toBeInTheDocument()
+      expect(screen.getByText('Voices: Error: fetch failed')).toBeInTheDocument()
+    })
+  })
+
+  it('discovers voices and handles non-Error throw', async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/voices')) {
+        return Promise.reject('string error')
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EndpointsPage />)
+    await waitFor(() => {
+      expect(screen.getByText('OpenAI')).toBeInTheDocument()
+    })
+    await user.click(screen.getByText('OpenAI'))
+    await user.click(screen.getByRole('button', { name: 'Discover voices for OpenAI' }))
+    await waitFor(() => {
+      expect(screen.getByText('Voices: Error: string error')).toBeInTheDocument()
     })
   })
 
   it('toggles endpoint enabled switch', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetchWith(mockEndpoints)
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()
@@ -336,11 +376,14 @@ describe('EndpointsPage', () => {
   })
 
   it('shows error state when fetch fails', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: () => Promise.resolve({ error: { message: 'Server error' } }),
-    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ error: { message: 'Server error' } }),
+      }),
+    )
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText(/Error:/)).toBeInTheDocument()
@@ -395,7 +438,7 @@ describe('EndpointsPage', () => {
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
     })
-    global.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
       expect(screen.getByText('OpenAI')).toBeInTheDocument()

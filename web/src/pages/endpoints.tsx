@@ -19,6 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { useFetch } from '@/hooks/use-fetch'
 import { useMutation } from '@/hooks/use-mutation'
 import type { CreateEndpoint, Endpoint, TestResult, UpdateEndpoint } from '@/lib/api'
+import { api } from '@/lib/api'
 
 function EndpointsPage() {
   const { data: endpoints, error, isLoading, mutate } = useFetch<Endpoint[]>('/api/v1/endpoints')
@@ -97,11 +98,7 @@ function EndpointRow({
     async (data: CreateEndpoint | UpdateEndpoint) => {
       setSaving(true)
       try {
-        await fetch(`/api/v1/endpoints/${endpoint.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        })
+        await api.endpoints.update(endpoint.id, data as UpdateEndpoint)
         onToggle(null)
         onUpdate()
       } finally {
@@ -112,39 +109,37 @@ function EndpointRow({
   )
 
   const handleDelete = useCallback(async () => {
-    await fetch(`/api/v1/endpoints/${endpoint.id}`, { method: 'DELETE' })
+    await api.endpoints.delete(endpoint.id)
     onUpdate()
   }, [endpoint.id, onUpdate])
 
   const handleToggleEnabled = useCallback(
     async (checked: boolean) => {
-      await fetch(`/api/v1/endpoints/${endpoint.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: checked }),
-      })
-      onUpdate()
+      try {
+        await api.endpoints.update(endpoint.id, { enabled: checked })
+        onUpdate()
+      } catch {
+        // revert will happen on next fetch
+      }
     },
     [endpoint.id, onUpdate],
   )
 
   const handleTest = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/endpoints/${endpoint.id}/test`, { method: 'POST' })
-      const result = (await res.json()) as TestResult
+      const result = await api.endpoints.test(endpoint.id)
       setTestResult(result)
-    } catch {
-      setTestResult({ ok: false, error: 'Network error' })
+    } catch (err) {
+      setTestResult({ ok: false, error: err instanceof Error ? err.message : String(err) })
     }
   }, [endpoint.id])
 
   const handleDiscoverVoices = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/endpoints/${endpoint.id}/voices`)
-      const voices = (await res.json()) as string[]
+      const voices = await api.endpoints.voices(endpoint.id)
       setVoicesResult(voices.length > 0 ? voices.join(', ') : 'None found')
-    } catch {
-      setVoicesResult('None found')
+    } catch (err) {
+      setVoicesResult(`Error: ${err instanceof Error ? err.message : String(err)}`)
     }
   }, [endpoint.id])
 
@@ -156,7 +151,9 @@ function EndpointRow({
       collapsed={
         <div className="flex w-full items-center gap-3">
           <span className="font-medium">{endpoint.name}</span>
-          <Badge variant="secondary">{endpoint.models.length} models</Badge>
+          <Badge variant="secondary">
+            {endpoint.models.length} {endpoint.models.length === 1 ? 'model' : 'models'}
+          </Badge>
           {!endpoint.enabled && <Badge variant="outline">Disabled</Badge>}
           {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: stopPropagation prevents row toggle when clicking switch */}
           <div className="ml-auto" onClick={(e) => e.stopPropagation()}>

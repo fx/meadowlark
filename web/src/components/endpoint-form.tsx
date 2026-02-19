@@ -15,6 +15,7 @@ type EndpointFormProps = {
 }
 
 function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormProps) {
+  const isCreate = !endpoint
   const [name, setName] = useState(endpoint?.name ?? '')
   const [baseUrl, setBaseUrl] = useState(endpoint?.base_url ?? '')
   const [apiKey, setApiKey] = useState(endpoint?.api_key ?? '')
@@ -36,7 +37,7 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         base_url: baseUrl,
         api_key: apiKey || undefined,
         models: modelList,
-        default_speed: speed ? Number(speed) : undefined,
+        default_speed: speed && Number.isFinite(Number(speed)) ? Number(speed) : undefined,
         default_instructions: instructions || undefined,
         enabled,
       }
@@ -96,6 +97,7 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
           value={models}
           onInput={(e) => setModels((e.target as HTMLInputElement).value)}
           placeholder="tts-1, tts-1-hd"
+          required={isCreate}
         />
       </div>
 

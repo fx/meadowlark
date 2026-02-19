@@ -123,6 +123,7 @@ describe('EndpointForm', () => {
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Full EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
     await user.type(screen.getByLabelText('API Key'), 'sk-test')
     await user.type(screen.getByLabelText('Default Speed'), '1.5')
     await user.type(screen.getByLabelText('Default Instructions'), 'Speak slowly')
@@ -136,12 +137,29 @@ describe('EndpointForm', () => {
     )
   })
 
+  it('treats NaN speed as undefined', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'NaN EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
+    await user.type(screen.getByLabelText('Default Speed'), 'abc')
+    await user.click(screen.getByText('Create'))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        default_speed: undefined,
+      }),
+    )
+  })
+
   it('sends undefined for empty optional fields', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Minimal')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
