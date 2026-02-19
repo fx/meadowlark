@@ -382,7 +382,7 @@ coverage: {
 - [x] Implement Settings page
   - [x] Fetch and display server status in cards (version, uptime, ports, DB driver, voice/endpoint/alias counts)
   - [x] Write tests: renders all status fields, handles loading/error
-- [ ] Achieve 100% test coverage
-  - [ ] Audit coverage report, identify uncovered branches/lines
-  - [ ] Add missing tests until all thresholds hit 100%
-  - [ ] Verify `bun run test` passes with coverage enforcement
+- [x] Achieve 100% test coverage
+  - [x] Audit coverage report, identify uncovered branches/lines
+  - [x] Add missing tests until all thresholds hit 100%
+  - [x] Verify `bun run test` passes with coverage enforcement
