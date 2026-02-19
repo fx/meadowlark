@@ -5,7 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Meadowlark</title>
     <script>
-      !(()=>{var t='system';try{t=localStorage.getItem('meadowlark-theme')||'system'}catch(_e){}document.documentElement.classList.add(t==='system'?window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light':t)})()
+      ;(() => {
+        try {
+          const stored = localStorage.getItem('meadowlark-theme')
+          const theme =
+            stored === 'dark' || stored === 'light' || stored === 'system'
+              ? stored
+              : 'system'
+          const systemTheme = window.matchMedia(
+            '(prefers-color-scheme: dark)',
+          ).matches
+            ? 'dark'
+            : 'light'
+          const resolved = theme === 'system' ? systemTheme : theme
+
+          document.documentElement.classList.remove('light', 'dark')
+          document.documentElement.classList.add(resolved)
+        } catch (_e) {}
+      })()
     </script>
   </head>
   <body>
