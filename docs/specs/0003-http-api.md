@@ -205,18 +205,18 @@ Extend the startup sequence from spec 0002:
 
 ## Tasks
 
-- [ ] Set up HTTP server and router
-  - [ ] Add `chi` (or chosen router) dependency
-  - [ ] Create `internal/api/server.go` with HTTP server setup
-  - [ ] Configure middleware stack: request logger, recovery, CORS, content-type
-  - [ ] Mount API routes under `/api/v1/`
-  - [ ] Mount static file server for embedded frontend at `/`
-  - [ ] Implement SPA fallback (non-API, non-asset routes serve index.html)
-  - [ ] Wire into main.go startup/shutdown sequence
-- [ ] Implement error response helpers
-  - [ ] Define consistent JSON error format (`{error: {code, message}}`)
-  - [ ] Create helper functions: `respondJSON`, `respondError`, `respondNoContent`
-  - [ ] Standard error codes: `bad_request`, `not_found`, `conflict`, `internal_error`
+- [x] Set up HTTP server and router
+  - [x] Add `chi` (or chosen router) dependency
+  - [x] Create `internal/api/server.go` with HTTP server setup
+  - [x] Configure middleware stack: request logger, recovery, CORS, content-type
+  - [x] Mount API routes under `/api/v1/`
+  - [x] Mount static file server for embedded frontend at `/`
+  - [x] Implement SPA fallback (non-API, non-asset routes serve index.html)
+  - [x] Wire into main.go startup/shutdown sequence
+- [x] Implement error response helpers
+  - [x] Define consistent JSON error format (`{error: {code, message}}`)
+  - [x] Create helper functions: `respondJSON`, `respondError`, `respondNoContent`
+  - [x] Standard error codes: `bad_request`, `not_found`, `conflict`, `internal_error`
 - [ ] Implement Endpoints CRUD handlers
   - [ ] `GET /api/v1/endpoints` -- list all endpoints
   - [ ] `POST /api/v1/endpoints` -- create endpoint (validate: name required+unique, base_url required+valid URL, models required+non-empty, speed range 0.25-4.0)
