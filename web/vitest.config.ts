@@ -15,7 +15,7 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     server: {
       deps: {
-        inline: [/^(?!.*vitest).*$/],
+        inline: [/@radix-ui/, /@floating-ui/, /react-remove-scroll/],
       },
     },
     alias: {
