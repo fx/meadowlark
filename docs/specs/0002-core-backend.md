@@ -270,19 +270,19 @@ The scaffold from spec 0001 is extended:
   - [ ] Implement `PostgresStore` with `github.com/jackc/pgx/v5`
   - [ ] Reuse same SQL migrations (compatible syntax)
   - [ ] Write tests using testcontainers-go for PostgreSQL
-- [ ] Implement TTS HTTP client
-  - [ ] `POST {base_url}/audio/speech` with streaming response
-  - [ ] Set `Authorization: Bearer {api_key}` header
-  - [ ] Request body: model, voice, input, response_format, speed, instructions (omit nil fields)
-  - [ ] Read response body as stream (chunked iteration)
-  - [ ] Handle HTTP error responses (4xx, 5xx) with descriptive errors
-  - [ ] Write tests with `httptest.NewServer` mock
-- [ ] Implement WAV header parser
-  - [ ] Parse 44-byte RIFF/WAV header (extract rate, width, channels)
-  - [ ] Handle WAV header split across chunk boundaries (buffering)
-  - [ ] Handle non-standard WAV headers (extra chunks before `data`)
-  - [ ] Strip header, pass through raw PCM
-  - [ ] Write tests with real WAV file fragments
+- [x] Implement TTS HTTP client
+  - [x] `POST {base_url}/audio/speech` with streaming response
+  - [x] Set `Authorization: Bearer {api_key}` header
+  - [x] Request body: model, voice, input, response_format, speed, instructions (omit nil fields)
+  - [x] Read response body as stream (chunked iteration)
+  - [x] Handle HTTP error responses (4xx, 5xx) with descriptive errors
+  - [x] Write tests with `httptest.NewServer` mock
+- [x] Implement WAV header parser
+  - [x] Parse 44-byte RIFF/WAV header (extract rate, width, channels)
+  - [x] Handle WAV header split across chunk boundaries (buffering)
+  - [x] Handle non-standard WAV headers (extra chunks before `data`)
+  - [x] Strip header, pass through raw PCM
+  - [x] Write tests with real WAV file fragments
 - [ ] Implement voice resolver
   - [ ] Resolve by alias name (lookup in Store, must be enabled)
   - [ ] Resolve by canonical name (`"voice (endpoint, model)"` format parsing)
