@@ -590,7 +590,7 @@ The following design tokens must be used:
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme inline {
+@theme {
   /* Zero border radius (sharp edges) */
   --radius-sm: 0;
   --radius-md: 0;

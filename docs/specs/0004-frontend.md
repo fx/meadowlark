@@ -112,7 +112,7 @@ web/
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme inline {
+@theme {
   --radius-sm: 0;
   --radius-md: 0;
   --radius-lg: 0;
