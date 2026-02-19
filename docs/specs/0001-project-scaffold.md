@@ -159,17 +159,17 @@ clean:
 
 ## Tasks
 
-- [ ] Initialize Go module and project skeleton
-  - [ ] `go mod init` with module path
-  - [ ] Create `cmd/meadowlark/main.go` with CLI flag parsing (all flags from meadowlark.md section 7.1)
-  - [ ] Wire env var fallbacks (`MEADOWLARK_*` prefix) for all flags
-  - [ ] Configure `log/slog` (level + format from flags)
-  - [ ] Implement graceful shutdown (SIGTERM/SIGINT handler)
-  - [ ] Create empty `internal/` package stubs (wyoming, tts, voice, store, api, model)
-- [ ] Set up mise and Makefile
-  - [ ] Create `mise.toml` (go, bun, biome)
-  - [ ] Create `Makefile` with targets: build, build-frontend, build-backend, test, test-go, test-frontend, lint, dev, clean
-  - [ ] Create `.gitignore` (Go binaries, web/node_modules, web/dist, .env, *.db)
+- [x] Initialize Go module and project skeleton
+  - [x] `go mod init` with module path
+  - [x] Create `cmd/meadowlark/main.go` with CLI flag parsing (all flags from meadowlark.md section 7.1)
+  - [x] Wire env var fallbacks (`MEADOWLARK_*` prefix) for all flags
+  - [x] Configure `log/slog` (level + format from flags)
+  - [x] Implement graceful shutdown (SIGTERM/SIGINT handler)
+  - [x] Create empty `internal/` package stubs (wyoming, tts, voice, store, api, model)
+- [x] Set up mise and Makefile
+  - [x] Create `mise.toml` (go, bun, biome)
+  - [x] Create `Makefile` with targets: build, build-frontend, build-backend, test, test-go, test-frontend, lint, dev, clean
+  - [x] Create `.gitignore` (Go binaries, web/node_modules, web/dist, .env, *.db)
 - [ ] Scaffold Preact frontend
   - [ ] Initialize `web/` with Bun (`bun init`)
   - [ ] Install Preact, Vite, Tailwind CSS v4, Vitest, testing-library, shadcn/ui deps
@@ -197,6 +197,6 @@ clean:
   - [ ] Create `release-please-config.json` (release-type: go)
   - [ ] Create `.release-please-manifest.json` (starting at 0.1.0)
   - [ ] Create initial `CHANGELOG.md`
-- [ ] Add task-completion instructions
-  - [ ] Create `CLAUDE.md` at project root with task-completion language
-  - [ ] Create `.github/copilot-instructions.md` with task-completion rule
+- [x] Add task-completion instructions
+  - [x] Create `CLAUDE.md` at project root with task-completion language
+  - [x] Create `.github/copilot-instructions.md` with task-completion rule
