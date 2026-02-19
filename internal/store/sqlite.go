@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"database/sql"
 	"fmt"
 	"sync"
@@ -26,6 +27,7 @@ func NewSQLiteStore(dsn string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: open sqlite: %w", err)
 	}
+	db.SetMaxOpenConns(1)
 	for _, pragma := range []string{
 		"PRAGMA journal_mode=WAL",
 		"PRAGMA foreign_keys=ON",
@@ -91,7 +93,7 @@ func (s *SQLiteStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, erro
 	for rows.Next() {
 		ep, err := scanEndpoint(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("store: scan endpoint: %w", err)
 		}
 		out = append(out, ep)
 	}
@@ -101,7 +103,7 @@ func (s *SQLiteStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, erro
 func (s *SQLiteStore) GetEndpoint(ctx context.Context, id string) (*model.Endpoint, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id, name, base_url, api_key, models, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints WHERE id = ?`, id)
 	ep, err := scanEndpointRow(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -136,7 +138,10 @@ func (s *SQLiteStore) UpdateEndpoint(ctx context.Context, e *model.Endpoint) err
 	if err != nil {
 		return fmt.Errorf("store: update endpoint: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: update endpoint rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("store: endpoint %q not found", e.ID)
 	}
@@ -150,7 +155,10 @@ func (s *SQLiteStore) DeleteEndpoint(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("store: delete endpoint: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: delete endpoint rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("store: endpoint %q not found", id)
 	}
@@ -167,7 +175,7 @@ func (s *SQLiteStore) ListVoiceAliases(ctx context.Context) ([]model.VoiceAlias,
 	for rows.Next() {
 		a, err := scanAlias(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("store: scan voice alias: %w", err)
 		}
 		out = append(out, a)
 	}
@@ -177,7 +185,7 @@ func (s *SQLiteStore) ListVoiceAliases(ctx context.Context) ([]model.VoiceAlias,
 func (s *SQLiteStore) GetVoiceAlias(ctx context.Context, id string) (*model.VoiceAlias, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT id, name, endpoint_id, model, voice, speed, instructions, languages, enabled, created_at, updated_at FROM voice_aliases WHERE id = ?`, id)
 	a, err := scanAliasRow(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -215,7 +223,10 @@ func (s *SQLiteStore) UpdateVoiceAlias(ctx context.Context, a *model.VoiceAlias)
 	if err != nil {
 		return fmt.Errorf("store: update voice alias: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: update voice alias rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("store: voice alias %q not found", a.ID)
 	}
@@ -229,7 +240,10 @@ func (s *SQLiteStore) DeleteVoiceAlias(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("store: delete voice alias: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: delete voice alias rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("store: voice alias %q not found", id)
 	}
@@ -247,10 +261,17 @@ func scanEndpointFromScanner(sc scanner) (model.Endpoint, error) {
 		&ep.DefaultSpeed, &ep.DefaultInstructions, &ep.DefaultResponseFormat,
 		&ep.Enabled, &createdAt, &updatedAt)
 	if err != nil {
-		return ep, err
+		return ep, fmt.Errorf("store: scan endpoint: %w", err)
 	}
-	ep.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	ep.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	var parseErr error
+	ep.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+	if parseErr != nil {
+		return ep, fmt.Errorf("store: parse endpoint created_at %q: %w", createdAt, parseErr)
+	}
+	ep.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+	if parseErr != nil {
+		return ep, fmt.Errorf("store: parse endpoint updated_at %q: %w", updatedAt, parseErr)
+	}
 	return ep, nil
 }
 
@@ -264,10 +285,17 @@ func scanAliasFromScanner(sc scanner) (model.VoiceAlias, error) {
 		&a.Speed, &a.Instructions, &a.Languages,
 		&a.Enabled, &createdAt, &updatedAt)
 	if err != nil {
-		return a, err
+		return a, fmt.Errorf("store: scan voice alias: %w", err)
 	}
-	a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	a.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	var parseErr error
+	a.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+	if parseErr != nil {
+		return a, fmt.Errorf("store: parse voice alias created_at %q: %w", createdAt, parseErr)
+	}
+	a.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+	if parseErr != nil {
+		return a, fmt.Errorf("store: parse voice alias updated_at %q: %w", updatedAt, parseErr)
+	}
 	return a, nil
 }
 
