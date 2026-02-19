@@ -48,9 +48,11 @@ func NewProxy(resolver *voice.Resolver, endpoints EndpointGetter, factory Client
 // On failure it writes an error event instead of crashing.
 func (p *Proxy) HandleSynthesize(ctx context.Context, ev *wyoming.Synthesize, w io.Writer) {
 	if err := p.doSynthesize(ctx, ev, w); err != nil {
-		p.logger.Error("synthesis failed", "error", err, "voice", ev.Voice, "text", ev.Text)
+		p.logger.Error("synthesis failed", "error", err, "voice", ev.Voice, "text_len", len(ev.Text))
 		errEv := &wyoming.Error{Text: err.Error(), Code: "tts-error"}
-		_ = wyoming.WriteEvent(w, errEv.ToEvent())
+		if writeErr := wyoming.WriteEvent(w, errEv.ToEvent()); writeErr != nil {
+			p.logger.Error("failed to write TTS error event", "error", writeErr)
+		}
 	}
 }
 
@@ -79,6 +81,9 @@ func (p *Proxy) doSynthesize(ctx context.Context, ev *wyoming.Synthesize, w io.W
 	if err != nil {
 		return fmt.Errorf("get endpoint %s: %w", resolved.EndpointID, err)
 	}
+	if !ep.Enabled {
+		return fmt.Errorf("endpoint %s is disabled", ep.ID)
+	}
 
 	epDefaults := &voice.ParsedInput{
 		Voice:        resolved.Voice,
@@ -90,11 +95,12 @@ func (p *Proxy) doSynthesize(ctx context.Context, ev *wyoming.Synthesize, w io.W
 	// 4. Merge parameters: input overrides > alias defaults > endpoint defaults.
 	merged := voice.MergeParams(parsed, aliasDefaults, epDefaults)
 
-	// Determine response format.
-	responseFormat := ep.DefaultResponseFormat
-	if responseFormat == "" {
-		responseFormat = "wav"
+	// The proxy always parses the response as WAV (via WAVReader + PCM),
+	// so only WAV is currently supported here.
+	if ep.DefaultResponseFormat != "" && ep.DefaultResponseFormat != "wav" {
+		return fmt.Errorf("unsupported response format %q; only %q is supported by proxy", ep.DefaultResponseFormat, "wav")
 	}
+	responseFormat := "wav"
 
 	// 5. Call TTS client.
 	client := p.clientFactory(ep)

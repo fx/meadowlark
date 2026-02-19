@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -30,7 +32,7 @@ type mockEndpointStore struct {
 func (s *mockEndpointStore) GetEndpoint(_ context.Context, id string) (*model.Endpoint, error) {
 	ep, ok := s.endpoints[id]
 	if !ok {
-		return nil, context.Canceled
+		return nil, fmt.Errorf("endpoint %q not found", id)
 	}
 	return ep, nil
 }
@@ -60,7 +62,7 @@ func readAllEvents(t *testing.T, data []byte) []*wyoming.Event {
 	for {
 		ev, err := wyoming.ReadEvent(r)
 		if err != nil {
-			if err == io.EOF || err.Error() == "read header line: EOF" {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				break
 			}
 			t.Fatalf("unexpected read error: %v", err)
@@ -486,4 +488,61 @@ func TestProxy_HandleSynthesize_ExactChunkBoundary(t *testing.T) {
 	require.Len(t, events, 3) // audio-start + 1 chunk + audio-stop
 	chunk, _ := wyoming.AudioChunkFromEvent(events[1])
 	assert.Len(t, chunk.Audio, chunkSize)
+}
+
+func TestProxy_HandleSynthesize_DisabledEndpoint(t *testing.T) {
+	ep := &model.Endpoint{
+		ID:      "ep-1",
+		Name:    "Test",
+		BaseURL: "http://localhost",
+		APIKey:  "key",
+		Models:  model.StringSlice{"model-1"},
+		Enabled: false, // Disabled endpoint
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{aliases: []model.VoiceAlias{
+		{Name: "test-alias", EndpointID: "ep-1", Model: "model-1", Voice: "alloy", Enabled: true},
+	}}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, nil) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hello", Voice: "test-alias"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.Len(t, events, 1)
+	assert.Equal(t, wyoming.TypeError, events[0].Type)
+	errEv, _ := wyoming.ErrorFromEvent(events[0])
+	assert.Contains(t, errEv.Text, "disabled")
+}
+
+func TestProxy_HandleSynthesize_UnsupportedResponseFormat(t *testing.T) {
+	ep := &model.Endpoint{
+		ID:                    "ep-1",
+		Name:                  "Test",
+		BaseURL:               "http://localhost",
+		APIKey:                "key",
+		Models:                model.StringSlice{"model-1"},
+		DefaultResponseFormat: "mp3", // Unsupported
+		Enabled:               true,
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, nil) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hello", Voice: "alloy"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.Len(t, events, 1)
+	assert.Equal(t, wyoming.TypeError, events[0].Type)
+	errEv, _ := wyoming.ErrorFromEvent(events[0])
+	assert.Contains(t, errEv.Text, "unsupported response format")
 }
