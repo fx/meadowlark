@@ -3,7 +3,7 @@
 build: build-frontend build-backend
 
 build-frontend:
-	cd web && bun install && bun run build
+	if [ -d web ]; then cd web && bun install && bun run build; fi
 
 build-backend:
 	go build -ldflags="-s -w" -o meadowlark ./cmd/meadowlark
@@ -14,11 +14,11 @@ test-go:
 	go test -race ./...
 
 test-frontend:
-	cd web && bun run test
+	if [ -d web ]; then cd web && bun run test; fi
 
 lint:
 	go vet ./...
-	cd web && bunx biome check .
+	if [ -d web ]; then cd web && bunx biome check .; fi
 
 dev:
 	# Run both frontend dev server and Go binary in parallel
