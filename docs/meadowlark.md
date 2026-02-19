@@ -588,7 +588,7 @@ The following design tokens must be used:
 @import "tw-animate-css";
 @import "@fontsource/jetbrains-mono";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   /* Zero border radius (sharp edges) */

@@ -110,7 +110,7 @@ web/
 @import "tw-animate-css";
 @import "@fontsource/jetbrains-mono";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --radius-sm: 0;

@@ -200,9 +200,7 @@ describe('ThemeProvider', () => {
       // Bug: `.dark *` only matches descendants of .dark, not .dark itself
       expect(document.documentElement.matches('.dark *')).toBe(false)
       // Fix: `:where(.dark, .dark *)` matches both .dark and its descendants
-      expect(document.documentElement.matches(':where(.dark, .dark *)')).toBe(
-        true,
-      )
+      expect(document.documentElement.matches(':where(.dark, .dark *)')).toBe(true)
     })
 
     it('matches child elements with both selectors', () => {
