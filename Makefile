@@ -6,7 +6,7 @@ build-frontend:
 	if [ -d web ]; then cd web && bun install && bun run build; fi
 
 build-backend:
-	go build -ldflags="-s -w" -o meadowlark ./cmd/meadowlark
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o meadowlark ./cmd/meadowlark
 
 test: test-go test-frontend
 
