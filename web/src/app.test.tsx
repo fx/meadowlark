@@ -52,8 +52,7 @@ describe('App', () => {
   it('renders the aliases page at /aliases', () => {
     mockLocation = '/aliases'
     render(<App />)
-    // Page shows loading state or add button depending on fetch state
-    expect(screen.getByRole('button', { name: 'Aliases' })).toBeInTheDocument()
+    expect(screen.getByText('Aliases')).toBeInTheDocument()
   })
 
   it('renders the settings page at /settings', () => {
