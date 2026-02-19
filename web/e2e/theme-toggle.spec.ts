@@ -53,7 +53,7 @@ test.describe('theme toggle', () => {
     expect(errors).toEqual([])
   })
 
-  test('switching to dark mode applies dark class', async ({ page }) => {
+  test('switching to dark mode applies dark class and background', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (err) => errors.push(err.message))
 
@@ -67,6 +67,12 @@ test.describe('theme toggle', () => {
     // html should now have dark class
     const html = page.locator('html')
     await expect(html).toHaveClass(/dark/)
+
+    // Body background must actually be dark (not white)
+    // This catches @theme inline bugs where utilities hardcode values
+    const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+    expect(bg).not.toBe('rgb(255, 255, 255)')
+    expect(bg).not.toBe('rgba(0, 0, 0, 0)')
 
     // Verify it persisted to localStorage
     const stored = await page.evaluate(() => localStorage.getItem('meadowlark-theme'))
