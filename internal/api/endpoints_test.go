@@ -414,3 +414,120 @@ func TestListEndpoints_ReturnsEmptyArray(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	assert.Contains(t, string(body), "[]")
 }
+
+func TestProbeEndpoint_Success(t *testing.T) {
+	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			w.Write([]byte(`{"data":[{"id":"tts-1"},{"id":"tts-1-hd"}]}`))
+		case "/audio/voices":
+			w.Write([]byte(`{"data":[{"id":"alloy","name":"Alloy"},{"id":"nova","name":"Nova"}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer mockTTS.Close()
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	payload := fmt.Sprintf(`{"url":%q,"api_key":"sk-test"}`, mockTTS.URL)
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints/probe", "application/json", strings.NewReader(payload))
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body struct {
+		Models []tts.Model `json:"models"`
+		Voices []tts.Voice `json:"voices"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body.Models, 2)
+	assert.Equal(t, "tts-1", body.Models[0].ID)
+	require.Len(t, body.Voices, 2)
+	assert.Equal(t, "alloy", body.Voices[0].ID)
+}
+
+func TestProbeEndpoint_MissingURL(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints/probe", "application/json", strings.NewReader(`{"api_key":"sk-test"}`))
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestProbeEndpoint_InvalidJSON(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints/probe", "application/json", strings.NewReader("{invalid"))
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestProbeEndpoint_UnreachableURL(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints/probe", "application/json", strings.NewReader(`{"url":"http://127.0.0.1:0"}`))
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body struct {
+		Models []tts.Model `json:"models"`
+		Voices []tts.Voice `json:"voices"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Empty(t, body.Models)
+	assert.Empty(t, body.Voices)
+}
+
+func TestDiscoverModels_Success(t *testing.T) {
+	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.Write([]byte(`{"data":[{"id":"tts-1"},{"id":"tts-1-hd"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockTTS.Close()
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mockTTS.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/ep1/models")
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body []tts.Model
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body, 2)
+	assert.Equal(t, "tts-1", body[0].ID)
+}
+
+func TestDiscoverModels_NotFound(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/nonexistent/models")
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestDiscoverRemoteVoices_Success(t *testing.T) {
+	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/audio/voices" {
+			w.Write([]byte(`{"data":[{"id":"alloy","name":"Alloy"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockTTS.Close()
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mockTTS.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/ep1/remote-voices")
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body []tts.Voice
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body, 1)
+	assert.Equal(t, "alloy", body[0].ID)
+	assert.Equal(t, "Alloy", body[0].Name)
+}
+
+func TestDiscoverRemoteVoices_NotFound(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/nonexistent/remote-voices")
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}

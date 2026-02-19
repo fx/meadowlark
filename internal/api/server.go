@@ -113,11 +113,14 @@ func (s *Server) setupRoutes() *chi.Mux {
 		// Endpoints
 		r.Get("/endpoints", s.ListEndpoints)
 		r.Post("/endpoints", s.CreateEndpoint)
+		r.Post("/endpoints/probe", s.ProbeEndpoint)
 		r.Get("/endpoints/{id}", s.GetEndpoint)
 		r.Put("/endpoints/{id}", s.UpdateEndpoint)
 		r.Delete("/endpoints/{id}", s.DeleteEndpoint)
 		r.Post("/endpoints/{id}/test", s.TestEndpoint)
 		r.Get("/endpoints/{id}/voices", s.DiscoverVoices)
+		r.Get("/endpoints/{id}/models", s.DiscoverModels)
+		r.Get("/endpoints/{id}/remote-voices", s.DiscoverRemoteVoices)
 
 		// Aliases
 		r.Get("/aliases", s.ListAliases)

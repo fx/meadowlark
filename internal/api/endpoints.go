@@ -287,3 +287,68 @@ func (s *Server) DiscoverVoices(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, []string(ep.Models))
 }
 
+// DiscoverModels queries a saved endpoint for available models.
+func (s *Server) DiscoverModels(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ep, err := s.store.GetEndpoint(r.Context(), id)
+	if err != nil {
+		slog.Error("discover models: get", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to get endpoint")
+		return
+	}
+	if ep == nil {
+		respondError(w, http.StatusNotFound, "not_found", "endpoint not found")
+		return
+	}
+	client := s.clientFactory(ep)
+	models, _ := client.ListModels(r.Context())
+	respondJSON(w, http.StatusOK, models)
+}
+
+// DiscoverRemoteVoices queries a saved endpoint for available voices.
+func (s *Server) DiscoverRemoteVoices(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ep, err := s.store.GetEndpoint(r.Context(), id)
+	if err != nil {
+		slog.Error("discover remote voices: get", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to get endpoint")
+		return
+	}
+	if ep == nil {
+		respondError(w, http.StatusNotFound, "not_found", "endpoint not found")
+		return
+	}
+	client := s.clientFactory(ep)
+	voices, _ := client.ListVoices(r.Context())
+	respondJSON(w, http.StatusOK, voices)
+}
+
+type probeRequest struct {
+	URL    string `json:"url"`
+	APIKey string `json:"api_key"`
+}
+
+type probeResponse struct {
+	Models []tts.Model `json:"models"`
+	Voices []tts.Voice `json:"voices"`
+}
+
+// ProbeEndpoint probes a remote endpoint for models and voices without saving it.
+func (s *Server) ProbeEndpoint(w http.ResponseWriter, r *http.Request) {
+	var req probeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		respondError(w, http.StatusBadRequest, "bad_request", "url is required")
+		return
+	}
+
+	client := tts.NewClient(strings.TrimSpace(req.URL), req.APIKey, nil)
+	models, _ := client.ListModels(r.Context())
+	voices, _ := client.ListVoices(r.Context())
+
+	respondJSON(w, http.StatusOK, probeResponse{Models: models, Voices: voices})
+}
+
