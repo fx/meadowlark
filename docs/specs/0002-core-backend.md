@@ -252,20 +252,20 @@ The scaffold from spec 0001 is extended:
   - [x] `Ping` / `Pong`
   - [x] `Error` (text, code)
   - [x] Conversion methods: typed struct <-> generic Event
-- [ ] Implement domain models
-  - [ ] `model.Endpoint` with JSON array fields (Models)
-  - [ ] `model.VoiceAlias` with JSON array fields (Languages)
-  - [ ] `model.ResolvedVoice` (Name, EndpointID, Model, Voice, Speed, Instructions, Languages, IsAlias)
-  - [ ] JSON serialization/deserialization tests for array fields
-- [ ] Implement database Store interface and SQLite backend
-  - [ ] Define `Store` interface in `internal/store/store.go`
-  - [ ] Create embedded SQL migrations (endpoints + voice_aliases tables)
-  - [ ] Implement `SQLiteStore` with `modernc.org/sqlite`
-  - [ ] Implement all CRUD methods for endpoints
-  - [ ] Implement all CRUD methods for voice aliases
-  - [ ] Implement `Migrate()` (idempotent, runs on startup)
-  - [ ] Write tests with in-memory SQLite (`:memory:`)
-  - [ ] Test constraint violations (duplicate names, FK references)
+- [x] Implement domain models
+  - [x] `model.Endpoint` with JSON array fields (Models)
+  - [x] `model.VoiceAlias` with JSON array fields (Languages)
+  - [x] `model.ResolvedVoice` (Name, EndpointID, Model, Voice, Speed, Instructions, Languages, IsAlias)
+  - [x] JSON serialization/deserialization tests for array fields
+- [x] Implement database Store interface and SQLite backend
+  - [x] Define `Store` interface in `internal/store/store.go`
+  - [x] Create embedded SQL migrations (endpoints + voice_aliases tables)
+  - [x] Implement `SQLiteStore` with `modernc.org/sqlite`
+  - [x] Implement all CRUD methods for endpoints
+  - [x] Implement all CRUD methods for voice aliases
+  - [x] Implement `Migrate()` (idempotent, runs on startup)
+  - [x] Write tests with in-memory SQLite (`:memory:`)
+  - [x] Test constraint violations (duplicate names, FK references)
 - [ ] Implement PostgreSQL Store backend
   - [ ] Implement `PostgresStore` with `github.com/jackc/pgx/v5`
   - [ ] Reuse same SQL migrations (compatible syntax)
