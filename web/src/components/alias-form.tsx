@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -55,37 +55,34 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
       .finally(() => setVoicesLoading(false))
   }, [endpointId])
 
-  const handleEndpointChange = useCallback((value: string) => {
+  const handleEndpointChange = (value: string) => {
     setEndpointId(value)
     setModel('')
     setVoice('')
-  }, [])
+  }
 
-  const handleModelChange = useCallback((value: string) => {
+  const handleModelChange = (value: string) => {
     setModel(value)
-  }, [])
+  }
 
-  const handleSubmit = useCallback(
-    (e: Event) => {
-      e.preventDefault()
-      const langList = languages
-        .split(',')
-        .map((l) => l.trim())
-        .filter(Boolean)
-      const data: CreateVoiceAlias | UpdateVoiceAlias = {
-        name,
-        endpoint_id: endpointId,
-        model,
-        voice,
-        speed: speed ? Number(speed) : undefined,
-        instructions: instructions || undefined,
-        languages: langList.length > 0 ? langList : undefined,
-        enabled,
-      }
-      onSubmit(data)
-    },
-    [name, endpointId, model, voice, speed, instructions, languages, enabled, onSubmit],
-  )
+  const handleSubmit = (e: Event) => {
+    e.preventDefault()
+    const langList = languages
+      .split(',')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const data: CreateVoiceAlias | UpdateVoiceAlias = {
+      name,
+      endpoint_id: endpointId,
+      model,
+      voice,
+      speed: speed ? Number(speed) : undefined,
+      instructions: instructions || undefined,
+      languages: langList.length > 0 ? langList : undefined,
+      enabled,
+    }
+    onSubmit(data)
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">

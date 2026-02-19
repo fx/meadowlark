@@ -1,6 +1,41 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Endpoint, VoiceAlias } from '@/lib/api'
+
+// Store onValueChange callbacks keyed by select trigger id
+const selectCallbacks: Record<string, (value: string) => void> = {}
+
+// Mock Select to capture onValueChange callbacks for testing
+vi.mock('@/components/ui/select', () => {
+  let currentOnValueChange: ((value: string) => void) | undefined
+
+  return {
+    Select: ({
+      children,
+      onValueChange,
+    }: {
+      children: preact.ComponentChildren
+      value?: string
+      onValueChange?: (value: string) => void
+      disabled?: boolean
+    }) => {
+      currentOnValueChange = onValueChange
+      return <div data-testid="mock-select">{children}</div>
+    },
+    SelectTrigger: ({ children, id }: { children: preact.ComponentChildren; id?: string }) => {
+      if (id && currentOnValueChange) {
+        selectCallbacks[id] = currentOnValueChange
+      }
+      return <div data-testid={`select-trigger-${id}`}>{children}</div>
+    },
+    SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
+    SelectContent: ({ children }: { children: preact.ComponentChildren }) => <div>{children}</div>,
+    SelectItem: ({ children, value }: { children: preact.ComponentChildren; value: string }) => (
+      <option value={value}>{children}</option>
+    ),
+  }
+})
+
 import { AliasForm } from './alias-form'
 
 const mockEndpoints: Endpoint[] = [
@@ -55,6 +90,9 @@ describe('AliasForm', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    for (const key of Object.keys(selectCallbacks)) {
+      delete selectCallbacks[key]
+    }
   })
 
   it('renders create form with defaults', () => {
@@ -279,11 +317,52 @@ describe('AliasForm', () => {
         isSaving={false}
       />,
     )
-    // The handleEndpointChange resets model and voice - test submission reflects the reset
-    // We cannot directly trigger Radix select in jsdom, so test via submit after manual state
     await waitFor(() => {
       expect(screen.getByLabelText('Alias Name')).toHaveValue('Test Alias')
     })
+    // Call the endpoint select's onValueChange directly via captured callback
+    act(() => {
+      selectCallbacks['alias-endpoint']('ep-2')
+    })
+
+    // Submit to verify model and voice were reset
+    const form = screen.getByLabelText('Alias Name').closest('form') as HTMLFormElement
+    fireEvent.submit(form)
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint_id: 'ep-2',
+        model: '',
+        voice: '',
+      }),
+    )
+  })
+
+  it('updates model when model select changes', async () => {
+    const onSubmit = vi.fn()
+    render(
+      <AliasForm
+        alias={mockAlias}
+        endpoints={mockEndpoints}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByLabelText('Alias Name')).toHaveValue('Test Alias')
+    })
+    // Call the model select's onValueChange directly via captured callback
+    act(() => {
+      selectCallbacks['alias-model']('tts-1-hd')
+    })
+
+    const form = screen.getByLabelText('Alias Name').closest('form') as HTMLFormElement
+    fireEvent.submit(form)
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'tts-1-hd',
+      }),
+    )
   })
 
   it('shows enabled switch with correct state', () => {

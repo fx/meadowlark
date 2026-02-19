@@ -35,8 +35,10 @@ function AliasesPage() {
 
   const createMutation = useMutation<CreateVoiceAlias, VoiceAlias>('/api/v1/aliases', 'POST')
 
+  const aliasList = aliases ?? []
+  const endpointList = endpoints ?? []
   const endpointMap = new Map<string, Endpoint>()
-  for (const ep of endpoints ?? []) {
+  for (const ep of endpointList) {
     endpointMap.set(ep.id, ep)
   }
 
@@ -86,7 +88,7 @@ function AliasesPage() {
       {expandedId === 'new' && (
         <div className="border-b bg-muted/50 px-4 pb-4 pt-3">
           <AliasForm
-            endpoints={endpoints ?? []}
+            endpoints={endpointList}
             onSubmit={handleCreate}
             onCancel={() => setExpandedId(null)}
             isSaving={createMutation.isMutating}
@@ -95,11 +97,11 @@ function AliasesPage() {
       )}
 
       <div className="border-t">
-        {aliases?.map((alias) => (
+        {aliasList.map((alias) => (
           <AliasRow
             key={alias.id}
             alias={alias}
-            endpoints={endpoints ?? []}
+            endpoints={endpointList}
             endpointName={endpointMap.get(alias.endpoint_id)?.name ?? 'Unknown'}
             expandedId={expandedId}
             onToggle={setExpandedId}
