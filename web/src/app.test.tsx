@@ -40,7 +40,7 @@ describe('App', () => {
   it('renders the endpoints page at /endpoints', () => {
     mockLocation = '/endpoints'
     render(<App />)
-    expect(screen.getByText('Endpoints')).toBeInTheDocument()
+    expect(screen.getByText('Loading endpoints...')).toBeInTheDocument()
   })
 
   it('renders the voices page at /voices', () => {

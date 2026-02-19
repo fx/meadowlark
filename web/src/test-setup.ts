@@ -1,6 +1,13 @@
 import '@testing-library/jest-dom'
 import { afterEach, beforeAll } from 'vitest'
 
+// Mock ResizeObserver for Radix UI components (Switch use-size)
+globalThis.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 // Radix UI's floating-ui and focus-scope rely on DOM APIs unavailable in jsdom
 // Suppress unhandled errors/rejections from these async cleanup operations
 beforeAll(() => {

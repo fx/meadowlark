@@ -361,13 +361,13 @@ coverage: {
 - [x] Implement shared CRUD components
   - [x] Create `ExpandableRow` component (collapsed summary, expand on click, one-at-a-time logic)
   - [x] Write tests: expand/collapse, only-one-expanded invariant, create mode ('new' id)
-- [ ] Implement Endpoints page
-  - [ ] List endpoints with collapsed rows (name, base URL, model count badge, enabled switch)
-  - [ ] Inline create/edit form (name, base URL, API key with show/hide, models, speed, instructions, enabled)
-  - [ ] Delete with AlertDialog confirmation
-  - [ ] Test connectivity button (calls POST /test, shows result)
-  - [ ] Discover voices button (calls GET /voices, shows result)
-  - [ ] Write page tests: render list, create flow, edit flow, delete flow, test connectivity, discover voices
+- [x] Implement Endpoints page
+  - [x] List endpoints with collapsed rows (name, base URL, model count badge, enabled switch)
+  - [x] Inline create/edit form (name, base URL, API key with show/hide, models, speed, instructions, enabled)
+  - [x] Delete with AlertDialog confirmation
+  - [x] Test connectivity button (calls POST /test, shows result)
+  - [x] Discover voices button (calls GET /voices, shows result)
+  - [x] Write page tests: render list, create flow, edit flow, delete flow, test connectivity, discover voices
 - [x] Implement Voices page
   - [x] Fetch and display resolved voices in a table (name, endpoint, model, type badge)
   - [x] Client-side search/filter by voice name
