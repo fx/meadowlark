@@ -1,0 +1,7 @@
+[tools]
+go = "latest"
+bun = "latest"
+biome = "latest"
+
+[env]
+CGO_ENABLED = "0"

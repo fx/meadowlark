@@ -1,0 +1,20 @@
+# Go binary
+/meadowlark
+
+# Frontend
+web/node_modules/
+web/dist/
+
+# Environment
+.env
+.env.*
+
+# Database
+*.db
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
