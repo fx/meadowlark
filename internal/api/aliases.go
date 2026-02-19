@@ -52,6 +52,10 @@ func (s *Server) GetAlias(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "not_found", "alias not found")
 		return
 	}
+	if alias == nil {
+		respondError(w, http.StatusNotFound, "not_found", "alias not found")
+		return
+	}
 	respondJSON(w, http.StatusOK, alias)
 }
 

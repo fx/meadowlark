@@ -244,8 +244,8 @@ Extend the startup sequence from spec 0002:
   - [x] `GET /api/v1/status` -- return version, uptime, ports, db driver, counts
   - [x] `GET /api/v1/voices` -- return resolved voice list (canonical + aliases) with endpoint/model metadata
   - [x] Write tests
-- [ ] Integration tests
-  - [ ] Full CRUD cycle (create -> list -> update -> get -> delete) via real HTTP against in-memory SQLite
-  - [ ] Voice list rebuild verification after mutations
-  - [ ] Concurrent request handling test
-  - [ ] SPA fallback test (request non-existent path -> get index.html)
+- [x] Integration tests
+  - [x] Full CRUD cycle (create -> list -> update -> get -> delete) via real HTTP against in-memory SQLite
+  - [x] Voice list rebuild verification after mutations
+  - [x] Concurrent request handling test
+  - [x] SPA fallback test (request non-existent path -> get index.html)
