@@ -229,17 +229,17 @@ Extend the startup sequence from spec 0002:
   - [ ] `POST /api/v1/endpoints/:id/test` -- make lightweight TTS request to verify connectivity, return `{ok, error?, latency_ms}`
   - [ ] `GET /api/v1/endpoints/:id/voices` -- call endpoint API to discover available voices, return `[]string`
   - [ ] Write tests with mock upstream HTTP server
-- [ ] Implement Voice Aliases CRUD handlers
-  - [ ] `GET /api/v1/aliases` -- list all aliases
-  - [ ] `POST /api/v1/aliases` -- create alias (validate: name required+unique, endpoint_id must exist, model+voice required, speed range)
-  - [ ] `GET /api/v1/aliases/:id` -- get single alias
-  - [ ] `PUT /api/v1/aliases/:id` -- update alias (same validations)
-  - [ ] `DELETE /api/v1/aliases/:id` -- delete alias
-  - [ ] Trigger voice list rebuild after each mutation
-  - [ ] Write handler tests with mock Store
-- [ ] Implement alias TTS test
-  - [ ] `POST /api/v1/aliases/:id/test` -- synthesize sample text using alias config, return `{ok, error?}`
-  - [ ] Write tests with mock TTS client
+- [x] Implement Voice Aliases CRUD handlers
+  - [x] `GET /api/v1/aliases` -- list all aliases
+  - [x] `POST /api/v1/aliases` -- create alias (validate: name required+unique, endpoint_id must exist, model+voice required, speed range)
+  - [x] `GET /api/v1/aliases/:id` -- get single alias
+  - [x] `PUT /api/v1/aliases/:id` -- update alias (same validations)
+  - [x] `DELETE /api/v1/aliases/:id` -- delete alias
+  - [x] Trigger voice list rebuild after each mutation
+  - [x] Write handler tests with mock Store
+- [x] Implement alias TTS test
+  - [x] `POST /api/v1/aliases/:id/test` -- synthesize sample text using alias config, return `{ok, error?}`
+  - [x] Write tests with mock TTS client
 - [x] Implement system handlers
   - [x] `GET /api/v1/status` -- return version, uptime, ports, db driver, counts
   - [x] `GET /api/v1/voices` -- return resolved voice list (canonical + aliases) with endpoint/model metadata

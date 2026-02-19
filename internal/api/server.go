@@ -120,12 +120,12 @@ func (s *Server) setupRoutes() *chi.Mux {
 		r.Get("/endpoints/{id}/voices", s.notImplemented)
 
 		// Aliases
-		r.Get("/aliases", s.notImplemented)
-		r.Post("/aliases", s.notImplemented)
-		r.Get("/aliases/{id}", s.notImplemented)
-		r.Put("/aliases/{id}", s.notImplemented)
-		r.Delete("/aliases/{id}", s.notImplemented)
-		r.Post("/aliases/{id}/test", s.notImplemented)
+		r.Get("/aliases", s.ListAliases)
+		r.Post("/aliases", s.CreateAlias)
+		r.Get("/aliases/{id}", s.GetAlias)
+		r.Put("/aliases/{id}", s.UpdateAlias)
+		r.Delete("/aliases/{id}", s.DeleteAlias)
+		r.Post("/aliases/{id}/test", s.TestAlias)
 
 		// System
 		r.Get("/status", s.GetStatus)
