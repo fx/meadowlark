@@ -199,3 +199,155 @@ func TestNewClient_CustomHTTPClient(t *testing.T) {
 	client := NewClient("http://localhost", "key", custom)
 	assert.Equal(t, custom, client.httpClient)
 }
+
+func TestListModels_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/models", r.URL.Path)
+		assert.Equal(t, "Bearer sk-test", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"id":"tts-1"},{"id":"tts-1-hd"}]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "sk-test", nil)
+	models, err := client.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 2)
+	assert.Equal(t, "tts-1", models[0].ID)
+	assert.Equal(t, "tts-1-hd", models[1].ID)
+}
+
+func TestListModels_404ReturnsEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	models, err := client.ListModels(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, models)
+}
+
+func TestListModels_NetworkErrorReturnsEmpty(t *testing.T) {
+	client := NewClient("http://127.0.0.1:0", "", nil)
+	models, err := client.ListModels(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, models)
+}
+
+func TestListModels_InvalidJSONReturnsEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	models, err := client.ListModels(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, models)
+}
+
+func TestListModels_EmptyDataReturnsEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"data":null}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	models, err := client.ListModels(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, models)
+}
+
+func TestListVoices_OpenAIStyle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/audio/voices", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"id":"alloy","name":"Alloy"},{"id":"nova","name":"Nova"}]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	require.Len(t, voices, 2)
+	assert.Equal(t, "alloy", voices[0].ID)
+	assert.Equal(t, "Alloy", voices[0].Name)
+	assert.Equal(t, "nova", voices[1].ID)
+}
+
+func TestListVoices_SpeachesStyle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"voices":[{"voice_id":"jenny","name":"Jenny"},{"voice_id":"adam","name":"Adam"}]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	require.Len(t, voices, 2)
+	assert.Equal(t, "jenny", voices[0].ID)
+	assert.Equal(t, "Jenny", voices[0].Name)
+	assert.Equal(t, "adam", voices[1].ID)
+}
+
+func TestListVoices_404ReturnsEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, voices)
+}
+
+func TestListVoices_NetworkErrorReturnsEmpty(t *testing.T) {
+	client := NewClient("http://127.0.0.1:0", "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, voices)
+}
+
+func TestListVoices_InvalidJSONReturnsEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, voices)
+}
+
+func TestListVoices_NoAuthHeaderWhenKeyEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get("Authorization"))
+		w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, voices)
+}
+
+func TestListVoices_AuthHeaderWhenKeySet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer sk-key", r.Header.Get("Authorization"))
+		w.Write([]byte(`{"data":[{"id":"alloy","name":"Alloy"}]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "sk-key", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	require.Len(t, voices, 1)
+}
