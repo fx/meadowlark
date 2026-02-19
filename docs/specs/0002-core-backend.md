@@ -266,10 +266,10 @@ The scaffold from spec 0001 is extended:
   - [x] Implement `Migrate()` (idempotent, runs on startup)
   - [x] Write tests with in-memory SQLite (`:memory:`)
   - [x] Test constraint violations (duplicate names, FK references)
-- [ ] Implement PostgreSQL Store backend
-  - [ ] Implement `PostgresStore` with `github.com/jackc/pgx/v5`
-  - [ ] Reuse same SQL migrations (compatible syntax)
-  - [ ] Write tests using testcontainers-go for PostgreSQL
+- [x] Implement PostgreSQL Store backend
+  - [x] Implement `PostgresStore` with `github.com/jackc/pgx/v5`
+  - [x] Reuse same SQL migrations (compatible syntax)
+  - [x] Write tests using testcontainers-go for PostgreSQL
 - [x] Implement TTS HTTP client
   - [x] `POST {base_url}/audio/speech` with streaming response
   - [x] Set `Authorization: Bearer {api_key}` header
@@ -321,9 +321,9 @@ The scaffold from spec 0001 is extended:
   - [x] Include enabled voice aliases
   - [x] Build complete `info` event with TtsProgram, voices, languages
   - [x] Rebuild on demand (called after config changes)
-- [ ] Wire everything into main.go
-  - [ ] Init Store (SQLite or Postgres based on `--db-driver`)
-  - [ ] Run migrations
-  - [ ] Start Wyoming TCP server
-  - [ ] Register Zeroconf
-  - [ ] Graceful shutdown sequence
+- [x] Wire everything into main.go
+  - [x] Init Store (SQLite or Postgres based on `--db-driver`)
+  - [x] Run migrations
+  - [x] Start Wyoming TCP server
+  - [x] Register Zeroconf
+  - [x] Graceful shutdown sequence
