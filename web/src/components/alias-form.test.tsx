@@ -80,7 +80,7 @@ describe('AliasForm', () => {
 
   beforeEach(() => {
     fetchMock = vi.fn()
-    globalThis.fetch = fetchMock
+    vi.stubGlobal('fetch', fetchMock)
     // Default: voice discovery returns empty
     fetchMock.mockResolvedValue({
       ok: true,
@@ -166,6 +166,14 @@ describe('AliasForm', () => {
         isSaving={false}
       />,
     )
+    // Select endpoint and model via captured callbacks
+    act(() => {
+      selectCallbacks['alias-endpoint']('ep-1')
+    })
+    act(() => {
+      selectCallbacks['alias-model']('tts-1')
+    })
+
     fireEvent.input(screen.getByLabelText('Alias Name'), { target: { value: 'My Alias' } })
     fireEvent.input(screen.getByLabelText('Voice'), { target: { value: 'nova' } })
     fireEvent.input(screen.getByLabelText('Speed'), { target: { value: '1.2' } })
@@ -178,8 +186,8 @@ describe('AliasForm', () => {
     fireEvent.submit(form)
     expect(onSubmit).toHaveBeenCalledWith({
       name: 'My Alias',
-      endpoint_id: '',
-      model: '',
+      endpoint_id: 'ep-1',
+      model: 'tts-1',
       voice: 'nova',
       speed: 1.2,
       instructions: 'Be nice',
@@ -198,6 +206,14 @@ describe('AliasForm', () => {
         isSaving={false}
       />,
     )
+    // Select endpoint and model via captured callbacks
+    act(() => {
+      selectCallbacks['alias-endpoint']('ep-1')
+    })
+    act(() => {
+      selectCallbacks['alias-model']('tts-1')
+    })
+
     fireEvent.input(screen.getByLabelText('Alias Name'), { target: { value: 'Min' } })
     fireEvent.input(screen.getByLabelText('Voice'), { target: { value: 'echo' } })
     // Clear languages
@@ -209,8 +225,8 @@ describe('AliasForm', () => {
     fireEvent.submit(form)
     expect(onSubmit).toHaveBeenCalledWith({
       name: 'Min',
-      endpoint_id: '',
-      model: '',
+      endpoint_id: 'ep-1',
+      model: 'tts-1',
       voice: 'echo',
       speed: undefined,
       instructions: undefined,

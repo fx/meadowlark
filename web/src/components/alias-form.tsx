@@ -44,6 +44,7 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
     }
     const controller = new AbortController()
     setVoicesLoading(true)
+    // Fetch available voice names for the selected endpoint
     fetch(`/api/v1/endpoints/${endpointId}/voices`, { signal: controller.signal })
       .then(async (res) => {
         if (res.ok) {
@@ -205,7 +206,7 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
       </div>
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={isSaving}>
+        <Button type="submit" disabled={isSaving || !endpointId || !model || !voice}>
           {isSaving ? 'Saving...' : alias ? 'Update' : 'Create'}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>

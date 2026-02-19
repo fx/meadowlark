@@ -74,57 +74,60 @@ function mockFetch(url: string) {
 describe('AliasesPage', () => {
   beforeEach(() => {
     clearCache()
-    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
 
-      if (init?.method === 'DELETE') {
-        return Promise.resolve({
-          ok: true,
-          status: 204,
-          json: () => Promise.resolve(undefined),
-        })
-      }
+        if (init?.method === 'DELETE') {
+          return Promise.resolve({
+            ok: true,
+            status: 204,
+            json: () => Promise.resolve(undefined),
+          })
+        }
 
-      if (init?.method === 'PUT') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () =>
-            Promise.resolve({
-              ...mockAliases[0],
-              ...(init.body ? JSON.parse(init.body as string) : {}),
-            }),
-        })
-      }
-
-      if (init?.method === 'POST') {
-        if (urlStr.includes('/test')) {
+        if (init?.method === 'PUT') {
           return Promise.resolve({
             ok: true,
             status: 200,
-            json: () => Promise.resolve({ ok: true, latency_ms: 150 }),
+            json: () =>
+              Promise.resolve({
+                ...mockAliases[0],
+                ...(init.body ? JSON.parse(init.body as string) : {}),
+              }),
           })
         }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () =>
-            Promise.resolve({
-              id: 'alias-new',
-              name: 'Created',
-              endpoint_id: 'ep-1',
-              model: 'tts-1',
-              voice: 'alloy',
-              languages: ['en'],
-              enabled: true,
-              created_at: '2024-01-01T00:00:00Z',
-              updated_at: '2024-01-01T00:00:00Z',
-            }),
-        })
-      }
 
-      return mockFetch(urlStr)
-    }) as typeof fetch
+        if (init?.method === 'POST') {
+          if (urlStr.includes('/test')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: () => Promise.resolve({ ok: true, latency_ms: 150 }),
+            })
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                id: 'alias-new',
+                name: 'Created',
+                endpoint_id: 'ep-1',
+                model: 'tts-1',
+                voice: 'alloy',
+                languages: ['en'],
+                enabled: true,
+                created_at: '2024-01-01T00:00:00Z',
+                updated_at: '2024-01-01T00:00:00Z',
+              }),
+          })
+        }
+
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
   })
 
   afterEach(() => {
@@ -133,23 +136,26 @@ describe('AliasesPage', () => {
   })
 
   it('shows loading state', () => {
-    globalThis.fetch = vi.fn(() => new Promise(() => {})) as typeof fetch
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})) as typeof fetch)
     render(<AliasesPage />)
     expect(screen.getByText('Loading aliases...')).toBeInTheDocument()
   })
 
   it('shows error state', async () => {
-    globalThis.fetch = vi.fn((url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (urlStr === '/api/v1/aliases') {
-        return Promise.resolve({
-          ok: false,
-          status: 500,
-          json: () => Promise.resolve({ error: { message: 'Server error' } }),
-        })
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (urlStr === '/api/v1/aliases') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: () => Promise.resolve({ error: { message: 'Server error' } }),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
     render(<AliasesPage />)
     await waitFor(() => {
       expect(screen.getByText('Error: Server error')).toBeInTheDocument()
@@ -244,17 +250,20 @@ describe('AliasesPage', () => {
   })
 
   it('handles create failure gracefully', async () => {
-    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (init?.method === 'POST' && !urlStr.includes('/test')) {
-        return Promise.resolve({
-          ok: false,
-          status: 400,
-          json: () => Promise.resolve({ error: { message: 'Validation error' } }),
-        })
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && !urlStr.includes('/test')) {
+          return Promise.resolve({
+            ok: false,
+            status: 400,
+            json: () => Promise.resolve({ error: { message: 'Validation error' } }),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
 
     render(<AliasesPage />)
     await waitFor(() => {
@@ -351,17 +360,20 @@ describe('AliasesPage', () => {
   })
 
   it('shows test failure result', async () => {
-    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (init?.method === 'POST' && urlStr.includes('/test')) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ ok: false, error: 'Voice not found' }),
-        })
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && urlStr.includes('/test')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ ok: false, error: 'Voice not found' }),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
 
     render(<AliasesPage />)
     await waitFor(() => {
@@ -381,13 +393,16 @@ describe('AliasesPage', () => {
   })
 
   it('shows network error when test fails', async () => {
-    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (init?.method === 'POST' && urlStr.includes('/test')) {
-        return Promise.reject(new Error('Network error'))
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && urlStr.includes('/test')) {
+          return Promise.reject(new Error('Network error'))
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
 
     render(<AliasesPage />)
     await waitFor(() => {
@@ -407,18 +422,21 @@ describe('AliasesPage', () => {
   })
 
   it('shows error when test returns non-OK HTTP response', async () => {
-    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (init?.method === 'POST' && urlStr.includes('/test')) {
-        return Promise.resolve({
-          ok: false,
-          status: 500,
-          statusText: 'Internal Server Error',
-          json: () => Promise.resolve({ error: { message: 'TTS service unavailable' } }),
-        })
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && urlStr.includes('/test')) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            json: () => Promise.resolve({ error: { message: 'TTS service unavailable' } }),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
 
     render(<AliasesPage />)
     await waitFor(() => {
@@ -438,18 +456,21 @@ describe('AliasesPage', () => {
   })
 
   it('shows statusText when test returns non-OK without error body', async () => {
-    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (init?.method === 'POST' && urlStr.includes('/test')) {
-        return Promise.resolve({
-          ok: false,
-          status: 500,
-          statusText: 'Internal Server Error',
-          json: () => Promise.reject(new Error('invalid json')),
-        })
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && urlStr.includes('/test')) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            json: () => Promise.reject(new Error('invalid json')),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
 
     render(<AliasesPage />)
     await waitFor(() => {
@@ -469,18 +490,21 @@ describe('AliasesPage', () => {
   })
 
   it('shows fallback message when test returns non-OK with no statusText or error body', async () => {
-    globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (init?.method === 'POST' && urlStr.includes('/test')) {
-        return Promise.resolve({
-          ok: false,
-          status: 500,
-          statusText: '',
-          json: () => Promise.resolve({}),
-        })
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'POST' && urlStr.includes('/test')) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: '',
+            json: () => Promise.resolve({}),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
 
     render(<AliasesPage />)
     await waitFor(() => {
@@ -523,17 +547,20 @@ describe('AliasesPage', () => {
         endpoint_id: 'nonexistent',
       },
     ]
-    globalThis.fetch = vi.fn((url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString()
-      if (urlStr === '/api/v1/aliases') {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve(aliasWithBadEndpoint),
-        })
-      }
-      return mockFetch(urlStr)
-    }) as typeof fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (urlStr === '/api/v1/aliases') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(aliasWithBadEndpoint),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
 
     render(<AliasesPage />)
     await waitFor(() => {
