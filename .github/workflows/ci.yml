@@ -17,6 +17,10 @@ jobs:
 
       - uses: jdx/mise-action@v2
 
+      - name: Build frontend (required for go:embed)
+        working-directory: web
+        run: bun install --frozen-lockfile && bun run build
+
       - name: Go mod download
         run: go mod download
 
