@@ -1,5 +1,5 @@
-import { GearSix, PlugsConnected, SpeakerHigh, TagSimple } from '@phosphor-icons/react'
 import { useLocation } from 'wouter'
+import { NAV_ITEMS } from '@/components/app-header'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -8,13 +8,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-
-const MOBILE_NAV_ITEMS = [
-  { path: '/endpoints', label: 'Endpoints', icon: PlugsConnected },
-  { path: '/voices', label: 'Voices', icon: SpeakerHigh },
-  { path: '/aliases', label: 'Aliases', icon: TagSimple },
-  { path: '/settings', label: 'Settings', icon: GearSix },
-] as const
 
 function AppMobileMenu({
   open,
@@ -35,7 +28,7 @@ function AppMobileMenu({
           <SheetDescription className="sr-only">Navigation menu</SheetDescription>
         </SheetHeader>
         <nav className="mt-4 flex flex-col gap-1" aria-label="Mobile navigation">
-          {MOBILE_NAV_ITEMS.map(({ path, label, icon: Icon }) => (
+          {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
             <Button
               key={path}
               variant={currentPath === path ? 'secondary' : 'ghost'}

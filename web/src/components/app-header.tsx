@@ -27,24 +27,22 @@ function NavButton({
 }) {
   const [, setLocation] = useLocation()
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant={active ? 'secondary' : 'ghost'}
-            size="icon"
-            aria-label={label}
-            aria-current={active ? 'page' : undefined}
-            onClick={() => setLocation(href)}
-          >
-            {children}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{label}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={active ? 'secondary' : 'ghost'}
+          size="icon"
+          aria-label={label}
+          aria-current={active ? 'page' : undefined}
+          onClick={() => setLocation(href)}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>{label}</p>
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -58,13 +56,15 @@ function AppHeader({ version }: { version?: string }) {
         <span className="text-sm font-bold">Meadowlark</span>
       </div>
 
-      <nav className="hidden items-center gap-1 md:flex" aria-label="Main navigation">
-        {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
-          <NavButton key={path} href={path} active={location === path} label={label}>
-            <Icon className="h-4 w-4" />
-          </NavButton>
-        ))}
-      </nav>
+      <TooltipProvider>
+        <nav className="hidden items-center gap-1 md:flex" aria-label="Main navigation">
+          {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
+            <NavButton key={path} href={path} active={location === path} label={label}>
+              <Icon className="h-4 w-4" />
+            </NavButton>
+          ))}
+        </nav>
+      </TooltipProvider>
 
       <div className="flex items-center gap-2">
         {version && (
