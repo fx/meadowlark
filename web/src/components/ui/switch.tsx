@@ -2,20 +2,23 @@ import * as SwitchPrimitives from '@radix-ui/react-switch'
 import type { ComponentProps } from 'preact'
 import { cn } from '@/lib/utils'
 
-type SwitchProps = ComponentProps<typeof SwitchPrimitives.Root>
+type SwitchProps = ComponentProps<typeof SwitchPrimitives.Root> & {
+  size?: 'sm' | 'default'
+}
 
-function Switch({ className, ...props }: SwitchProps) {
+function Switch({ className, size = 'default', ...props }: SwitchProps) {
   return (
     <SwitchPrimitives.Root
+      data-size={size}
       className={cn(
-        'peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center border-2 border-transparent shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input',
+        'peer data-[state=checked]:bg-primary data-[state=unchecked]:bg-input focus-visible:border-ring focus-visible:ring-ring/50 dark:data-[state=unchecked]:bg-input/80 group/switch inline-flex shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-[1.15rem] data-[size=default]:w-8 data-[size=sm]:h-3.5 data-[size=sm]:w-6',
         className,
       )}
       {...props}
     >
       <SwitchPrimitives.Thumb
         className={cn(
-          'pointer-events-none block h-4 w-4 bg-background shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0',
+          'bg-background dark:data-[state=unchecked]:bg-foreground dark:data-[state=checked]:bg-primary-foreground pointer-events-none block rounded-full ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 data-[state=checked]:translate-x-[calc(100%-2px)] data-[state=unchecked]:translate-x-0',
         )}
       />
     </SwitchPrimitives.Root>

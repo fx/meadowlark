@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 function Table({ className, ...props }: ComponentProps<'table'>) {
   return (
-    <div className="relative w-full overflow-auto">
+    <div className="relative w-full overflow-x-auto">
       <table className={cn('w-full caption-bottom text-sm', className)} {...props} />
     </div>
   )
@@ -20,7 +20,7 @@ function TableBody({ className, ...props }: ComponentProps<'tbody'>) {
 function TableFooter({ className, ...props }: ComponentProps<'tfoot'>) {
   return (
     <tfoot
-      className={cn('border-t bg-muted/50 font-medium [&>tr]:last:border-b-0', className)}
+      className={cn('bg-muted/50 border-t font-medium [&>tr]:last:border-b-0', className)}
       {...props}
     />
   )
@@ -30,7 +30,7 @@ function TableRow({ className, ...props }: ComponentProps<'tr'>) {
   return (
     <tr
       className={cn(
-        'border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted',
+        'hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors',
         className,
       )}
       {...props}
@@ -42,7 +42,7 @@ function TableHead({ className, ...props }: ComponentProps<'th'>) {
   return (
     <th
       className={cn(
-        'h-10 px-2 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+        'text-foreground h-10 px-2 text-left align-middle font-medium whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
         className,
       )}
       {...props}
@@ -54,7 +54,7 @@ function TableCell({ className, ...props }: ComponentProps<'td'>) {
   return (
     <td
       className={cn(
-        'p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+        'p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
         className,
       )}
       {...props}
@@ -63,7 +63,7 @@ function TableCell({ className, ...props }: ComponentProps<'td'>) {
 }
 
 function TableCaption({ className, ...props }: ComponentProps<'caption'>) {
-  return <caption className={cn('mt-4 text-sm text-muted-foreground', className)} {...props} />
+  return <caption className={cn('text-muted-foreground mt-4 text-sm', className)} {...props} />
 }
 
 export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption }
