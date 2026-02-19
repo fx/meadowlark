@@ -19,6 +19,7 @@ make test-go            # Go tests only (go test -race ./...)
 make test-frontend      # Frontend tests only (cd web && bun run test)
 make lint               # Go vet + Biome check
 make clean              # Remove binary + web/dist + web/node_modules
+make dev                # Live reload dev server (Air with polling)
 ```
 
 Frontend commands (from `web/` directory):
@@ -32,6 +33,22 @@ bunx biome check . --fix  # Auto-fix lint/format issues
 ```
 
 Go binary: `./meadowlark --help` for all flags. Every flag has a `MEADOWLARK_*` env var fallback (e.g., `--http-port` → `MEADOWLARK_HTTP_PORT`).
+
+## Development Workflow
+
+For live reload during development, use `make dev`. This uses [Air](https://github.com/air-verse/air) with polling-based file watching.
+
+```bash
+mise install            # Ensure Air + other tools are installed
+make dev                # Start live reload dev server
+```
+
+Air watches both Go and frontend source files:
+- **Go file changes** (`cmd/`, `internal/`): Rebuilds Go binary → restarts server
+- **Frontend changes** (`web/src/`): Rebuilds frontend → rebuilds Go binary → restarts server
+- Uses polling (not inotify) for cross-platform reliability
+- Server runs at `http://localhost:8080` with Wyoming on port 10399
+- Config lives in `.air.toml`
 
 ## Architecture
 

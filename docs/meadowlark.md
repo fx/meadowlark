@@ -769,6 +769,7 @@ All project dependencies (runtimes, tools) are managed via [mise](https://mise.j
 go = "latest"
 bun = "latest"
 biome = "latest"
+air = "latest"
 
 [env]
 CGO_ENABLED = "0"

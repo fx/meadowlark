@@ -2,6 +2,7 @@
 go = "latest"
 bun = "latest"
 biome = "latest"
+air = "latest"
 
 [env]
 # CGO_ENABLED is set explicitly in Makefile/Dockerfile for static builds

@@ -1,6 +1,9 @@
 # Go binary
 /meadowlark
 
+# Air temp directory
+/tmp/
+
 # Frontend
 web/node_modules/
 web/dist/

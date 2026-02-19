@@ -1,0 +1,39 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Full build: frontend + Go binary
+  cmd = "make build"
+  # Binary path (where make build outputs)
+  bin = "./meadowlark"
+  # Full command to run after build
+  full_bin = "./meadowlark --http-port 8080 --wyoming-port 10399"
+  # Watch these extensions
+  include_ext = ["go", "html", "css", "ts", "tsx", "js", "jsx", "json", "toml", "tmpl"]
+  # Directories to watch (empty = watch root)
+  include_dir = ["cmd", "internal", "web"]
+  # Directories to exclude
+  exclude_dir = ["web/node_modules", "web/dist", "web/coverage", "web/test-results", "tmp", ".git", "vendor"]
+  # Exclude generated/lock files
+  exclude_regex = ["_test\\.go$", ".*_templ\\.go$"]
+  # Use polling instead of inotify
+  poll = true
+  poll_interval = 500
+  # Delay after change detected before rebuilding (ms)
+  delay = 500
+  # Stop running old binary before building
+  stop_on_error = true
+  # Send interrupt signal (not kill) for graceful shutdown
+  send_interrupt = true
+  # Kill delay after interrupt (500ms = 500000000 nanoseconds)
+  kill_delay = 500000000
+
+[log]
+  # Show timestamps in logs
+  time = true
+  # Only show main output, not verbose file watching
+  main_only = true
+
+[misc]
+  # Clean tmp dir on exit
+  clean_on_exit = true

@@ -21,8 +21,7 @@ lint:
 	if [ -d web ]; then cd web && bunx biome check .; fi
 
 dev:
-	# Run both frontend dev server and Go binary in parallel
-	# (implementation detail: use a process manager or two terminals)
+	air
 
 clean:
 	rm -f meadowlark
