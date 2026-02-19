@@ -28,9 +28,7 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        env:
-          CGO_ENABLED: "1"
-        run: go test -race -coverprofile=coverage.out ./...
+        run: export CGO_ENABLED=1 && go test -race -coverprofile=coverage.out ./...
 
   frontend:
     name: Frontend Tests & Lint
