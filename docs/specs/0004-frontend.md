@@ -372,13 +372,13 @@ coverage: {
   - [x] Fetch and display resolved voices in a table (name, endpoint, model, type badge)
   - [x] Client-side search/filter by voice name
   - [x] Write tests: render table, search filters correctly, empty state
-- [ ] Implement Aliases page
-  - [ ] List aliases with collapsed rows (name, target voice, endpoint badge, enabled switch)
-  - [ ] Inline create/edit form with cascading selects (endpoint -> model -> voice)
-  - [ ] Speed input (number, optional), instructions textarea (optional), languages input
-  - [ ] Delete with AlertDialog confirmation
-  - [ ] Test TTS button (calls POST /test, shows result)
-  - [ ] Write page tests: render list, cascading selects, create flow, edit flow, delete flow, test TTS
+- [x] Implement Aliases page
+  - [x] List aliases with collapsed rows (name, target voice, endpoint badge, enabled switch)
+  - [x] Inline create/edit form with cascading selects (endpoint -> model -> voice)
+  - [x] Speed input (number, optional), instructions textarea (optional), languages input
+  - [x] Delete with AlertDialog confirmation
+  - [x] Test TTS button (calls POST /test, shows result)
+  - [x] Write page tests: render list, cascading selects, create flow, edit flow, delete flow, test TTS
 - [x] Implement Settings page
   - [x] Fetch and display server status in cards (version, uptime, ports, DB driver, voice/endpoint/alias counts)
   - [x] Write tests: renders all status fields, handles loading/error

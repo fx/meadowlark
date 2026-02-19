@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom'
 import { afterEach, beforeAll } from 'vitest'
 
-// Mock ResizeObserver for Radix UI components (Switch use-size)
+// Mock ResizeObserver for Radix UI components (Select, Switch use-size)
 globalThis.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
