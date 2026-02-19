@@ -170,18 +170,18 @@ clean:
   - [x] Create `mise.toml` (go, bun, biome)
   - [x] Create `Makefile` with targets: build, build-frontend, build-backend, test, test-go, test-frontend, lint, dev, clean
   - [x] Create `.gitignore` (Go binaries, web/node_modules, web/dist, .env, *.db)
-- [ ] Scaffold Preact frontend
-  - [ ] Initialize `web/` with Bun (`bun init`)
-  - [ ] Install Preact, Vite, Tailwind CSS v4, Vitest, testing-library, shadcn/ui deps
-  - [ ] Create `vite.config.ts` with Tailwind plugin and Preact preset
-  - [ ] Create `tsconfig.json` with strict mode and `@` path alias
-  - [ ] Create `biome.json` with exact config from meadowlark.md section 10.3
-  - [ ] Create `vitest.config.ts` (jsdom, globals, 100% coverage thresholds)
-  - [ ] Create `web/src/styles/globals.css` with full design tokens from meadowlark.md section 10.2
-  - [ ] Create `web/src/main.tsx` placeholder (renders "Meadowlark")
-  - [ ] Create `web/index.html`
-  - [ ] Create placeholder test that passes
-  - [ ] Verify `bun run build` produces `web/dist/`
+- [x] Scaffold Preact frontend
+  - [x] Initialize `web/` with Bun (`bun init`)
+  - [x] Install Preact, Vite, Tailwind CSS v4, Vitest, testing-library, shadcn/ui deps
+  - [x] Create `vite.config.ts` with Tailwind plugin and Preact preset
+  - [x] Create `tsconfig.json` with strict mode and `@` path alias
+  - [x] Create `biome.json` with exact config from meadowlark.md section 10.3
+  - [x] Create `vitest.config.ts` (jsdom, globals, 100% coverage thresholds)
+  - [x] Create `web/src/styles/globals.css` with full design tokens from meadowlark.md section 10.2
+  - [x] Create `web/src/main.tsx` placeholder (renders "Meadowlark")
+  - [x] Create `web/index.html`
+  - [x] Create placeholder test that passes
+  - [x] Verify `bun run build` produces `web/dist/`
 - [ ] Wire Go embed and static binary build
   - [ ] Add `//go:embed web/dist/*` in appropriate package
   - [ ] Verify `CGO_ENABLED=0 go build` produces static amd64 binary
