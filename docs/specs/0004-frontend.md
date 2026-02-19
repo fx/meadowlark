@@ -334,19 +334,19 @@ coverage: {
 
 ## Tasks
 
-- [ ] Set up shadcn/ui component library for Preact
-  - [ ] Configure `preact/compat` aliases in Vite for React compatibility
-  - [ ] Install Radix UI, class-variance-authority, clsx, tailwind-merge
-  - [ ] Create `lib/utils.ts` with `cn()` utility
-  - [ ] Port shadcn/ui primitives: button (with xs/icon variants), input, label, select, switch, textarea
-  - [ ] Port shadcn/ui primitives: card, dialog, alert-dialog, dropdown-menu
-  - [ ] Port shadcn/ui primitives: menubar, sheet, badge, tooltip, table, popover
-  - [ ] Write render + className tests for every component
-- [ ] Implement theme system
-  - [ ] Create `ThemeProvider` context (light/dark/system, localStorage persistence)
-  - [ ] Create `ThemeToggle` dropdown (Sun/Moon/Monitor icons)
-  - [ ] Apply `dark` class to document root based on preference + system media query
-  - [ ] Write tests: toggle switches theme, persistence works, system preference respected
+- [x] Set up shadcn/ui component library for Preact
+  - [x] Configure `preact/compat` aliases in Vite for React compatibility
+  - [x] Install Radix UI, class-variance-authority, clsx, tailwind-merge
+  - [x] Create `lib/utils.ts` with `cn()` utility
+  - [x] Port shadcn/ui primitives: button (with xs/icon variants), input, label, select, switch, textarea
+  - [x] Port shadcn/ui primitives: card, dialog, alert-dialog, dropdown-menu
+  - [x] Port shadcn/ui primitives: menubar, sheet, badge, tooltip, table, popover
+  - [x] Write render + className tests for every component
+- [x] Implement theme system
+  - [x] Create `ThemeProvider` context (light/dark/system, localStorage persistence)
+  - [x] Create `ThemeToggle` dropdown (Sun/Moon/Monitor icons)
+  - [x] Apply `dark` class to document root based on preference + system media query
+  - [x] Write tests: toggle switches theme, persistence works, system preference respected
 - [ ] Implement app layout and navigation
   - [ ] Create `AppHeader` with Menubar (brand, icon nav buttons with Phosphor icons, version, theme toggle)
   - [ ] Create `AppMobileMenu` with Sheet for responsive nav
