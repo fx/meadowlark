@@ -17,6 +17,9 @@ web/dist/
 # OS
 .DS_Store
 
+# Test artifacts
+web/test-results/
+
 # IDE
 .idea/
 .vscode/
