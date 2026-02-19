@@ -4,6 +4,21 @@ import { afterEach, beforeAll } from 'vitest'
 // Radix UI's floating-ui and focus-scope rely on DOM APIs unavailable in jsdom
 // Suppress unhandled errors/rejections from these async cleanup operations
 beforeAll(() => {
+  // Mock matchMedia for ThemeProvider and other components
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  })
+
   // Mock scrollIntoView
   Element.prototype.scrollIntoView = () => {}
 

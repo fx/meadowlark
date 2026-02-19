@@ -347,20 +347,20 @@ coverage: {
   - [x] Create `ThemeToggle` dropdown (Sun/Moon/Monitor icons)
   - [x] Apply `dark` class to document root based on preference + system media query
   - [x] Write tests: toggle switches theme, persistence works, system preference respected
-- [ ] Implement app layout and navigation
-  - [ ] Create `AppHeader` with Menubar (brand, icon nav buttons with Phosphor icons, version, theme toggle)
-  - [ ] Create `AppMobileMenu` with Sheet for responsive nav
-  - [ ] Set up wouter routing (4 routes + redirect `/` -> `/endpoints`)
-  - [ ] Create `App` root component wrapping router + providers
-  - [ ] Write tests: nav renders, links navigate, mobile menu opens/closes, active route highlighted
+- [x] Implement app layout and navigation
+  - [x] Create `AppHeader` with Menubar (brand, icon nav buttons with Phosphor icons, version, theme toggle)
+  - [x] Create `AppMobileMenu` with Sheet for responsive nav
+  - [x] Set up wouter routing (4 routes + redirect `/` -> `/endpoints`)
+  - [x] Create `App` root component wrapping router + providers
+  - [x] Write tests: nav renders, links navigate, mobile menu opens/closes, active route highlighted
 - [x] Implement data fetching hooks
   - [x] Create `useFetch<T>(url)` hook with caching, deduplication, loading/error states, mutate()
   - [x] Create `useMutation(url, method)` hook with cache invalidation
   - [x] Create typed API client (`lib/api.ts`) for all endpoints
   - [x] Write tests: loading states, cache hits, error handling, refetch on mutate
-- [ ] Implement shared CRUD components
-  - [ ] Create `ExpandableRow` component (collapsed summary, expand on click, one-at-a-time logic)
-  - [ ] Write tests: expand/collapse, only-one-expanded invariant, create mode ('new' id)
+- [x] Implement shared CRUD components
+  - [x] Create `ExpandableRow` component (collapsed summary, expand on click, one-at-a-time logic)
+  - [x] Write tests: expand/collapse, only-one-expanded invariant, create mode ('new' id)
 - [ ] Implement Endpoints page
   - [ ] List endpoints with collapsed rows (name, base URL, model count badge, enabled switch)
   - [ ] Inline create/edit form (name, base URL, API key with show/hide, models, speed, instructions, enabled)
