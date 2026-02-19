@@ -9,19 +9,17 @@ import { VoicesPage } from '@/pages/voices'
 function App() {
   return (
     <ThemeProvider>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="min-h-screen flex flex-col">
         <AppHeader />
-        <main className="container mx-auto px-4 py-6">
-          <Switch>
-            <Route path="/endpoints" component={EndpointsPage} />
-            <Route path="/voices" component={VoicesPage} />
-            <Route path="/aliases" component={AliasesPage} />
-            <Route path="/settings" component={SettingsPage} />
-            <Route path="/">
-              <Redirect to="/endpoints" />
-            </Route>
-          </Switch>
-        </main>
+        <Switch>
+          <Route path="/endpoints" component={EndpointsPage} />
+          <Route path="/voices" component={VoicesPage} />
+          <Route path="/aliases" component={AliasesPage} />
+          <Route path="/settings" component={SettingsPage} />
+          <Route path="/">
+            <Redirect to="/endpoints" />
+          </Route>
+        </Switch>
       </div>
     </ThemeProvider>
   )
