@@ -14,6 +14,7 @@ import (
 
 func newTestServer(webFS *fstest.MapFS) *Server {
 	return &Server{
+		store:     &mockStore{},
 		version:   "test",
 		httpPort:  8080,
 		webFS:     webFS,
@@ -49,8 +50,6 @@ func TestAPIRoutes_NotImplemented(t *testing.T) {
 		{http.MethodPut, "/api/v1/aliases/456"},
 		{http.MethodDelete, "/api/v1/aliases/456"},
 		{http.MethodPost, "/api/v1/aliases/456/test"},
-		{http.MethodGet, "/api/v1/status"},
-		{http.MethodGet, "/api/v1/voices"},
 	}
 
 	for _, rt := range routes {

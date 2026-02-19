@@ -240,10 +240,10 @@ Extend the startup sequence from spec 0002:
 - [ ] Implement alias TTS test
   - [ ] `POST /api/v1/aliases/:id/test` -- synthesize sample text using alias config, return `{ok, error?}`
   - [ ] Write tests with mock TTS client
-- [ ] Implement system handlers
-  - [ ] `GET /api/v1/status` -- return version, uptime, ports, db driver, counts
-  - [ ] `GET /api/v1/voices` -- return resolved voice list (canonical + aliases) with endpoint/model metadata
-  - [ ] Write tests
+- [x] Implement system handlers
+  - [x] `GET /api/v1/status` -- return version, uptime, ports, db driver, counts
+  - [x] `GET /api/v1/voices` -- return resolved voice list (canonical + aliases) with endpoint/model metadata
+  - [x] Write tests
 - [ ] Integration tests
   - [ ] Full CRUD cycle (create -> list -> update -> get -> delete) via real HTTP against in-memory SQLite
   - [ ] Voice list rebuild verification after mutations

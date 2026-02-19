@@ -128,8 +128,8 @@ func (s *Server) setupRoutes() *chi.Mux {
 		r.Post("/aliases/{id}/test", s.notImplemented)
 
 		// System
-		r.Get("/status", s.notImplemented)
-		r.Get("/voices", s.notImplemented)
+		r.Get("/status", s.GetStatus)
+		r.Get("/voices", s.ListVoices)
 	})
 
 	// Static file serving with SPA fallback
