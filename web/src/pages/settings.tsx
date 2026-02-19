@@ -30,8 +30,8 @@ function SettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      <div className="p-4">
+        <h1 className="text-2xl font-bold mb-4">Settings</h1>
         <p>Loading status...</p>
       </div>
     )
@@ -39,8 +39,8 @@ function SettingsPage() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      <div className="p-4">
+        <h1 className="text-2xl font-bold mb-4">Settings</h1>
         <p className="text-destructive">Failed to load status: {error.message}</p>
       </div>
     )
@@ -51,8 +51,8 @@ function SettingsPage() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Settings</h1>
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>

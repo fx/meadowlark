@@ -1,6 +1,14 @@
 import { render, screen } from '@testing-library/preact'
 import { describe, expect, it } from 'vitest'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from './card'
 
 describe('Card', () => {
   it('renders card with content', () => {
@@ -53,6 +61,19 @@ describe('CardDescription', () => {
   it('applies custom className', () => {
     render(<CardDescription className="custom">Desc</CardDescription>)
     expect(screen.getByText('Desc')).toHaveClass('custom')
+  })
+})
+
+describe('CardAction', () => {
+  it('renders with data-slot and className', () => {
+    render(
+      <CardAction className="custom" data-testid="action">
+        Action
+      </CardAction>,
+    )
+    const el = screen.getByTestId('action')
+    expect(el).toHaveClass('custom')
+    expect(el).toHaveAttribute('data-slot', 'card-action')
   })
 })
 

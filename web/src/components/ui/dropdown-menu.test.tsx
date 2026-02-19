@@ -66,7 +66,8 @@ describe('DropdownMenu', () => {
       </DropdownMenu>,
     )
     await user.click(screen.getByText('Open'))
-    expect(screen.getByText('Inset Item')).toHaveClass('pl-8')
+    expect(screen.getByText('Inset Item')).toHaveAttribute('data-inset', 'true')
+    expect(screen.getByText('Inset Item').className).toContain('data-[inset]:pl-8')
   })
 
   it('renders inset label', async () => {
@@ -80,7 +81,8 @@ describe('DropdownMenu', () => {
       </DropdownMenu>,
     )
     await user.click(screen.getByText('Open'))
-    expect(screen.getByText('Inset Label')).toHaveClass('pl-8')
+    expect(screen.getByText('Inset Label')).toHaveAttribute('data-inset', 'true')
+    expect(screen.getByText('Inset Label').className).toContain('data-[inset]:pl-8')
   })
 
   it('renders shortcut with custom className', async () => {

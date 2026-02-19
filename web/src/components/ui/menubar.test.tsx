@@ -87,7 +87,8 @@ describe('Menubar', () => {
       </Menubar>,
     )
     await user.click(screen.getByText('File'))
-    expect(screen.getByText('Inset')).toHaveClass('pl-8')
+    expect(screen.getByText('Inset')).toHaveAttribute('data-inset', 'true')
+    expect(screen.getByText('Inset').className).toContain('data-[inset]:pl-8')
   })
 
   it('renders inset label', async () => {
@@ -103,7 +104,8 @@ describe('Menubar', () => {
       </Menubar>,
     )
     await user.click(screen.getByText('File'))
-    expect(screen.getByText('Inset Label')).toHaveClass('pl-8')
+    expect(screen.getByText('Inset Label')).toHaveAttribute('data-inset', 'true')
+    expect(screen.getByText('Inset Label').className).toContain('data-[inset]:pl-8')
   })
 
   it('renders shortcut with custom className', async () => {

@@ -59,7 +59,7 @@ describe('Button', () => {
 
   it('renders icon size', () => {
     render(<Button size="icon">I</Button>)
-    expect(screen.getByRole('button').className).toContain('w-9')
+    expect(screen.getByRole('button').className).toContain('size-9')
   })
 
   it('renders as child when asChild is true', () => {

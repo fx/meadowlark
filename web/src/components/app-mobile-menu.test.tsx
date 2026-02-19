@@ -1,29 +1,63 @@
-import { render, screen } from '@testing-library/preact'
+import { cleanup, render, screen, waitFor } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AppMobileMenu } from './app-mobile-menu'
 
 const mockSetLocation = vi.fn()
+let mockLocation = '/endpoints'
 
 vi.mock('wouter', () => ({
-  useLocation: () => ['/endpoints', mockSetLocation],
+  useLocation: () => [mockLocation, mockSetLocation],
 }))
 
-function renderMenu(open = true, currentPath = '/endpoints') {
-  const onOpenChange = vi.fn()
+function renderMenu(location = '/endpoints') {
+  mockLocation = location
   mockSetLocation.mockClear()
-  const result = render(
+  return render(
     <ThemeProvider>
-      <AppMobileMenu open={open} onOpenChange={onOpenChange} currentPath={currentPath} />
+      <AppMobileMenu />
     </ThemeProvider>,
   )
-  return { ...result, onOpenChange }
+}
+
+async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Menu' }))
 }
 
 describe('AppMobileMenu', () => {
-  it('renders navigation links when open', () => {
-    renderMenu(true)
+  beforeEach(() => {
+    localStorage.clear()
+    document.documentElement.classList.remove('light', 'dark')
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it('renders the trigger button', () => {
+    renderMenu()
+    expect(screen.getByRole('button', { name: 'Menu' })).toBeInTheDocument()
+  })
+
+  it('renders navigation links when opened', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    await openMenu(user)
     expect(screen.getByRole('button', { name: 'Endpoints' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Voices' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Aliases' })).toBeInTheDocument()
@@ -31,28 +65,60 @@ describe('AppMobileMenu', () => {
   })
 
   it('does not render navigation links when closed', () => {
-    renderMenu(false)
-    expect(screen.queryByRole('navigation', { name: 'Mobile navigation' })).not.toBeInTheDocument()
-  })
-
-  it('highlights the current path', () => {
-    renderMenu(true, '/aliases')
-    const aliasesBtn = screen.getByRole('button', { name: 'Aliases' })
-    expect(aliasesBtn).toHaveAttribute('aria-current', 'page')
-    const endpointsBtn = screen.getByRole('button', { name: 'Endpoints' })
-    expect(endpointsBtn).not.toHaveAttribute('aria-current')
+    renderMenu()
+    expect(screen.queryByRole('button', { name: 'Endpoints' })).not.toBeInTheDocument()
   })
 
   it('navigates and closes on item click', async () => {
     const user = userEvent.setup()
-    const { onOpenChange } = renderMenu(true, '/endpoints')
+    renderMenu()
+    await openMenu(user)
     await user.click(screen.getByRole('button', { name: 'Voices' }))
     expect(mockSetLocation).toHaveBeenCalledWith('/voices')
-    expect(onOpenChange).toHaveBeenCalledWith(false)
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Endpoints' })).not.toBeInTheDocument()
+    })
   })
 
-  it('renders the title', () => {
-    renderMenu(true)
-    expect(screen.getByText('Meadowlark')).toBeInTheDocument()
+  it('renders the title when open', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    await openMenu(user)
+    expect(screen.getByText('Menu')).toBeInTheDocument()
+  })
+
+  it('renders theme buttons when open', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    await openMenu(user)
+    expect(screen.getByRole('button', { name: 'Light' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Dark' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'System' })).toBeInTheDocument()
+  })
+
+  it('switches to dark theme via theme button', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    await openMenu(user)
+    await user.click(screen.getByRole('button', { name: 'Dark' }))
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(localStorage.getItem('meadowlark-theme')).toBe('dark')
+  })
+
+  it('switches to light theme via theme button', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    await openMenu(user)
+    await user.click(screen.getByRole('button', { name: 'Light' }))
+    expect(document.documentElement.classList.contains('light')).toBe(true)
+    expect(localStorage.getItem('meadowlark-theme')).toBe('light')
+  })
+
+  it('switches to system theme via theme button', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    await openMenu(user)
+    await user.click(screen.getByRole('button', { name: 'System' }))
+    expect(localStorage.getItem('meadowlark-theme')).toBe('system')
   })
 })
