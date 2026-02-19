@@ -368,10 +368,10 @@ coverage: {
   - [ ] Test connectivity button (calls POST /test, shows result)
   - [ ] Discover voices button (calls GET /voices, shows result)
   - [ ] Write page tests: render list, create flow, edit flow, delete flow, test connectivity, discover voices
-- [ ] Implement Voices page
-  - [ ] Fetch and display resolved voices in a table (name, endpoint, model, type badge)
-  - [ ] Client-side search/filter by voice name
-  - [ ] Write tests: render table, search filters correctly, empty state
+- [x] Implement Voices page
+  - [x] Fetch and display resolved voices in a table (name, endpoint, model, type badge)
+  - [x] Client-side search/filter by voice name
+  - [x] Write tests: render table, search filters correctly, empty state
 - [ ] Implement Aliases page
   - [ ] List aliases with collapsed rows (name, target voice, endpoint badge, enabled switch)
   - [ ] Inline create/edit form with cascading selects (endpoint -> model -> voice)
@@ -379,9 +379,9 @@ coverage: {
   - [ ] Delete with AlertDialog confirmation
   - [ ] Test TTS button (calls POST /test, shows result)
   - [ ] Write page tests: render list, cascading selects, create flow, edit flow, delete flow, test TTS
-- [ ] Implement Settings page
-  - [ ] Fetch and display server status in cards (version, uptime, ports, DB driver, voice/endpoint/alias counts)
-  - [ ] Write tests: renders all status fields, handles loading/error
+- [x] Implement Settings page
+  - [x] Fetch and display server status in cards (version, uptime, ports, DB driver, voice/endpoint/alias counts)
+  - [x] Write tests: renders all status fields, handles loading/error
 - [ ] Achieve 100% test coverage
   - [ ] Audit coverage report, identify uncovered branches/lines
   - [ ] Add missing tests until all thresholds hit 100%
