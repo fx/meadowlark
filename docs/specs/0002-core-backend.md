@@ -302,25 +302,25 @@ The scaffold from spec 0001 is extended:
   - [x] Send `audio-stop` when done
   - [x] Send `error` event on failure (do not crash)
   - [x] Write integration test with mock HTTP server
-- [ ] Implement Wyoming TCP server
-  - [ ] TCP listener on configurable host:port
-  - [ ] One goroutine per connection with event loop
-  - [ ] Dispatch `describe` -> build and send `info` event
-  - [ ] Dispatch `synthesize` -> run synthesis proxy
-  - [ ] Dispatch `ping` -> send `pong`
-  - [ ] Handle connection errors gracefully (log, close)
-  - [ ] Graceful shutdown: stop accepting, drain active connections
-  - [ ] Write protocol conformance tests with raw TCP client
-- [ ] Implement Zeroconf/mDNS registration
-  - [ ] Register `_wyoming._tcp.local.` service via `github.com/grandcat/zeroconf`
-  - [ ] Configurable service name (default: hostname)
-  - [ ] Disable via `--no-zeroconf` flag
-  - [ ] Deregister on shutdown
-- [ ] Implement Info response builder
-  - [ ] Aggregate canonical voices from all enabled endpoints (endpoint x model x voice)
-  - [ ] Include enabled voice aliases
-  - [ ] Build complete `info` event with TtsProgram, voices, languages
-  - [ ] Rebuild on demand (called after config changes)
+- [x] Implement Wyoming TCP server
+  - [x] TCP listener on configurable host:port
+  - [x] One goroutine per connection with event loop
+  - [x] Dispatch `describe` -> build and send `info` event
+  - [x] Dispatch `synthesize` -> run synthesis proxy
+  - [x] Dispatch `ping` -> send `pong`
+  - [x] Handle connection errors gracefully (log, close)
+  - [x] Graceful shutdown: stop accepting, drain active connections
+  - [x] Write protocol conformance tests with raw TCP client
+- [x] Implement Zeroconf/mDNS registration
+  - [x] Register `_wyoming._tcp.local.` service via `github.com/grandcat/zeroconf`
+  - [x] Configurable service name (default: hostname)
+  - [x] Disable via `--no-zeroconf` flag
+  - [x] Deregister on shutdown
+- [x] Implement Info response builder
+  - [x] Aggregate canonical voices from all enabled endpoints (endpoint x model x voice)
+  - [x] Include enabled voice aliases
+  - [x] Build complete `info` event with TtsProgram, voices, languages
+  - [x] Rebuild on demand (called after config changes)
 - [ ] Wire everything into main.go
   - [ ] Init Store (SQLite or Postgres based on `--db-driver`)
   - [ ] Run migrations
