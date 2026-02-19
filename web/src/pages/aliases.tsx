@@ -102,6 +102,11 @@ function AliasesPage() {
       )}
 
       <div className="border-t">
+        {aliasList.length === 0 && (
+          <p className="p-4 text-sm text-muted-foreground">
+            No aliases configured. Add one to get started.
+          </p>
+        )}
         {aliasList.map((alias) => (
           <AliasRow
             key={alias.id}
@@ -168,8 +173,13 @@ function AliasRow({
 
   const handleToggleEnabled = useCallback(
     async (checked: boolean) => {
-      await updateMutation.trigger({ enabled: checked })
-      onUpdate()
+      try {
+        await updateMutation.trigger({ enabled: checked })
+      } catch {
+        // revert will happen on next fetch
+      } finally {
+        onUpdate()
+      }
     },
     [updateMutation, onUpdate],
   )
@@ -188,8 +198,9 @@ function AliasRow({
           <span className="font-medium">{alias.name}</span>
           <span className="text-muted-foreground text-sm">{alias.voice}</span>
           <Badge variant="secondary">{endpointName}</Badge>
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: Radix Switch handles keyboard events internally */}
           {/* biome-ignore lint/a11y/noStaticElementInteractions: wrapper prevents click propagation to parent row */}
-          <div className="ml-auto" onClick={stopPropagation} onKeyDown={stopPropagation}>
+          <div className="ml-auto" onClick={stopPropagation}>
             <Switch
               checked={alias.enabled}
               onCheckedChange={handleToggleEnabled}

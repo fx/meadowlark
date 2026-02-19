@@ -643,4 +643,60 @@ describe('AliasesPage', () => {
     fireEvent.click(screen.getByText('Cancel'))
     expect(screen.queryByText('Update')).not.toBeInTheDocument()
   })
+
+  it('shows empty state when no aliases exist', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (urlStr === '/api/v1/aliases') {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve([]),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('No aliases configured. Add one to get started.')).toBeInTheDocument()
+    })
+  })
+
+  it('handles toggle enabled failure gracefully', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = typeof url === 'string' ? url : url.toString()
+        if (init?.method === 'PUT') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: () =>
+              Promise.resolve({ error: { code: 'server_error', message: 'Toggle failed' } }),
+          })
+        }
+        return mockFetch(urlStr)
+      }) as typeof fetch,
+    )
+
+    render(<AliasesPage />)
+    await waitFor(() => {
+      expect(screen.getByText('Friendly Voice')).toBeInTheDocument()
+    })
+
+    const toggle = screen.getByRole('switch', { name: 'Toggle Friendly Voice' })
+    fireEvent.click(toggle)
+
+    // Should not crash - error is handled gracefully
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        '/api/v1/aliases/alias-1',
+        expect.objectContaining({ method: 'PUT' }),
+      )
+    })
+  })
 })
