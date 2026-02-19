@@ -44,12 +44,6 @@ func TestAPIRoutes_NotImplemented(t *testing.T) {
 		{http.MethodDelete, "/api/v1/endpoints/123"},
 		{http.MethodPost, "/api/v1/endpoints/123/test"},
 		{http.MethodGet, "/api/v1/endpoints/123/voices"},
-		{http.MethodGet, "/api/v1/aliases"},
-		{http.MethodPost, "/api/v1/aliases"},
-		{http.MethodGet, "/api/v1/aliases/456"},
-		{http.MethodPut, "/api/v1/aliases/456"},
-		{http.MethodDelete, "/api/v1/aliases/456"},
-		{http.MethodPost, "/api/v1/aliases/456/test"},
 	}
 
 	for _, rt := range routes {
