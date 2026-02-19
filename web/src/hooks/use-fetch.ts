@@ -8,6 +8,7 @@ interface CacheEntry<T> {
 interface InFlightEntry {
   promise: Promise<unknown>
   controller: AbortController
+  subscribers: number
 }
 
 const cache = new Map<string, CacheEntry<unknown>>()
@@ -44,6 +45,7 @@ export function useFetch<T>(url: string, ttl = DEFAULT_TTL): UseFetchResult<T> {
 
     const existing = inFlight.get(url)
     if (existing) {
+      existing.subscribers++
       try {
         const result = (await existing.promise) as T
         if (urlRef.current === url) {
@@ -72,7 +74,7 @@ export function useFetch<T>(url: string, ttl = DEFAULT_TTL): UseFetchResult<T> {
         inFlight.delete(url)
       })
 
-    inFlight.set(url, { promise, controller })
+    inFlight.set(url, { promise, controller, subscribers: 1 })
 
     try {
       const result = (await promise) as T
@@ -99,8 +101,11 @@ export function useFetch<T>(url: string, ttl = DEFAULT_TTL): UseFetchResult<T> {
     return () => {
       const entry = inFlight.get(url)
       if (entry) {
-        entry.controller.abort()
-        inFlight.delete(url)
+        entry.subscribers--
+        if (entry.subscribers <= 0) {
+          entry.controller.abort()
+          inFlight.delete(url)
+        }
       }
     }
   }, [url, fetchData, ttl])

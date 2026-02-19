@@ -7,6 +7,17 @@ export interface UseMutationResult<TInput, TOutput> {
   error: Error | undefined
 }
 
+// API URL pattern: /api/v1/{resource} or /api/v1/{resource}/{id}
+const ITEM_URL_RE = /^(\/api\/v1\/[^/]+)\/[^/]+$/
+
+function invalidateMutationCache(url: string): void {
+  invalidateCache(url)
+  const match = ITEM_URL_RE.exec(url)
+  if (match) {
+    invalidateCache(match[1])
+  }
+}
+
 export function useMutation<TInput = void, TOutput = void>(
   url: string,
   method: 'POST' | 'PUT' | 'DELETE',
@@ -26,9 +37,7 @@ export function useMutation<TInput = void, TOutput = void>(
         }
         const res = await fetch(url, options)
         if (res.status === 204) {
-          // Invalidate related cache entries based on the URL path
-          const basePath = url.replace(/\/[^/]+$/, '')
-          invalidateCache(basePath)
+          invalidateMutationCache(url)
           setIsMutating(false)
           return undefined as TOutput
         }
@@ -36,9 +45,7 @@ export function useMutation<TInput = void, TOutput = void>(
         if (!res.ok) {
           throw new Error(data.error?.message ?? `HTTP ${res.status}`)
         }
-        // Invalidate related cache entries based on the URL path
-        const basePath = url.replace(/\/[^/]+$/, '')
-        invalidateCache(basePath)
+        invalidateMutationCache(url)
         setIsMutating(false)
         return data as TOutput
       } catch (err) {

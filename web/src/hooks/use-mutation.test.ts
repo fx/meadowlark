@@ -1,6 +1,6 @@
-import { act, renderHook } from '@testing-library/preact'
+import { act, renderHook, waitFor } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearCache } from './use-fetch'
+import { clearCache, useFetch } from './use-fetch'
 import { useMutation } from './use-mutation'
 
 const mockFetch = vi.fn()
@@ -141,23 +141,87 @@ describe('useMutation', () => {
     })
   })
 
-  it('invalidates cache after successful mutation', async () => {
+  it('invalidates item and collection cache for item URL', async () => {
+    // Populate cache with collection and item entries
+    const collectionData = [{ id: 'ep-1' }]
+    const itemData = { id: 'ep-1', name: 'OpenAI' }
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(collectionData) }),
+    )
+    const { result: collectionResult } = renderHook(() => useFetch('/api/v1/endpoints', 10000))
+    await waitFor(() => expect(collectionResult.current.isLoading).toBe(false))
+
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(itemData) }),
+    )
+    const { result: itemResult } = renderHook(() => useFetch('/api/v1/endpoints/ep-1', 10000))
+    await waitFor(() => expect(itemResult.current.isLoading).toBe(false))
+
+    // Mutate item URL — should invalidate both item and collection
     mockFetch.mockReturnValueOnce(
       Promise.resolve({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ id: '1' }),
+        json: () => Promise.resolve({ id: 'ep-1', name: 'Updated' }),
       }),
     )
-
-    const { result } = renderHook(() => useMutation('/api/v1/endpoints/ep-1', 'PUT'))
-
+    const { result: mutResult } = renderHook(() => useMutation('/api/v1/endpoints/ep-1', 'PUT'))
     await act(async () => {
-      await result.current.trigger({ name: 'updated' })
+      await mutResult.current.trigger({ name: 'Updated' })
     })
 
-    expect(result.current.isMutating).toBe(false)
-    expect(result.current.error).toBeUndefined()
+    // Both caches should be invalidated — new fetches needed
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve([{ id: 'ep-1', name: 'Updated' }]),
+      }),
+    )
+    const { result: refetchCollection } = renderHook(() => useFetch('/api/v1/endpoints', 10000))
+    // Should be loading (cache was invalidated)
+    expect(refetchCollection.current.isLoading).toBe(true)
+  })
+
+  it('invalidates only matching prefix for collection URL', async () => {
+    // Populate caches for endpoints and aliases
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve([{ id: 'ep-1' }]),
+      }),
+    )
+    const { result: epResult } = renderHook(() => useFetch('/api/v1/endpoints', 10000))
+    await waitFor(() => expect(epResult.current.isLoading).toBe(false))
+
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve([{ id: 'va-1' }]),
+      }),
+    )
+    const { result: aliasResult } = renderHook(() => useFetch('/api/v1/aliases', 10000))
+    await waitFor(() => expect(aliasResult.current.isLoading).toBe(false))
+
+    // POST to collection URL — should only invalidate endpoints, not aliases
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 201,
+        json: () => Promise.resolve({ id: 'ep-2' }),
+      }),
+    )
+    const { result: mutResult } = renderHook(() => useMutation('/api/v1/endpoints', 'POST'))
+    await act(async () => {
+      await mutResult.current.trigger({ name: 'New' })
+    })
+
+    // Aliases should still be cached
+    const { result: aliasCheck } = renderHook(() => useFetch('/api/v1/aliases', 10000))
+    expect(aliasCheck.current.data).toEqual([{ id: 'va-1' }])
+    expect(aliasCheck.current.isLoading).toBe(false)
   })
 
   it('handles non-Error thrown values', async () => {

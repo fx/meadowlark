@@ -399,7 +399,7 @@ describe('useFetch', () => {
     expect(result2.current.error).toBeUndefined()
   })
 
-  it('aborts in-flight request on unmount', async () => {
+  it('aborts in-flight request when last subscriber unmounts', async () => {
     let resolveFetch!: (value: unknown) => void
     const fetchPromise = new Promise((resolve) => {
       resolveFetch = resolve
@@ -415,6 +415,40 @@ describe('useFetch', () => {
       status: 200,
       json: () => Promise.resolve({ id: '1' }),
     })
+  })
+
+  it('does not abort shared request when one subscriber unmounts', async () => {
+    let resolveJson!: (value: unknown) => void
+    const jsonPromise = new Promise((resolve) => {
+      resolveJson = resolve
+    })
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => jsonPromise,
+      }),
+    )
+
+    // Two hooks share the same in-flight request
+    const { result: result1 } = renderHook(() => useFetch('/api/shared-abort'))
+    const { unmount: unmount2 } = renderHook(() => useFetch('/api/shared-abort'))
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+
+    // Unmount one subscriber — should NOT abort
+    unmount2()
+
+    // Resolve the shared promise — remaining subscriber should get data
+    await act(async () => {
+      resolveJson({ id: 'survived' })
+      await jsonPromise
+    })
+
+    await waitFor(() => {
+      expect(result1.current.isLoading).toBe(false)
+    })
+    expect(result1.current.data).toEqual({ id: 'survived' })
   })
 })
 
