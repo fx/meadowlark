@@ -237,21 +237,21 @@ The scaffold from spec 0001 is extended:
 
 ## Tasks
 
-- [ ] Implement Wyoming protocol event reader/writer
-  - [ ] Define `Event` struct (Type, Data, Payload)
-  - [ ] Implement `ReadEvent(reader)` -- JSON header line + optional data bytes + optional payload bytes
-  - [ ] Implement `WriteEvent(writer, event)` -- reverse of read
-  - [ ] Write round-trip tests (serialize -> deserialize -> compare)
-  - [ ] Test edge cases: empty data, large payloads, missing optional fields
-- [ ] Define Wyoming TTS event types
-  - [ ] `Synthesize` (text, voice name, speaker, language)
-  - [ ] `AudioStart` (rate, width, channels)
-  - [ ] `AudioChunk` (rate, width, channels, payload)
-  - [ ] `AudioStop`
-  - [ ] `Describe` / `Info` (with TtsProgram, TtsVoice, TtsVoiceSpeaker)
-  - [ ] `Ping` / `Pong`
-  - [ ] `Error` (text, code)
-  - [ ] Conversion methods: typed struct <-> generic Event
+- [x] Implement Wyoming protocol event reader/writer
+  - [x] Define `Event` struct (Type, Data, Payload)
+  - [x] Implement `ReadEvent(reader)` -- JSON header line + optional data bytes + optional payload bytes
+  - [x] Implement `WriteEvent(writer, event)` -- reverse of read
+  - [x] Write round-trip tests (serialize -> deserialize -> compare)
+  - [x] Test edge cases: empty data, large payloads, missing optional fields
+- [x] Define Wyoming TTS event types
+  - [x] `Synthesize` (text, voice name, speaker, language)
+  - [x] `AudioStart` (rate, width, channels)
+  - [x] `AudioChunk` (rate, width, channels, payload)
+  - [x] `AudioStop`
+  - [x] `Describe` / `Info` (with TtsProgram, TtsVoice, TtsVoiceSpeaker)
+  - [x] `Ping` / `Pong`
+  - [x] `Error` (text, code)
+  - [x] Conversion methods: typed struct <-> generic Event
 - [x] Implement domain models
   - [x] `model.Endpoint` with JSON array fields (Models)
   - [x] `model.VoiceAlias` with JSON array fields (Languages)
