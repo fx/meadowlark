@@ -169,6 +169,61 @@ func TestInfoRoundTrip(t *testing.T) {
 	assert.Equal(t, "speaker1", got.Tts[0].Voices[1].Speakers[0].Name)
 }
 
+// Regression: HA requires "attribution" on both TtsProgram and TtsVoice.
+// Without it, HA's DataClassJsonMixin.from_dict() fails during setup.
+func TestInfoToEvent_AttributionPresent(t *testing.T) {
+	info := &Info{Tts: []TtsProgram{{
+		Name: "meadowlark", Installed: true, Version: "1.0.0",
+		Voices: []TtsVoice{
+			{Name: "alloy", Installed: true, Languages: []string{"en"}},
+		},
+	}}}
+	ev := info.ToEvent()
+
+	tts := ev.Data["tts"].([]any)
+	prog := tts[0].(map[string]any)
+
+	// Program must have attribution.
+	attr, ok := prog["attribution"].(map[string]any)
+	require.True(t, ok, "program missing attribution field")
+	assert.Contains(t, attr, "name")
+	assert.Contains(t, attr, "url")
+
+	// Voice must have attribution.
+	voices := prog["voices"].([]any)
+	vAttr, ok := voices[0].(map[string]any)["attribution"].(map[string]any)
+	require.True(t, ok, "voice missing attribution field")
+	assert.Contains(t, vAttr, "name")
+	assert.Contains(t, vAttr, "url")
+}
+
+// Regression: HA chokes on "speakers": null in the info response.
+// When a voice has no speakers, the field must be omitted entirely.
+func TestInfoToEvent_SpeakersOmittedWhenEmpty(t *testing.T) {
+	info := &Info{Tts: []TtsProgram{{
+		Name: "meadowlark", Installed: true, Version: "1.0.0",
+		Voices: []TtsVoice{
+			{Name: "no-speakers", Installed: true, Languages: []string{"en"}},
+			{Name: "with-speakers", Installed: true, Languages: []string{"en"}, Speakers: []TtsVoiceSpeaker{{Name: "s1"}}},
+		},
+	}}}
+	ev := info.ToEvent()
+
+	tts := ev.Data["tts"].([]any)
+	voices := tts[0].(map[string]any)["voices"].([]any)
+
+	// Voice without speakers: field must not exist in the map.
+	v0 := voices[0].(map[string]any)
+	_, hasSpeakers := v0["speakers"]
+	assert.False(t, hasSpeakers, "speakers field should be omitted when empty, not null")
+
+	// Voice with speakers: field must be present.
+	v1 := voices[1].(map[string]any)
+	spk, hasSpeakers := v1["speakers"]
+	assert.True(t, hasSpeakers, "speakers field should be present when non-empty")
+	assert.Len(t, spk.([]any), 1)
+}
+
 func TestInfoFromEventWrongType(t *testing.T) {
 	_, err := InfoFromEvent(&Event{Type: TypePing})
 	require.Error(t, err)
