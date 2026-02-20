@@ -53,6 +53,7 @@ type Endpoint struct {
 	BaseURL               string      `json:"base_url"`
 	APIKey                string      `json:"api_key,omitempty"`
 	Models                StringSlice `json:"models"`
+	DefaultVoice          string      `json:"default_voice"`
 	DefaultSpeed          *float64    `json:"default_speed,omitempty"`
 	DefaultInstructions   *string     `json:"default_instructions,omitempty"`
 	DefaultResponseFormat string      `json:"default_response_format"`

@@ -50,6 +50,7 @@ type createEndpointRequest struct {
 	BaseURL               string            `json:"base_url"`
 	APIKey                string            `json:"api_key"`
 	Models                model.StringSlice `json:"models"`
+	DefaultVoice          string            `json:"default_voice"`
 	DefaultSpeed          *float64          `json:"default_speed"`
 	DefaultInstructions   *string           `json:"default_instructions"`
 	DefaultResponseFormat string            `json:"default_response_format"`
@@ -108,7 +109,7 @@ func (s *Server) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	ep := &model.Endpoint{
 		ID: uuid.New().String(), Name: req.Name, BaseURL: req.BaseURL, APIKey: req.APIKey,
-		Models: req.Models, DefaultSpeed: req.DefaultSpeed, DefaultInstructions: req.DefaultInstructions,
+		Models: req.Models, DefaultVoice: req.DefaultVoice, DefaultSpeed: req.DefaultSpeed, DefaultInstructions: req.DefaultInstructions,
 		DefaultResponseFormat: responseFormat, Enabled: enabled, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.store.CreateEndpoint(r.Context(), ep); err != nil {
@@ -125,6 +126,7 @@ type updateEndpointRequest struct {
 	BaseURL               *string            `json:"base_url"`
 	APIKey                *string            `json:"api_key"`
 	Models                *model.StringSlice `json:"models"`
+	DefaultVoice          *string            `json:"default_voice"`
 	DefaultSpeed          *float64           `json:"default_speed"`
 	DefaultInstructions   *string            `json:"default_instructions"`
 	DefaultResponseFormat *string            `json:"default_response_format"`
@@ -190,6 +192,9 @@ func (s *Server) UpdateEndpoint(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ep.Models = *req.Models
+	}
+	if req.DefaultVoice != nil {
+		ep.DefaultVoice = *req.DefaultVoice
 	}
 	if req.DefaultSpeed != nil {
 		if *req.DefaultSpeed < 0.25 || *req.DefaultSpeed > 4.0 {

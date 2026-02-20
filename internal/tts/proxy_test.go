@@ -372,7 +372,7 @@ func TestProxy_HandleSynthesize_InvalidWAV(t *testing.T) {
 	require.Len(t, events, 1)
 	assert.Equal(t, wyoming.TypeError, events[0].Type)
 	errEv, _ := wyoming.ErrorFromEvent(events[0])
-	assert.Contains(t, errEv.Text, "parse wav header")
+	assert.Contains(t, errEv.Text, "non-WAV response")
 }
 
 func TestProxy_HandleSynthesize_JSONInput(t *testing.T) {

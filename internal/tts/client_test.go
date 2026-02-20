@@ -13,7 +13,7 @@ import (
 )
 
 func TestSynthesize_Success(t *testing.T) {
-	audioData := []byte("fake-audio-data")
+	audioData := []byte("RIFF\x00\x00\x00\x00WAVEfmt fake-audio-data")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/audio/speech", r.URL.Path)
@@ -43,6 +43,7 @@ func TestSynthesize_AuthorizationHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer sk-test-key", r.Header.Get("Authorization"))
 		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
 	}))
 	defer srv.Close()
 
@@ -60,6 +61,7 @@ func TestSynthesize_NoAuthHeaderWhenKeyEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Empty(t, r.Header.Get("Authorization"))
 		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
 	}))
 	defer srv.Close()
 
@@ -87,6 +89,7 @@ func TestSynthesize_OmitsNilFields(t *testing.T) {
 		assert.NotContains(t, reqBody, "response_format")
 
 		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
 	}))
 	defer srv.Close()
 
@@ -114,6 +117,7 @@ func TestSynthesize_IncludesOptionalFields(t *testing.T) {
 		assert.Equal(t, "wav", reqBody["response_format"])
 
 		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
 	}))
 	defer srv.Close()
 
@@ -367,4 +371,78 @@ func TestListVoices_AuthHeaderWhenKeySet(t *testing.T) {
 	voices, err := client.ListVoices(context.Background())
 	require.NoError(t, err)
 	require.Len(t, voices, 1)
+}
+
+func TestSynthesize_NonWAVResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"error":"model not found"}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.Synthesize(context.Background(), &SynthesizeRequest{
+		Model: "invalid",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	assert.Nil(t, body)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-WAV response")
+	assert.Contains(t, err.Error(), "model not found")
+}
+
+func TestSynthesize_NonWAVResponseTruncated(t *testing.T) {
+	// Response body longer than 500 chars should be truncated.
+	longBody := make([]byte, 600)
+	for i := range longBody {
+		longBody[i] = 'a'
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(longBody)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.Synthesize(context.Background(), &SynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	assert.Nil(t, body)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-WAV response")
+	assert.Contains(t, err.Error(), "...")
+}
+
+func TestSynthesize_WAVResponsePreservesBody(t *testing.T) {
+	// Ensure that the WAV magic byte check properly reconstructs the full body.
+	wavData := []byte("RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "audio/wav")
+		w.WriteHeader(http.StatusOK)
+		w.Write(wavData)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.Synthesize(context.Background(), &SynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	require.NoError(t, err)
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.Equal(t, wavData, data)
+}
+
+func TestTruncateBody(t *testing.T) {
+	assert.Equal(t, "short", truncateBody("short", 500))
+	assert.Equal(t, "abc...", truncateBody("abcdef", 3))
+	assert.Equal(t, "", truncateBody("", 10))
 }
