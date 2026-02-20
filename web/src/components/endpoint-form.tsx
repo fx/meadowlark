@@ -7,7 +7,7 @@ import {
   X,
   XCircle,
 } from '@phosphor-icons/react'
-import { useCallback, useState } from 'preact/hooks'
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
@@ -37,7 +37,17 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const [instructions, setInstructions] = useState(endpoint?.default_instructions ?? '')
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
 
+  const prevUrlRef = useRef(baseUrl)
   const probe = useEndpointProbe(baseUrl, apiKey)
+
+  // Clear selected models when URL changes
+  useEffect(() => {
+    if (baseUrl !== prevUrlRef.current) {
+      prevUrlRef.current = baseUrl
+      setSelectedModels([])
+      setModelInput('')
+    }
+  }, [baseUrl])
 
   const modelOptions = probe.models
     .filter((m) => !selectedModels.includes(m.id))

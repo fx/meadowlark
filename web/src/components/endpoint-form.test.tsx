@@ -431,4 +431,26 @@ describe('EndpointForm', () => {
     expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeEnabled()
     mockProbe.status = 'idle'
   })
+
+  it('clears selected models when URL changes', async () => {
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    // Models should be present initially
+    expect(screen.getByText('tts-1')).toBeInTheDocument()
+    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
+    // Change the URL
+    const urlInput = screen.getByLabelText('Base URL')
+    await user.clear(urlInput)
+    await user.type(urlInput, 'https://other.api.com')
+    // Model badges should be cleared
+    expect(screen.queryByText('tts-1')).not.toBeInTheDocument()
+    expect(screen.queryByText('tts-1-hd')).not.toBeInTheDocument()
+  })
 })
