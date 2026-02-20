@@ -28,18 +28,30 @@ var privateIPNets = []net.IPNet{
 	{IP: net.IP{172, 16, 0, 0}, Mask: net.CIDRMask(12, 32)},     // 172.16.0.0/12
 	{IP: net.IP{192, 168, 0, 0}, Mask: net.CIDRMask(16, 32)},    // 192.168.0.0/16
 	{IP: net.IP{169, 254, 0, 0}, Mask: net.CIDRMask(16, 32)},    // 169.254.0.0/16 link-local
-	{IP: net.IP{0, 0, 0, 0}, Mask: net.CIDRMask(32, 32)},        // 0.0.0.0
+	{IP: net.IP{0, 0, 0, 0}, Mask: net.CIDRMask(32, 32)},         // 0.0.0.0
+	{IP: net.IP{255, 255, 255, 255}, Mask: net.CIDRMask(32, 32)}, // 255.255.255.255 broadcast
+	{IP: net.IP{224, 0, 0, 0}, Mask: net.CIDRMask(4, 32)},        // 224.0.0.0/4 IPv4 multicast
 	// IPv6 private ranges
 	{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)},       // ::1 loopback
 	{IP: net.ParseIP("fc00::"), Mask: net.CIDRMask(7, 128)},      // fc00::/7 unique local
 	{IP: net.ParseIP("fe80::"), Mask: net.CIDRMask(10, 128)},     // fe80::/10 link-local
+	{IP: net.ParseIP("ff00::"), Mask: net.CIDRMask(8, 128)},      // ff00::/8 IPv6 multicast
 }
 
 // isPrivateIP reports whether ip is in a private/internal network range.
+// It also checks the IPv4 form of IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1).
 func isPrivateIP(ip net.IP) bool {
 	for _, n := range privateIPNets {
 		if n.Contains(ip) {
 			return true
+		}
+	}
+	// Check IPv4-mapped IPv6 addresses (e.g. ::ffff:10.0.0.1).
+	if v4 := ip.To4(); v4 != nil && !v4.Equal(ip) {
+		for _, n := range privateIPNets {
+			if n.Contains(v4) {
+				return true
+			}
 		}
 	}
 	return false

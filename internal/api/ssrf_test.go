@@ -153,6 +153,44 @@ func TestValidateProbeURL_AllowsPublicIPLiteral(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestValidateProbeURL_RejectsBroadcastAddress(t *testing.T) {
+	err := validateProbeURL(context.Background(), "http://255.255.255.255/v1", publicResolver())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "private/internal")
+}
+
+func TestValidateProbeURL_RejectsIPv4Multicast(t *testing.T) {
+	err := validateProbeURL(context.Background(), "http://224.0.0.1/v1", publicResolver())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "private/internal")
+}
+
+func TestValidateProbeURL_RejectsIPv6Multicast(t *testing.T) {
+	err := validateProbeURL(context.Background(), "http://[ff02::1]:8080/v1", publicResolver())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "private/internal")
+}
+
+func TestValidateProbeURL_RejectsIPv4MappedIPv6(t *testing.T) {
+	// ::ffff:127.0.0.1 is an IPv4-mapped IPv6 address that should be blocked.
+	err := validateProbeURL(context.Background(), "http://[::ffff:127.0.0.1]:8080/v1", publicResolver())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "private/internal")
+}
+
+func TestValidateProbeURL_RejectsIPv4MappedIPv6_10x(t *testing.T) {
+	err := validateProbeURL(context.Background(), "http://[::ffff:10.0.0.1]:8080/v1", publicResolver())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "private/internal")
+}
+
+func TestValidateProbeURL_RejectsDNSRebindToIPv4MappedIPv6(t *testing.T) {
+	r := &staticResolver{addrs: []net.IPAddr{{IP: net.ParseIP("::ffff:192.168.1.1")}}}
+	err := validateProbeURL(context.Background(), "https://evil.example.com/v1", r)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "private/internal")
+}
+
 func TestValidateProbeURL_RejectsDNSResolutionFailure(t *testing.T) {
 	r := &staticResolver{err: &net.DNSError{Err: "no such host", Name: "nonexistent.invalid"}}
 	err := validateProbeURL(context.Background(), "https://nonexistent.invalid/v1", r)
