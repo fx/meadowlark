@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 )
 
@@ -74,10 +75,54 @@ func (c *Client) Synthesize(ctx context.Context, req *SynthesizeRequest) (io.Rea
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("tts: API error %d: %s", resp.StatusCode, string(errBody))
+		truncated := truncateBody(string(errBody), 500)
+		slog.Error("tts: non-2xx response from TTS endpoint",
+			"status_code", resp.StatusCode,
+			"content_type", resp.Header.Get("Content-Type"),
+			"response_body", truncated,
+		)
+		return nil, fmt.Errorf("tts: API error %d: %s", resp.StatusCode, truncated)
 	}
 
-	return resp.Body, nil
+	// Check for WAV magic bytes ("RIFF") to detect non-WAV error responses.
+	// Read the first 4 bytes and then prepend them back to the stream.
+	var header [4]byte
+	n, err := io.ReadFull(resp.Body, header[:])
+	if err != nil || n < 4 {
+		resp.Body.Close()
+		return nil, fmt.Errorf("tts: failed to read response header: %w", err)
+	}
+	if string(header[:]) != "RIFF" {
+		// Not a WAV file -- likely a JSON error response. Read the rest for logging.
+		rest, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		full := string(header[:n]) + string(rest)
+		truncated := truncateBody(full, 500)
+		slog.Error("tts: TTS endpoint returned non-WAV response",
+			"status_code", resp.StatusCode,
+			"content_type", resp.Header.Get("Content-Type"),
+			"response_body", truncated,
+		)
+		return nil, fmt.Errorf("tts: endpoint returned non-WAV response: %s", truncated)
+	}
+
+	// Reconstruct the full stream with the header bytes prepended.
+	combined := io.MultiReader(bytes.NewReader(header[:]), resp.Body)
+	return &readCloser{Reader: combined, Closer: resp.Body}, nil
+}
+
+// readCloser wraps a Reader and a Closer into an io.ReadCloser.
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// truncateBody truncates a string to maxLen characters, appending "..." if truncated.
+func truncateBody(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 // ListModels fetches available models from the /v1/models endpoint.
