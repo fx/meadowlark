@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fx/meadowlark/internal/model"
+	"github.com/fx/meadowlark/internal/tts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +67,9 @@ func newSystemTestServer(st *mockStore) *Server {
 		wyomingPort: 10300,
 		httpPort:    8080,
 		dbDriver:    "sqlite",
+		clientFactory: func(ep *model.Endpoint) *tts.Client {
+			return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
+		},
 		webFS: &fstest.MapFS{
 			"index.html": {Data: []byte("<html></html>")},
 		},
@@ -243,6 +247,57 @@ func TestListVoices_CombinesCanonicalAndAlias(t *testing.T) {
 	// Alias entry.
 	assert.True(t, body[2].IsAlias)
 	assert.Equal(t, "narrator", body[2].Name)
+}
+
+func TestListVoices_UsesDiscoveredVoices(t *testing.T) {
+	// Create a mock TTS server that returns real voices.
+	ttsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/audio/voices" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"voices": []map[string]string{
+					{"voice_id": "alloy", "name": "Alloy"},
+					{"voice_id": "nova", "name": "Nova"},
+				},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ttsServer.Close()
+
+	ms := &mockStore{
+		endpoints: []model.Endpoint{
+			{ID: "ep1", Name: "OpenAI", BaseURL: ttsServer.URL, Models: model.StringSlice{"tts-1"}, Enabled: true},
+		},
+	}
+	srv := newSystemTestServer(ms)
+	router := srv.setupRoutes()
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/voices")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body []voiceEntry
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	// Should have 2 canonical voices (alloy, nova) × 1 model (tts-1) = 2 entries.
+	require.Len(t, body, 2)
+
+	assert.Equal(t, "alloy (OpenAI, tts-1)", body[0].Name)
+	assert.Equal(t, "alloy", body[0].Voice)
+	assert.Equal(t, "tts-1", body[0].Model)
+	assert.Equal(t, "OpenAI", body[0].Endpoint)
+	assert.False(t, body[0].IsAlias)
+
+	assert.Equal(t, "nova (OpenAI, tts-1)", body[1].Name)
+	assert.Equal(t, "nova", body[1].Voice)
+	assert.Equal(t, "tts-1", body[1].Model)
+	assert.False(t, body[1].IsAlias)
 }
 
 func TestListVoices_SkipsDisabledEndpoints(t *testing.T) {
