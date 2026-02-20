@@ -68,17 +68,18 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
-	// Idempotent ALTER TABLE migrations (errors ignored when column already exists).
 	for _, stmt := range pgAlterMigrations {
-		_, _ = s.pool.Exec(ctx, stmt)
+		if _, err := s.pool.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("store: alter migration: %w", err)
+		}
 	}
 	return nil
 }
 
-// pgAlterMigrations are run after the initial schema creation.
-// Errors are silently ignored (e.g. "column already exists") to ensure idempotency.
+// pgAlterMigrations use IF NOT EXISTS so they are idempotent and any
+// real errors (permissions, connection) are properly propagated.
 var pgAlterMigrations = []string{
-	`ALTER TABLE endpoints ADD COLUMN default_voice TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS default_voice TEXT NOT NULL DEFAULT ''`,
 }
 
 func (s *PostgresStore) Close() error {
