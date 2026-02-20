@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/preact'
+import { act, renderHook, waitFor } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEndpointProbe } from './use-endpoint-probe'
 
@@ -28,22 +28,22 @@ describe('useEndpointProbe', () => {
     const { result } = renderHook(() => useEndpointProbe('not-a-url', ''))
     expect(result.current.models).toEqual([])
     expect(result.current.voices).toEqual([])
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('idle')
     expect(result.current.error).toBeUndefined()
   })
 
   it('returns empty state for empty URL', () => {
     const { result } = renderHook(() => useEndpointProbe('', ''))
     expect(result.current.models).toEqual([])
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('idle')
   })
 
   it('probes valid URL after debounce', async () => {
     mockProbeOk([{ id: 'tts-1' }], [{ id: 'alloy', name: 'Alloy' }])
 
     const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', 'sk-test'))
-    // loading stays false during debounce, only becomes true when fetch starts
-    expect(result.current.loading).toBe(false)
+    // status stays idle during debounce, only becomes loading when fetch starts
+    expect(result.current.status).toBe('idle')
 
     await waitFor(() => {
       expect(result.current.models).toEqual([{ id: 'tts-1' }])
@@ -57,7 +57,69 @@ describe('useEndpointProbe', () => {
       }),
     )
     expect(result.current.voices).toEqual([{ id: 'alloy', name: 'Alloy' }])
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('success')
+  })
+
+  it('transitions status from idle to loading to success', async () => {
+    let resolveFetch: ((v: unknown) => void) | null = null
+    mockFetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        }),
+    )
+
+    const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', ''))
+
+    // Initially idle (during debounce)
+    expect(result.current.status).toBe('idle')
+
+    // Wait for status to transition to loading after debounce fires
+    await waitFor(() => {
+      expect(result.current.status).toBe('loading')
+    }, WAIT_OPTS)
+
+    // Resolve the fetch
+    await act(async () => {
+      resolveFetch?.({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ models: [{ id: 'tts-1' }], voices: [] }),
+      })
+    })
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('success')
+    }, WAIT_OPTS)
+  })
+
+  it('transitions status from idle to loading to error', async () => {
+    let rejectFetch: ((err: Error) => void) | null = null
+    mockFetch.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectFetch = reject
+        }),
+    )
+
+    const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', ''))
+
+    expect(result.current.status).toBe('idle')
+
+    // Wait for status to transition to loading after debounce fires
+    await waitFor(() => {
+      expect(result.current.status).toBe('loading')
+    }, WAIT_OPTS)
+
+    await act(async () => {
+      rejectFetch?.(new Error('connection refused'))
+    })
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('error')
+    }, WAIT_OPTS)
+
+    expect(result.current.error).toBe('connection refused')
   })
 
   it('sets error on probe failure', async () => {
@@ -75,7 +137,7 @@ describe('useEndpointProbe', () => {
 
     expect(result.current.models).toEqual([])
     expect(result.current.voices).toEqual([])
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('error')
   })
 
   it('sets error on network failure', async () => {
@@ -87,7 +149,7 @@ describe('useEndpointProbe', () => {
       expect(result.current.error).toBe('Network error')
     }, WAIT_OPTS)
 
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('error')
   })
 
   it('handles null models/voices in response', async () => {
@@ -99,13 +161,13 @@ describe('useEndpointProbe', () => {
 
     const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', ''))
 
-    // Wait for the fetch to fire (after debounce), then for loading to settle.
+    // Wait for the fetch to fire (after debounce), then for status to settle.
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledTimes(1)
     }, WAIT_OPTS)
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false)
+      expect(result.current.status).toBe('success')
     }, WAIT_OPTS)
 
     expect(result.current.models).toEqual([])
@@ -127,7 +189,7 @@ describe('useEndpointProbe', () => {
 
     expect(result.current.models).toEqual([])
     expect(result.current.voices).toEqual([])
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('idle')
   })
 
   it('handles error response without message field', async () => {
@@ -143,7 +205,7 @@ describe('useEndpointProbe', () => {
       expect(result.current.error).toBe('HTTP 503')
     }, WAIT_OPTS)
 
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('error')
   })
 
   it('ignores AbortError without setting error state', async () => {
@@ -160,7 +222,7 @@ describe('useEndpointProbe', () => {
     // Give time for the catch handler to run
     await new Promise((r) => setTimeout(r, 50))
 
-    // AbortError should be silently ignored — no error, still loading
+    // AbortError should be silently ignored -- no error, still loading
     expect(result.current.error).toBeUndefined()
   })
 
@@ -173,7 +235,7 @@ describe('useEndpointProbe', () => {
       expect(result.current.error).toBe('string rejection')
     }, WAIT_OPTS)
 
-    expect(result.current.loading).toBe(false)
+    expect(result.current.status).toBe('error')
   })
 
   it('does not update state after abort', async () => {
@@ -217,5 +279,51 @@ describe('useEndpointProbe', () => {
 
     // Ensure the stale data from the aborted request was never applied.
     expect(result.current.voices).toEqual([])
+  })
+
+  it('exposes refresh function', () => {
+    const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', ''))
+    expect(typeof result.current.refresh).toBe('function')
+  })
+
+  it('refresh triggers a new probe immediately', async () => {
+    mockProbeOk([{ id: 'tts-1' }], [{ id: 'alloy', name: 'Alloy' }])
+
+    const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', 'sk-key'))
+
+    // Wait for the initial auto-probe to complete
+    await waitFor(() => {
+      expect(result.current.status).toBe('success')
+    }, WAIT_OPTS)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+
+    // Update the mock response for the refresh
+    mockProbeOk([{ id: 'tts-1' }, { id: 'tts-2' }], [])
+
+    // Call refresh
+    act(() => {
+      result.current.refresh()
+    })
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    }, WAIT_OPTS)
+
+    await waitFor(() => {
+      expect(result.current.models).toEqual([{ id: 'tts-1' }, { id: 'tts-2' }])
+    }, WAIT_OPTS)
+  })
+
+  it('refresh does nothing for invalid URL', async () => {
+    const { result } = renderHook(() => useEndpointProbe('not-valid', ''))
+
+    act(() => {
+      result.current.refresh()
+    })
+
+    // Should remain idle, no fetch called
+    expect(result.current.status).toBe('idle')
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 })

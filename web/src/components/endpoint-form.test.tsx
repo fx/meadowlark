@@ -1,14 +1,16 @@
 import { render, screen } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import type { ProbeStatus } from '@/hooks/use-endpoint-probe'
 import type { Endpoint } from '@/lib/api'
 
 // Mock useEndpointProbe to avoid real fetch calls and allow per-test overrides
 const mockProbe = {
   models: [] as { id: string }[],
   voices: [] as { id: string; name: string }[],
-  loading: false,
+  status: 'idle' as ProbeStatus,
   error: undefined as string | undefined,
+  refresh: vi.fn(),
 }
 
 vi.mock('@/hooks/use-endpoint-probe', () => ({
@@ -258,38 +260,48 @@ describe('EndpointForm', () => {
   it('shows probe error when present', () => {
     mockProbe.error = 'connection refused'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByText('Probe error: connection refused')).toBeInTheDocument()
+    expect(screen.getByText('connection refused')).toBeInTheDocument()
     mockProbe.error = undefined
   })
 
-  it('shows available voices when probe returns voices', () => {
+  it('shows available voices as badges when probe returns voices', () => {
     mockProbe.models = [{ id: 'tts-1' }]
     mockProbe.voices = [
       { id: 'alloy', name: 'Alloy' },
       { id: 'nova', name: 'Nova' },
     ]
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByText('Available voices: Alloy (alloy), Nova (nova)')).toBeInTheDocument()
+    expect(screen.getByText('Available Voices')).toBeInTheDocument()
+    expect(screen.getByText('Alloy')).toBeInTheDocument()
+    expect(screen.getByText('Nova')).toBeInTheDocument()
     mockProbe.models = []
     mockProbe.voices = []
   })
 
-  it('shows voice id as label when name is empty', () => {
+  it('shows voice id as badge label when name is empty', () => {
     mockProbe.voices = [{ id: 'alloy', name: '' }]
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByText('Available voices: alloy')).toBeInTheDocument()
+    expect(screen.getByText('Available Voices')).toBeInTheDocument()
+    expect(screen.getByText('alloy')).toBeInTheDocument()
+    mockProbe.voices = []
+  })
+
+  it('does not show voices section when no voices available', () => {
+    mockProbe.voices = []
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.queryByText('Available Voices')).not.toBeInTheDocument()
     mockProbe.voices = []
   })
 
   it('shows loading placeholder in combobox when loading', () => {
-    mockProbe.loading = true
+    mockProbe.status = 'loading'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByPlaceholderText('Loading...')).toBeInTheDocument()
-    mockProbe.loading = false
+    mockProbe.status = 'idle'
   })
 
   it('shows normal placeholder when not loading', () => {
-    mockProbe.loading = false
+    mockProbe.status = 'idle'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByPlaceholderText('Search or type a model name')).toBeInTheDocument()
   })
@@ -378,5 +390,45 @@ describe('EndpointForm', () => {
     // No badge should appear for whitespace-only model
     expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument()
     mockProbe.models = []
+  })
+
+  it('renders refresh button next to URL field', () => {
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeInTheDocument()
+  })
+
+  it('refresh button calls probe.refresh on click', async () => {
+    const user = userEvent.setup()
+    mockProbe.refresh.mockClear()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.click(screen.getByRole('button', { name: 'Refresh endpoint' }))
+    expect(mockProbe.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('refresh button is disabled when status is loading', () => {
+    mockProbe.status = 'loading'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeDisabled()
+    mockProbe.status = 'idle'
+  })
+
+  it('refresh button is enabled when status is idle', () => {
+    mockProbe.status = 'idle'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeEnabled()
+  })
+
+  it('refresh button is enabled when status is success', () => {
+    mockProbe.status = 'success'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeEnabled()
+    mockProbe.status = 'idle'
+  })
+
+  it('refresh button is enabled when status is error', () => {
+    mockProbe.status = 'error'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeEnabled()
+    mockProbe.status = 'idle'
   })
 })
