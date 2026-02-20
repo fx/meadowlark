@@ -102,7 +102,6 @@ func newAliasTestServer(st *aliasStore) *Server {
 		httpPort:    8080,
 		dbDriver:    "sqlite",
 		startTime:   time.Now(),
-		urlValidator: noopValidator,
 		clientFactory: func(ep *model.Endpoint) *tts.Client {
 			return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
 		},

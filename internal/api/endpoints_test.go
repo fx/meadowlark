@@ -68,23 +68,11 @@ func (m *endpointMockStore) DeleteVoiceAlias(_ context.Context, _ string) error 
 func (m *endpointMockStore) Migrate(_ context.Context) error { return nil }
 func (m *endpointMockStore) Close() error { return nil }
 
-// noopValidator allows all URLs (used for tests that need loopback mock servers).
-func noopValidator(_ context.Context, _ string) error { return nil }
-
-// ssrfValidator uses real SSRF validation with a public DNS resolver.
-func ssrfValidator() URLValidator {
-	r := publicResolver()
-	return func(ctx context.Context, rawURL string) error {
-		return validateProbeURL(ctx, rawURL, r)
-	}
-}
-
 func newEndpointTestServer(ms *endpointMockStore) (*Server, *httptest.Server) {
 	srv := &Server{
 		store: ms, version: "test", httpPort: 8080, dbDriver: "sqlite", startTime: time.Now(),
 		webFS: &fstest.MapFS{"index.html": {Data: []byte("<html></html>")}},
 		clientFactory: func(ep *model.Endpoint) *tts.Client { return tts.NewClient(ep.BaseURL, ep.APIKey, nil) },
-		urlValidator:  noopValidator,
 	}
 	return srv, httptest.NewServer(srv.setupRoutes())
 }
@@ -485,40 +473,6 @@ func TestProbeEndpoint_UnreachableURL(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Empty(t, body.Models)
 	assert.Empty(t, body.Voices)
-}
-
-func newSSRFTestServer(ms *endpointMockStore) (*Server, *httptest.Server) {
-	srv := &Server{
-		store: ms, version: "test", httpPort: 8080, dbDriver: "sqlite", startTime: time.Now(),
-		webFS: &fstest.MapFS{"index.html": {Data: []byte("<html></html>")}},
-		clientFactory: func(ep *model.Endpoint) *tts.Client { return tts.NewClient(ep.BaseURL, ep.APIKey, nil) },
-		urlValidator:  ssrfValidator(),
-	}
-	return srv, httptest.NewServer(srv.setupRoutes())
-}
-
-func TestProbeEndpoint_SSRFBlocksPrivateIP(t *testing.T) {
-	ms := &endpointMockStore{}
-	_, ts := newSSRFTestServer(ms); defer ts.Close()
-	resp, err := http.Post(ts.URL+"/api/v1/endpoints/probe", "application/json", strings.NewReader(`{"url":"http://127.0.0.1:8080/v1"}`))
-	require.NoError(t, err); defer resp.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-func TestProbeEndpoint_SSRFBlocksNonHTTPScheme(t *testing.T) {
-	ms := &endpointMockStore{}
-	_, ts := newSSRFTestServer(ms); defer ts.Close()
-	resp, err := http.Post(ts.URL+"/api/v1/endpoints/probe", "application/json", strings.NewReader(`{"url":"ftp://files.example.com/data"}`))
-	require.NoError(t, err); defer resp.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-func TestProbeEndpoint_SSRFBlocksMetadataEndpoint(t *testing.T) {
-	ms := &endpointMockStore{}
-	_, ts := newSSRFTestServer(ms); defer ts.Close()
-	resp, err := http.Post(ts.URL+"/api/v1/endpoints/probe", "application/json", strings.NewReader(`{"url":"http://169.254.169.254/latest/meta-data/"}`))
-	require.NoError(t, err); defer resp.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
 func TestDiscoverModels_Success(t *testing.T) {

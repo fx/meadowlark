@@ -37,7 +37,6 @@ func setupIntegrationTest(t *testing.T) (string, func()) {
 		clientFactory: func(ep *model.Endpoint) *tts.Client {
 			return tts.NewClient("http://localhost:0", "", nil)
 		},
-		urlValidator: noopValidator,
 		listenAddr:   ":0",
 		startTime:    time.Now(),
 		version:      "test",

@@ -67,7 +67,6 @@ func newSystemTestServer(st *mockStore) *Server {
 		wyomingPort: 10300,
 		httpPort:    8080,
 		dbDriver:    "sqlite",
-		urlValidator: noopValidator,
 		clientFactory: func(ep *model.Endpoint) *tts.Client {
 			return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
 		},

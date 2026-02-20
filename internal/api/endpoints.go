@@ -346,11 +346,6 @@ func (s *Server) ProbeEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.urlValidator(r.Context(), trimmedURL); err != nil {
-		respondError(w, http.StatusBadRequest, "bad_request", err.Error())
-		return
-	}
-
 	client := tts.NewClient(trimmedURL, req.APIKey, nil)
 	models, _ := client.ListModels(r.Context())
 	voices, _ := client.ListVoices(r.Context())
