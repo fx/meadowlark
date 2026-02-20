@@ -1,8 +1,13 @@
 package api
 
 import (
+	"context"
 	"net/http"
+	"sync"
 	"time"
+
+	"github.com/fx/meadowlark/internal/model"
+	"github.com/fx/meadowlark/internal/tts"
 )
 
 // statusResponse is the JSON response for GET /api/v1/status.
@@ -67,9 +72,52 @@ func (s *Server) GetStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// probeTimeout is the per-endpoint timeout for voice discovery.
+const probeTimeout = 5 * time.Second
+
+// endpointVoices holds the result of a single endpoint voice discovery.
+type endpointVoices struct {
+	endpoint *model.Endpoint
+	voices   []tts.Voice
+}
+
+// discoverEndpointVoices queries enabled endpoints for voices in parallel
+// with a per-probe timeout. Results preserve endpoint order.
+func (s *Server) discoverEndpointVoices(ctx context.Context, endpoints []model.Endpoint) []endpointVoices {
+	// Collect enabled endpoints.
+	var enabled []*model.Endpoint
+	for i := range endpoints {
+		if endpoints[i].Enabled {
+			enabled = append(enabled, &endpoints[i])
+		}
+	}
+	if len(enabled) == 0 {
+		return nil
+	}
+
+	results := make([]endpointVoices, len(enabled))
+	var wg sync.WaitGroup
+	wg.Add(len(enabled))
+
+	for i, ep := range enabled {
+		go func(idx int, ep *model.Endpoint) {
+			defer wg.Done()
+			probeCtx, cancel := context.WithTimeout(ctx, probeTimeout)
+			defer cancel()
+			client := s.clientFactory(ep)
+			voices, _ := client.ListVoices(probeCtx)
+			results[idx] = endpointVoices{endpoint: ep, voices: voices}
+		}(i, ep)
+	}
+
+	wg.Wait()
+	return results
+}
+
 // ListVoices returns all resolved voices (canonical + aliases).
 // For canonical voices it queries each endpoint for real voice names
-// via the TTS client. If discovery fails, the endpoint is skipped.
+// via the TTS client in parallel with a per-probe timeout. If discovery
+// fails, the endpoint falls back to using model names as voices.
 func (s *Server) ListVoices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -93,20 +141,14 @@ func (s *Server) ListVoices(w http.ResponseWriter, r *http.Request) {
 
 	var voices []voiceEntry
 
-	// Canonical voices: each enabled endpoint × model × discovered voice.
-	// Query the remote endpoint for real voice names via the TTS client.
-	for i := range endpoints {
-		ep := &endpoints[i]
-		if !ep.Enabled {
-			continue
-		}
-		client := s.clientFactory(ep)
-		remoteVoices, _ := client.ListVoices(ctx)
-
-		if len(remoteVoices) > 0 {
+	// Discover voices from all enabled endpoints in parallel.
+	discovered := s.discoverEndpointVoices(ctx, endpoints)
+	for _, d := range discovered {
+		ep := d.endpoint
+		if len(d.voices) > 0 {
 			// Use discovered voice names.
 			for _, m := range ep.Models {
-				for _, rv := range remoteVoices {
+				for _, rv := range d.voices {
 					voices = append(voices, voiceEntry{
 						Name:     rv.ID + " (" + ep.Name + ", " + m + ")",
 						Endpoint: ep.Name,

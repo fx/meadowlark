@@ -321,3 +321,111 @@ func TestListVoices_SkipsDisabledEndpoints(t *testing.T) {
 
 	assert.Empty(t, body)
 }
+
+func TestListVoices_SlowEndpointFallsBackToModels(t *testing.T) {
+	// Create a TTS server that never responds (blocks until context cancelled).
+	slowServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer slowServer.Close()
+
+	// Fast server returns real voices.
+	fastServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/audio/voices" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"voices": []map[string]string{
+					{"voice_id": "alloy", "name": "Alloy"},
+				},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer fastServer.Close()
+
+	ms := &mockStore{
+		endpoints: []model.Endpoint{
+			{ID: "ep1", Name: "FastEP", BaseURL: fastServer.URL, Models: model.StringSlice{"tts-1"}, Enabled: true},
+			{ID: "ep2", Name: "SlowEP", BaseURL: slowServer.URL, Models: model.StringSlice{"slow-model"}, Enabled: true},
+		},
+	}
+	srv := newSystemTestServer(ms)
+	router := srv.setupRoutes()
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/voices")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body []voiceEntry
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	// FastEP: discovered voice "alloy" × 1 model = 1 entry
+	// SlowEP: timeout → fallback to model name = 1 entry
+	require.Len(t, body, 2)
+
+	assert.Equal(t, "alloy (FastEP, tts-1)", body[0].Name)
+	assert.Equal(t, "alloy", body[0].Voice)
+
+	assert.Equal(t, "slow-model (SlowEP, slow-model)", body[1].Name)
+	assert.Equal(t, "slow-model", body[1].Voice)
+}
+
+func TestListVoices_ParallelDiscovery(t *testing.T) {
+	// Verify endpoints are queried in parallel by checking that two servers
+	// with a delay complete faster than sequential execution would.
+	const delay = 200 * time.Millisecond
+
+	makeServer := func(voiceID string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/audio/voices" {
+				time.Sleep(delay)
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]string{
+						{"id": voiceID, "name": voiceID},
+					},
+				})
+				return
+			}
+			http.NotFound(w, r)
+		}))
+	}
+
+	srv1 := makeServer("voice-a")
+	defer srv1.Close()
+	srv2 := makeServer("voice-b")
+	defer srv2.Close()
+
+	ms := &mockStore{
+		endpoints: []model.Endpoint{
+			{ID: "ep1", Name: "EP1", BaseURL: srv1.URL, Models: model.StringSlice{"m1"}, Enabled: true},
+			{ID: "ep2", Name: "EP2", BaseURL: srv2.URL, Models: model.StringSlice{"m2"}, Enabled: true},
+		},
+	}
+	srv := newSystemTestServer(ms)
+	router := srv.setupRoutes()
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	start := time.Now()
+	resp, err := http.Get(ts.URL + "/api/v1/voices")
+	elapsed := time.Since(start)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body []voiceEntry
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body, 2)
+
+	// If parallel, should take ~delay. If sequential, ~2*delay.
+	// Use 1.5*delay as threshold.
+	assert.Less(t, elapsed, time.Duration(float64(delay)*1.8),
+		"parallel discovery should complete faster than sequential; took %v", elapsed)
+}
