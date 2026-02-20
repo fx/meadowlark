@@ -380,3 +380,99 @@ func TestBuildCanonicalList_Empty(t *testing.T) {
 	list := BuildCanonicalList(nil, nil)
 	assert.Empty(t, list)
 }
+
+// --- Resolve empty voice tests ---
+
+func TestResolve_EmptyVoice_FallsBackToDefaultVoice(t *testing.T) {
+	eps := []model.Endpoint{
+		{
+			ID:           "ep-1",
+			Name:         "OpenAI",
+			Models:       model.StringSlice{"tts-1"},
+			DefaultVoice: "alloy",
+			Enabled:      true,
+		},
+	}
+	r := NewResolver(
+		&mockEndpointLister{endpoints: eps},
+		&mockAliasLister{aliases: nil},
+	)
+
+	resolved, err := r.Resolve(context.Background(), "")
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+
+	assert.Equal(t, "alloy", resolved.Voice)
+	assert.Equal(t, "ep-1", resolved.EndpointID)
+	assert.Equal(t, "tts-1", resolved.Model)
+}
+
+func TestResolve_EmptyVoice_NoDefaultVoiceConfigured(t *testing.T) {
+	eps := []model.Endpoint{
+		{
+			ID:      "ep-1",
+			Name:    "OpenAI",
+			Models:  model.StringSlice{"tts-1"},
+			Enabled: true,
+			// DefaultVoice is empty
+		},
+	}
+	r := NewResolver(
+		&mockEndpointLister{endpoints: eps},
+		&mockAliasLister{aliases: nil},
+	)
+
+	_, err := r.Resolve(context.Background(), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no voice specified and no default voice configured")
+}
+
+func TestResolve_EmptyVoice_SkipsDisabledEndpoint(t *testing.T) {
+	eps := []model.Endpoint{
+		{
+			ID:           "ep-1",
+			Name:         "Disabled",
+			Models:       model.StringSlice{"tts-1"},
+			DefaultVoice: "nova",
+			Enabled:      false,
+		},
+		{
+			ID:           "ep-2",
+			Name:         "Enabled",
+			Models:       model.StringSlice{"kokoro"},
+			DefaultVoice: "alloy",
+			Enabled:      true,
+		},
+	}
+	r := NewResolver(
+		&mockEndpointLister{endpoints: eps},
+		&mockAliasLister{aliases: nil},
+	)
+
+	resolved, err := r.Resolve(context.Background(), "")
+	require.NoError(t, err)
+	assert.Equal(t, "alloy", resolved.Voice)
+	assert.Equal(t, "ep-2", resolved.EndpointID)
+}
+
+func TestResolve_EmptyVoice_NoEndpoints(t *testing.T) {
+	r := NewResolver(
+		&mockEndpointLister{endpoints: nil},
+		&mockAliasLister{aliases: nil},
+	)
+
+	_, err := r.Resolve(context.Background(), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no voice specified and no default voice configured")
+}
+
+func TestResolve_EmptyVoice_EndpointListError(t *testing.T) {
+	r := NewResolver(
+		&mockEndpointLister{err: errors.New("db down")},
+		&mockAliasLister{aliases: nil},
+	)
+
+	_, err := r.Resolve(context.Background(), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "db down")
+}

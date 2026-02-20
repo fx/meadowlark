@@ -25,6 +25,7 @@ const mockEndpoint: Endpoint = {
   base_url: 'https://api.example.com',
   api_key: 'sk-123',
   models: ['tts-1', 'tts-1-hd'],
+  default_voice: 'alloy',
   default_speed: 1.5,
   default_instructions: 'Speak clearly',
   default_response_format: 'wav',
@@ -264,32 +265,46 @@ describe('EndpointForm', () => {
     mockProbe.error = undefined
   })
 
-  it('shows available voices as badges when probe returns voices', () => {
+  it('shows default voice select when probe returns voices', () => {
     mockProbe.models = [{ id: 'tts-1' }]
     mockProbe.voices = [
       { id: 'alloy', name: 'Alloy' },
       { id: 'nova', name: 'Nova' },
     ]
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByText('Available Voices')).toBeInTheDocument()
-    expect(screen.getByText('Alloy')).toBeInTheDocument()
-    expect(screen.getByText('Nova')).toBeInTheDocument()
+    expect(screen.getByText('Default Voice')).toBeInTheDocument()
     mockProbe.models = []
     mockProbe.voices = []
   })
 
-  it('shows voice id as badge label when name is empty', () => {
-    mockProbe.voices = [{ id: 'alloy', name: '' }]
+  it('does not show default voice section when no voices available', () => {
+    mockProbe.voices = []
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByText('Available Voices')).toBeInTheDocument()
-    expect(screen.getByText('alloy')).toBeInTheDocument()
+    expect(screen.queryByText('Default Voice')).not.toBeInTheDocument()
     mockProbe.voices = []
   })
 
-  it('does not show voices section when no voices available', () => {
-    mockProbe.voices = []
-    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.queryByText('Available Voices')).not.toBeInTheDocument()
+  it('shows voice id in default voice select when voice name is empty', () => {
+    mockProbe.voices = [{ id: 'alloy', name: '' }]
+    // Render with an endpoint that already has default_voice set to 'alloy'.
+    // This makes the Select display the selected item text (v.name || v.id).
+    const epWithVoice: Endpoint = {
+      ...mockEndpoint,
+      default_voice: 'alloy',
+    }
+    render(
+      <EndpointForm
+        endpoint={epWithVoice}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    expect(screen.getByText('Default Voice')).toBeInTheDocument()
+    // The voice id should be displayed as fallback when name is empty.
+    // The Select trigger and the hidden SelectItem both render the text,
+    // so use getAllByText to allow multiple matches.
+    expect(screen.getAllByText('alloy').length).toBeGreaterThan(0)
     mockProbe.voices = []
   })
 
@@ -480,10 +495,17 @@ describe('EndpointForm', () => {
     // Simulate probe completing: change mock then trigger re-render
     mockProbe.status = 'success'
     mockProbe.models = [{ id: 'discovered-model' }]
+    mockProbe.voices = [
+      { id: 'alloy', name: 'Alloy' },
+      { id: 'nova', name: 'Nova' },
+    ]
     // Type one more char to trigger re-render; useEffect sees status changed to 'success'
     await user.type(screen.getByLabelText('Base URL'), '/')
     expect(screen.getByText('discovered-model')).toBeInTheDocument()
+    // Default voice should be auto-populated with first voice
+    expect(screen.getByText('Default Voice')).toBeInTheDocument()
     mockProbe.models = []
+    mockProbe.voices = []
     mockProbe.status = 'idle'
   })
 

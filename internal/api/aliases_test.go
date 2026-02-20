@@ -554,7 +554,7 @@ func TestTestAlias_Success(t *testing.T) {
 	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "audio/wav")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("fake-audio-data"))
+		_, _ = w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
 	}))
 	defer mockTTS.Close()
 
@@ -624,7 +624,7 @@ func TestTestAlias_CustomText(t *testing.T) {
 		receivedInput = req.Input
 		w.Header().Set("Content-Type", "audio/wav")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("fake-audio"))
+		_, _ = w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
 	}))
 	defer mockTTS.Close()
 

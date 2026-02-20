@@ -338,7 +338,7 @@ func TestDeleteEndpoint_NotFound(t *testing.T) {
 
 func TestTestEndpoint_Success(t *testing.T) {
 	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "audio/wav"); w.WriteHeader(http.StatusOK); _, _ = w.Write([]byte("RIFF....WAVEfmt"))
+		w.Header().Set("Content-Type", "audio/wav"); w.WriteHeader(http.StatusOK); _, _ = w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
 	}))
 	defer mockTTS.Close()
 	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mockTTS.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}}}
