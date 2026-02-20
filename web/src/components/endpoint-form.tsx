@@ -216,13 +216,13 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         />
       </div>
 
-      {(probe.voices.length > 0 || endpoint?.default_voice) && (
+      {(probe.status !== 'idle' || endpoint?.default_voice) && (
         <div className="space-y-2">
           <Label htmlFor="ep-default-voice">Default Voice</Label>
           <Select
             value={defaultVoice || '__none__'}
             onValueChange={(v) => setDefaultVoice(v === '__none__' ? '' : v)}
-            disabled={probe.status === 'loading'}
+            disabled={probe.status === 'loading' || (probe.status === 'error' && probe.voices.length === 0)}
           >
             <SelectTrigger id="ep-default-voice" className="w-full">
               <SelectValue
