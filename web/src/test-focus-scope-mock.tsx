@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'preact'
 import { forwardRef } from 'preact/compat'
+import { useEffect } from 'preact/hooks'
 
 type FocusScopeProps = ComponentProps<'div'> & {
   loop?: boolean
@@ -10,9 +11,15 @@ type FocusScopeProps = ComponentProps<'div'> & {
 }
 
 const FocusScope = forwardRef<HTMLDivElement, FocusScopeProps>(function FocusScope(
-  { loop: _, trapped: _t, onMountAutoFocus: _m, onUnmountAutoFocus: _u, asChild: _a, ...props },
+  { loop: _, trapped: _t, onMountAutoFocus, onUnmountAutoFocus: _u, asChild: _a, ...props },
   ref,
 ) {
+  useEffect(() => {
+    if (onMountAutoFocus) {
+      onMountAutoFocus(new Event('focusScope.autoFocus', { cancelable: true }))
+    }
+  }, [onMountAutoFocus])
+
   return <div ref={ref} {...props} />
 })
 

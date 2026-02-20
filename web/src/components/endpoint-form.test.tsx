@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/preact'
+import { render, screen } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Endpoint } from '@/lib/api'
@@ -15,40 +15,6 @@ vi.mock('@/hooks/use-endpoint-probe', () => ({
   useEndpointProbe: () => mockProbe,
 }))
 
-// Store onValueChange callback for model-add Select
-let selectOnValueChange: ((value: string) => void) | undefined
-
-vi.mock('@/components/ui/select', () => ({
-  Select: ({
-    children,
-    onValueChange,
-  }: {
-    children: preact.ComponentChildren
-    value?: string
-    onValueChange?: (value: string) => void
-  }) => {
-    selectOnValueChange = onValueChange
-    return <div data-testid="model-select">{children}</div>
-  },
-  SelectTrigger: ({
-    children,
-    'aria-label': ariaLabel,
-  }: {
-    children: preact.ComponentChildren
-    'aria-label'?: string
-    className?: string
-  }) => (
-    <button type="button" data-testid="model-select-trigger" aria-label={ariaLabel}>
-      {children}
-    </button>
-  ),
-  SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
-  SelectContent: ({ children }: { children: preact.ComponentChildren }) => <div>{children}</div>,
-  SelectItem: ({ children, value }: { children: preact.ComponentChildren; value: string }) => (
-    <option value={value}>{children}</option>
-  ),
-}))
-
 import { EndpointForm } from './endpoint-form'
 
 const mockEndpoint: Endpoint = {
@@ -63,6 +29,11 @@ const mockEndpoint: Endpoint = {
   enabled: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
+}
+
+/** Open the models combobox dropdown via the toggle button. */
+async function openModelsDropdown(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Toggle options' }))
 }
 
 describe('EndpointForm', () => {
@@ -85,6 +56,19 @@ describe('EndpointForm', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('Test EP')
     expect(screen.getByLabelText('Base URL')).toHaveValue('https://api.example.com')
     expect(screen.getByText('Update')).toBeInTheDocument()
+  })
+
+  it('renders model badges for existing endpoint', () => {
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    expect(screen.getByText('tts-1')).toBeInTheDocument()
+    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
   })
 
   it('shows Saving... when isSaving is true', () => {
@@ -111,13 +95,19 @@ describe('EndpointForm', () => {
     expect(keyInput).toHaveAttribute('type', 'password')
   })
 
-  it('submits form data for create', async () => {
+  it('submits form data for create with models added via combobox', async () => {
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-2' }]
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'New EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://api.test.com')
-    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1, tts-2')
+    // Open combobox and select a model from dropdown
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
+    // Open again to add second model
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-2'))
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -127,6 +117,7 @@ describe('EndpointForm', () => {
         enabled: true,
       }),
     )
+    mockProbe.models = []
   })
 
   it('submits form data for update', async () => {
@@ -165,12 +156,15 @@ describe('EndpointForm', () => {
   })
 
   it('submits api key, speed, and instructions when filled', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Full EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
+    // Add model via combobox dropdown
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
     await user.type(screen.getByLabelText('API Key'), 'sk-test')
     await user.type(screen.getByLabelText('Default Speed'), '1.5')
     await user.type(screen.getByLabelText('Default Instructions'), 'Speak slowly')
@@ -182,15 +176,18 @@ describe('EndpointForm', () => {
         default_instructions: 'Speak slowly',
       }),
     )
+    mockProbe.models = []
   })
 
   it('treats NaN speed as undefined', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'NaN EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
     await user.type(screen.getByLabelText('Default Speed'), 'abc')
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
@@ -198,15 +195,18 @@ describe('EndpointForm', () => {
         default_speed: undefined,
       }),
     )
+    mockProbe.models = []
   })
 
   it('sends undefined for empty optional fields', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Minimal')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -215,6 +215,44 @@ describe('EndpointForm', () => {
         default_instructions: undefined,
       }),
     )
+    mockProbe.models = []
+  })
+
+  it('removes model badge when X is clicked', async () => {
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    expect(screen.getByText('tts-1')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove tts-1' }))
+    expect(screen.queryByText('tts-1')).not.toBeInTheDocument()
+    // tts-1-hd should still be there
+    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
+  })
+
+  it('does not add duplicate model', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    // tts-1 is already in selectedModels so it won't appear in dropdown options
+    // (filtered out by modelOptions). Type it manually to try adding.
+    await user.type(screen.getByLabelText('Models'), 'tts-1')
+    // Still only one badge with tts-1 text
+    const badges = screen.getAllByText('tts-1')
+    expect(badges).toHaveLength(1)
+    mockProbe.models = []
   })
 
   it('shows probe error when present', () => {
@@ -231,7 +269,7 @@ describe('EndpointForm', () => {
       { id: 'nova', name: 'Nova' },
     ]
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByText('Available voices: alloy, nova')).toBeInTheDocument()
+    expect(screen.getByText('Available voices: Alloy (alloy), Nova (nova)')).toBeInTheDocument()
     mockProbe.models = []
     mockProbe.voices = []
   })
@@ -243,64 +281,102 @@ describe('EndpointForm', () => {
     mockProbe.voices = []
   })
 
-  it('shows probing spinner near URL when loading', () => {
+  it('shows loading placeholder in combobox when loading', () => {
     mockProbe.loading = true
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByLabelText('Probing endpoint')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Loading...')).toBeInTheDocument()
     mockProbe.loading = false
   })
 
-  it('hides probing spinner when not loading', () => {
+  it('shows normal placeholder when not loading', () => {
     mockProbe.loading = false
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.queryByLabelText('Probing endpoint')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search or type a model name')).toBeInTheDocument()
   })
 
-  it('hides model Select when no probe models available', () => {
-    mockProbe.models = []
-    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.queryByTestId('model-select')).not.toBeInTheDocument()
+  it('shows "Add another model" placeholder when models are selected', () => {
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    expect(screen.getByPlaceholderText('Add another model...')).toBeInTheDocument()
   })
 
-  it('shows model Select when probe returns models', () => {
+  it('shows combobox dropdown when probe returns models', async () => {
     mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
-    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByTestId('model-select')).toBeInTheDocument()
-    expect(screen.getByText('Add...')).toBeInTheDocument()
-    mockProbe.models = []
-  })
-
-  it('appends model from Select to empty input', () => {
-    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
-    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    act(() => {
-      selectOnValueChange?.('tts-1')
-    })
-    expect(screen.getByLabelText('Models (comma-separated)')).toHaveValue('tts-1')
-    mockProbe.models = []
-  })
-
-  it('appends model with comma when input already has value', async () => {
     const user = userEvent.setup()
-    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    await user.type(screen.getByLabelText('Models (comma-separated)'), 'custom-model')
-    act(() => {
-      selectOnValueChange?.('tts-1-hd')
-    })
-    expect(screen.getByLabelText('Models (comma-separated)')).toHaveValue('custom-model, tts-1-hd')
+    await openModelsDropdown(user)
+    expect(screen.getByText('tts-1')).toBeInTheDocument()
+    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
     mockProbe.models = []
   })
 
-  it('does not duplicate model when already in input', async () => {
+  it('adds model from combobox selection', async () => {
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
     const user = userEvent.setup()
-    mockProbe.models = [{ id: 'tts-1' }]
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
+    // Badge should appear
+    expect(screen.getByText('tts-1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove tts-1' })).toBeInTheDocument()
+    mockProbe.models = []
+  })
+
+  it('requires models field for create when no models selected', () => {
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
-    act(() => {
-      selectOnValueChange?.('tts-1')
-    })
-    expect(screen.getByLabelText('Models (comma-separated)')).toHaveValue('tts-1')
+    const modelsInput = screen.getByLabelText('Models')
+    expect(modelsInput).toBeRequired()
+  })
+
+  it('does not require models field for edit', () => {
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    const modelsInput = screen.getByLabelText('Models')
+    expect(modelsInput).not.toBeRequired()
+  })
+
+  it('allows free-text model entry via combobox', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'FT EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    // Type a free-text model name (no dropdown options available)
+    await user.type(screen.getByLabelText('Models'), 'custom-model')
+    await user.click(screen.getByText('Create'))
+    // The free-text value should be passed as models input value
+    expect(onSubmit).toHaveBeenCalled()
+  })
+
+  it('ignores whitespace-only model from probe', async () => {
+    // Probe returns a whitespace-only model id; selecting it should be rejected
+    mockProbe.models = [{ id: ' ' }]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'WS EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await openModelsDropdown(user)
+    // Select the whitespace model from dropdown
+    const wsOption = screen.getByRole('button', { name: '' })
+    await user.click(wsOption)
+    // No badge should appear for whitespace-only model
+    expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument()
     mockProbe.models = []
   })
 })

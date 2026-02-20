@@ -95,7 +95,7 @@ describe('EndpointsPage', () => {
     await user.click(screen.getByText('+ Add Endpoint'))
     await user.type(screen.getByLabelText('Name'), 'New EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://new.api.com')
-    await user.type(screen.getByLabelText('Models (comma-separated)'), 'model-1')
+    await user.type(screen.getByLabelText('Models'), 'model-1')
     await user.click(screen.getByText('Create'))
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

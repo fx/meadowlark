@@ -1,15 +1,10 @@
-import { Eye, EyeSlash } from '@phosphor-icons/react'
+import { Eye, EyeSlash, X } from '@phosphor-icons/react'
 import { useCallback, useState } from 'preact/hooks'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useEndpointProbe } from '@/hooks/use-endpoint-probe'
@@ -28,50 +23,56 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const [baseUrl, setBaseUrl] = useState(endpoint?.base_url ?? '')
   const [apiKey, setApiKey] = useState(endpoint?.api_key ?? '')
   const [showApiKey, setShowApiKey] = useState(false)
-  const [models, setModels] = useState(endpoint?.models?.join(', ') ?? '')
+  const [selectedModels, setSelectedModels] = useState<string[]>(endpoint?.models ?? [])
+  const [modelInput, setModelInput] = useState('')
   const [speed, setSpeed] = useState(endpoint?.default_speed?.toString() ?? '')
   const [instructions, setInstructions] = useState(endpoint?.default_instructions ?? '')
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
 
   const probe = useEndpointProbe(baseUrl, apiKey)
 
+  const modelOptions = probe.models
+    .filter((m) => !selectedModels.includes(m.id))
+    .map((m) => ({ value: m.id, label: m.id }))
+
   const voiceOptions = probe.voices.map((v) => ({
     value: v.id,
     label: v.name ? `${v.name} (${v.id})` : v.id,
   }))
 
-  const appendModel = useCallback(
+  const addModel = useCallback(
     (modelId: string) => {
-      const current = models
-        .split(',')
-        .map((m) => m.trim())
-        .filter(Boolean)
-      if (!current.includes(modelId)) {
-        setModels(current.length > 0 ? `${models}, ${modelId}` : modelId)
+      const trimmed = modelId.trim()
+      if (trimmed && !selectedModels.includes(trimmed)) {
+        setSelectedModels([...selectedModels, trimmed])
       }
+      setModelInput('')
     },
-    [models],
+    [selectedModels],
+  )
+
+  const removeModel = useCallback(
+    (modelId: string) => {
+      setSelectedModels(selectedModels.filter((m) => m !== modelId))
+    },
+    [selectedModels],
   )
 
   const handleSubmit = useCallback(
     (e: Event) => {
       e.preventDefault()
-      const modelList = models
-        .split(',')
-        .map((m) => m.trim())
-        .filter(Boolean)
       const data: CreateEndpoint | UpdateEndpoint = {
         name,
         base_url: baseUrl,
         api_key: apiKey || undefined,
-        models: modelList,
+        models: selectedModels,
         default_speed: speed && Number.isFinite(Number(speed)) ? Number(speed) : undefined,
         default_instructions: instructions || undefined,
         enabled,
       }
       onSubmit(data)
     },
-    [name, baseUrl, apiKey, models, speed, instructions, enabled, onSubmit],
+    [name, baseUrl, apiKey, selectedModels, speed, instructions, enabled, onSubmit],
   )
 
   return (
@@ -88,19 +89,12 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         </div>
         <div className="space-y-2">
           <Label htmlFor="ep-url">Base URL</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              id="ep-url"
-              value={baseUrl}
-              onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
-              required
-            />
-            {probe.loading && (
-              <output aria-label="Probing endpoint">
-                <div className="h-4 w-4 shrink-0 animate-spin border-2 border-muted-foreground border-t-transparent" />
-              </output>
-            )}
-          </div>
+          <Input
+            id="ep-url"
+            value={baseUrl}
+            onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
+            required
+          />
         </div>
       </div>
 
@@ -126,37 +120,48 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="ep-models">Models (comma-separated)</Label>
-        <div className="flex gap-2">
-          <Input
-            id="ep-models"
-            value={models}
-            onInput={(e) => setModels((e.target as HTMLInputElement).value)}
-            placeholder="tts-1, tts-1-hd"
-            required={isCreate}
-          />
-          {probe.models.length > 0 && (
-            <Select value="" onValueChange={appendModel}>
-              <SelectTrigger aria-label="Add discovered model" className="w-auto shrink-0">
-                <SelectValue placeholder="Add..." />
-              </SelectTrigger>
-              <SelectContent>
-                {probe.models.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+        <Label htmlFor="ep-models">Models</Label>
+        {selectedModels.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {selectedModels.map((m) => (
+              <Badge key={m} variant="secondary" className="gap-1 pr-1">
+                {m}
+                <button
+                  type="button"
+                  onClick={() => removeModel(m)}
+                  className="hover:text-destructive rounded-sm"
+                  aria-label={`Remove ${m}`}
+                >
+                  <X className="size-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        )}
+        <Combobox
+          id="ep-models"
+          value={modelInput}
+          onChange={(v) => {
+            if (modelOptions.some((o) => o.value === v)) {
+              addModel(v)
+            } else {
+              setModelInput(v)
+            }
+          }}
+          options={modelOptions}
+          loading={probe.loading}
+          placeholder={
+            selectedModels.length > 0 ? 'Add another model...' : 'Search or type a model name'
+          }
+          required={isCreate && selectedModels.length === 0}
+        />
         {probe.error && <p className="text-sm text-destructive">Probe error: {probe.error}</p>}
       </div>
 
       {voiceOptions.length > 0 && (
         <div className="space-y-2">
           <span className="text-sm text-muted-foreground">
-            Available voices: {voiceOptions.map((v) => v.value).join(', ')}
+            Available voices: {voiceOptions.map((v) => v.label).join(', ')}
           </span>
         </div>
       )}
