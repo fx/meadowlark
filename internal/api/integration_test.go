@@ -28,7 +28,7 @@ func setupIntegrationTest(t *testing.T) (string, func()) {
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(context.Background()))
 
-	ib := wyoming.NewInfoBuilder(db, db, "test")
+	ib := wyoming.NewInfoBuilder(db, db, nil, "test")
 	webFS := fstest.MapFS{"index.html": {Data: []byte("<html>test</html>")}}
 
 	srv := &Server{

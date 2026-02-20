@@ -31,7 +31,7 @@ func (m *mockAliasLister) ListVoiceAliases(_ context.Context) ([]model.VoiceAlia
 }
 
 func TestInfoBuilder_Build_EmptyState(t *testing.T) {
-	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, nil, "1.0.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
@@ -79,7 +79,7 @@ func TestInfoBuilder_Build_WithEndpointsAndAliases(t *testing.T) {
 		},
 	}
 
-	builder := NewInfoBuilder(endpoints, aliases, "0.2.0")
+	builder := NewInfoBuilder(endpoints, aliases, nil, "0.2.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
@@ -116,7 +116,7 @@ func TestInfoBuilder_Build_AliasDefaultLanguages(t *testing.T) {
 		},
 	}
 
-	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, nil, "1.0.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
@@ -126,7 +126,7 @@ func TestInfoBuilder_Build_AliasDefaultLanguages(t *testing.T) {
 
 func TestInfoBuilder_Build_EndpointListError(t *testing.T) {
 	endpoints := &mockEndpointLister{err: errors.New("db error")}
-	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, "1.0.0")
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, nil, "1.0.0")
 
 	_, err := builder.Build(context.Background())
 	assert.ErrorContains(t, err, "db error")
@@ -134,14 +134,14 @@ func TestInfoBuilder_Build_EndpointListError(t *testing.T) {
 
 func TestInfoBuilder_Build_AliasListError(t *testing.T) {
 	aliases := &mockAliasLister{err: errors.New("alias error")}
-	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, nil, "1.0.0")
 
 	_, err := builder.Build(context.Background())
 	assert.ErrorContains(t, err, "alias error")
 }
 
 func TestInfoBuilder_Cached(t *testing.T) {
-	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, nil, "1.0.0")
 
 	// Before Build, Cached returns nil.
 	assert.Nil(t, builder.Cached())
@@ -156,7 +156,7 @@ func TestInfoBuilder_Cached(t *testing.T) {
 
 func TestInfoBuilder_Build_RebuildUpdatesCache(t *testing.T) {
 	aliases := &mockAliasLister{}
-	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, nil, "1.0.0")
 
 	info1, err := builder.Build(context.Background())
 	require.NoError(t, err)

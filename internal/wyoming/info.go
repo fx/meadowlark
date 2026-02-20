@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/fx/meadowlark/internal/model"
 	"github.com/fx/meadowlark/internal/voice"
@@ -19,11 +20,19 @@ type AliasLister interface {
 	ListVoiceAliases(ctx context.Context) ([]model.VoiceAlias, error)
 }
 
+// VoiceDiscoverer discovers available voices for an endpoint.
+type VoiceDiscoverer interface {
+	// DiscoverVoices returns voice IDs for the given endpoint.
+	// Returns nil on failure (should not block the info response).
+	DiscoverVoices(ctx context.Context, ep *model.Endpoint) []string
+}
+
 // InfoBuilder aggregates canonical voices from all enabled endpoints and
 // enabled voice aliases, then builds a complete Info event.
 type InfoBuilder struct {
 	endpoints EndpointLister
 	aliases   AliasLister
+	discoverer VoiceDiscoverer
 	version   string
 
 	mu    sync.RWMutex
@@ -31,13 +40,17 @@ type InfoBuilder struct {
 }
 
 // NewInfoBuilder creates a new InfoBuilder.
-func NewInfoBuilder(endpoints EndpointLister, aliases AliasLister, version string) *InfoBuilder {
+func NewInfoBuilder(endpoints EndpointLister, aliases AliasLister, discoverer VoiceDiscoverer, version string) *InfoBuilder {
 	return &InfoBuilder{
-		endpoints: endpoints,
-		aliases:   aliases,
-		version:   version,
+		endpoints:  endpoints,
+		aliases:    aliases,
+		discoverer: discoverer,
+		version:    version,
 	}
 }
+
+// discoverTimeout is the per-endpoint timeout for voice discovery during info build.
+const discoverTimeout = 5 * time.Second
 
 // Build rebuilds the Info response from the current state of endpoints and aliases.
 // The result is cached until the next call to Build.
@@ -54,33 +67,41 @@ func (b *InfoBuilder) Build(ctx context.Context) (*Info, error) {
 
 	var voices []TtsVoice
 
-	// Add canonical voices: endpoint x model x voice.
-	// For canonical voices, we use the endpoint's models as the voice list since
-	// we don't have a separate voice discovery mechanism yet. The voice names
-	// exposed by each endpoint are not stored in the database -- we use model names
-	// as placeholder voice names for canonical entries. In practice, users configure
-	// voice aliases for the voices they actually want to expose.
-	//
-	// Note: BuildCanonicalList from the voice package requires a voicesByEndpoint map.
-	// Since we don't have voice discovery yet, we build canonical voices from
-	// endpoints and their models directly. Each model on each endpoint becomes a
-	// canonical voice entry only if there are voice aliases that reference it,
-	// OR we simply expose all endpoint x model combinations.
-	//
-	// Per the spec, canonical voices are formatted as "voice (endpoint, model)".
-	// Without voice discovery, there are no canonical voices to expose unless
-	// explicitly configured. Voice aliases are the primary mechanism.
+	// Add canonical voices by discovering actual voices from each enabled endpoint.
 	for _, ep := range endpoints {
 		if !ep.Enabled {
 			continue
 		}
-		for _, m := range ep.Models {
-			voices = append(voices, TtsVoice{
-				Name:        voice.CanonicalName(m, ep.Name, m),
-				Description: fmt.Sprintf("%s (%s, %s)", m, ep.Name, m),
-				Installed:   true,
-				Languages:   []string{"en"},
-			})
+
+		var voiceNames []string
+		if b.discoverer != nil {
+			dctx, cancel := context.WithTimeout(ctx, discoverTimeout)
+			voiceNames = b.discoverer.DiscoverVoices(dctx, &ep)
+			cancel()
+		}
+
+		if len(voiceNames) > 0 {
+			// Use discovered voice names.
+			for _, m := range ep.Models {
+				for _, v := range voiceNames {
+					voices = append(voices, TtsVoice{
+						Name:        voice.CanonicalName(v, ep.Name, m),
+						Description: fmt.Sprintf("%s (%s, %s)", v, ep.Name, m),
+						Installed:   true,
+						Languages:   []string{"en"},
+					})
+				}
+			}
+		} else {
+			// Fallback: use model names when voice discovery fails.
+			for _, m := range ep.Models {
+				voices = append(voices, TtsVoice{
+					Name:        voice.CanonicalName(m, ep.Name, m),
+					Description: fmt.Sprintf("%s (%s, %s)", m, ep.Name, m),
+					Installed:   true,
+					Languages:   []string{"en"},
+				})
+			}
 		}
 	}
 
