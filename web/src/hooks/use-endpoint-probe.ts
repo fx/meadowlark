@@ -85,6 +85,11 @@ export function useEndpointProbe(url: string, apiKey: string): UseEndpointProbeR
       return
     }
 
+    setModels([])
+    setVoices([])
+    setStatus('loading')
+    setError(undefined)
+
     const timer = setTimeout(() => {
       doProbe(url, apiKey)
     }, 500)

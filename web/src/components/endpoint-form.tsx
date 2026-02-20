@@ -41,14 +41,17 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const urlDirtyRef = useRef(false)
   const probe = useEndpointProbe(baseUrl, apiKey)
   const urlInvalid =
-    urlDirtyRef.current && (!baseUrl || (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')))
+    urlDirtyRef.current &&
+    (!baseUrl || (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')))
 
-  // Auto-populate models when probe succeeds after a URL change
+  // Auto-populate models when probe succeeds after a URL change.
+  // The probe hook resets status to 'loading' immediately on URL change,
+  // so this only fires with fresh data from a completed probe.
   useEffect(() => {
     if (urlDirtyRef.current && probe.status === 'success') {
       setSelectedModels(probe.models.map((m) => m.id))
     }
-  }, [baseUrl, probe.status, probe.models])
+  }, [probe.status, probe.models])
 
   const handleUrlChange = useCallback((e: Event) => {
     urlDirtyRef.current = true

@@ -42,8 +42,8 @@ describe('useEndpointProbe', () => {
     mockProbeOk([{ id: 'tts-1' }], [{ id: 'alloy', name: 'Alloy' }])
 
     const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', 'sk-test'))
-    // status stays idle during debounce, only becomes loading when fetch starts
-    expect(result.current.status).toBe('idle')
+    // status is loading immediately for valid URL (clears stale data during debounce)
+    expect(result.current.status).toBe('loading')
 
     await waitFor(() => {
       expect(result.current.models).toEqual([{ id: 'tts-1' }])
@@ -60,7 +60,7 @@ describe('useEndpointProbe', () => {
     expect(result.current.status).toBe('success')
   })
 
-  it('transitions status from idle to loading to success', async () => {
+  it('transitions status to loading then success', async () => {
     let resolveFetch: ((v: unknown) => void) | null = null
     mockFetch.mockImplementation(
       () =>
@@ -71,12 +71,12 @@ describe('useEndpointProbe', () => {
 
     const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', ''))
 
-    // Initially idle (during debounce)
-    expect(result.current.status).toBe('idle')
+    // Immediately loading for valid URL (stale data cleared)
+    expect(result.current.status).toBe('loading')
 
-    // Wait for status to transition to loading after debounce fires
+    // Wait for debounce to fire and fetch to start
     await waitFor(() => {
-      expect(result.current.status).toBe('loading')
+      expect(mockFetch).toHaveBeenCalledTimes(1)
     }, WAIT_OPTS)
 
     // Resolve the fetch
@@ -93,7 +93,7 @@ describe('useEndpointProbe', () => {
     }, WAIT_OPTS)
   })
 
-  it('transitions status from idle to loading to error', async () => {
+  it('transitions status to loading then error', async () => {
     let rejectFetch: ((err: Error) => void) | null = null
     mockFetch.mockImplementation(
       () =>
@@ -104,11 +104,12 @@ describe('useEndpointProbe', () => {
 
     const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', ''))
 
-    expect(result.current.status).toBe('idle')
+    // Immediately loading for valid URL
+    expect(result.current.status).toBe('loading')
 
-    // Wait for status to transition to loading after debounce fires
+    // Wait for debounce to fire and fetch to start
     await waitFor(() => {
-      expect(result.current.status).toBe('loading')
+      expect(mockFetch).toHaveBeenCalledTimes(1)
     }, WAIT_OPTS)
 
     await act(async () => {
@@ -172,6 +173,27 @@ describe('useEndpointProbe', () => {
 
     expect(result.current.models).toEqual([])
     expect(result.current.voices).toEqual([])
+  })
+
+  it('clears stale results immediately when URL changes to another valid URL', async () => {
+    mockProbeOk([{ id: 'tts-1' }], [{ id: 'alloy', name: 'Alloy' }])
+
+    const { result, rerender } = renderHook(({ url }) => useEndpointProbe(url, ''), {
+      initialProps: { url: 'https://api.example.com/v1' },
+    })
+
+    await waitFor(() => {
+      expect(result.current.models).toHaveLength(1)
+      expect(result.current.status).toBe('success')
+    }, WAIT_OPTS)
+
+    // Change to a different valid URL
+    rerender({ url: 'https://other.example.com/v1' })
+
+    // Stale data should be cleared immediately, status should be loading
+    expect(result.current.models).toEqual([])
+    expect(result.current.voices).toEqual([])
+    expect(result.current.status).toBe('loading')
   })
 
   it('clears results when URL becomes invalid', async () => {

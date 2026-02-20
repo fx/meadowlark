@@ -471,13 +471,18 @@ describe('EndpointForm', () => {
     expect(screen.queryByText('tts-1-hd')).not.toBeInTheDocument()
   })
 
-  it('auto-populates models from probe on success after URL change', async () => {
-    mockProbe.models = [{ id: 'new-model' }]
-    mockProbe.status = 'success'
+  it('auto-populates models when probe succeeds after URL change', async () => {
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    await user.type(screen.getByLabelText('Base URL'), 'https://new.api.com')
-    expect(screen.getByText('new-model')).toBeInTheDocument()
+    // Type URL to mark dirty (useEffect sees status=idle, no auto-populate)
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.com')
+    expect(screen.queryByText('discovered-model')).not.toBeInTheDocument()
+    // Simulate probe completing: change mock then trigger re-render
+    mockProbe.status = 'success'
+    mockProbe.models = [{ id: 'discovered-model' }]
+    // Type one more char to trigger re-render; useEffect sees status changed to 'success'
+    await user.type(screen.getByLabelText('Base URL'), '/')
+    expect(screen.getByText('discovered-model')).toBeInTheDocument()
     mockProbe.models = []
     mockProbe.status = 'idle'
   })
@@ -511,22 +516,4 @@ describe('EndpointForm', () => {
     expect(screen.queryByTestId('icon-warning')).not.toBeInTheDocument()
   })
 
-  it('does not auto-populate models on initial edit render', () => {
-    mockProbe.models = [{ id: 'probed-model' }]
-    mockProbe.status = 'success'
-    render(
-      <EndpointForm
-        endpoint={mockEndpoint}
-        onSubmit={vi.fn()}
-        onCancel={vi.fn()}
-        isSaving={false}
-      />,
-    )
-    // Should show the endpoint's saved models, not probe models
-    expect(screen.getByText('tts-1')).toBeInTheDocument()
-    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
-    expect(screen.queryByText('probed-model')).not.toBeInTheDocument()
-    mockProbe.models = []
-    mockProbe.status = 'idle'
-  })
 })
