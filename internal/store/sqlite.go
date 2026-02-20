@@ -2,8 +2,8 @@ package store
 
 import (
 	"context"
-	"errors"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -48,11 +48,42 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
-	// Idempotent ALTER TABLE migrations (errors ignored when column already exists).
-	for _, stmt := range alterMigrations {
-		_, _ = s.db.ExecContext(ctx, stmt)
+	for _, m := range alterMigrations {
+		exists, err := s.columnExists(ctx, m.table, m.column)
+		if err != nil {
+			return fmt.Errorf("store: check column %s.%s: %w", m.table, m.column, err)
+		}
+		if exists {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, m.sql); err != nil {
+			return fmt.Errorf("store: alter %s add %s: %w", m.table, m.column, err)
+		}
 	}
 	return nil
+}
+
+// columnExists checks whether a column exists on a table using PRAGMA table_info.
+func (s *SQLiteStore) columnExists(ctx context.Context, table, column string) (bool, error) {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 const migrationSQL = `
@@ -87,10 +118,17 @@ CREATE TABLE IF NOT EXISTS voice_aliases (
 
 `
 
+// sqliteAlterMigration describes an idempotent ALTER TABLE ADD COLUMN migration.
+type sqliteAlterMigration struct {
+	table  string
+	column string
+	sql    string
+}
+
 // alterMigrations are run after the initial schema creation.
-// Errors are silently ignored (e.g. "duplicate column name") to ensure idempotency.
-var alterMigrations = []string{
-	`ALTER TABLE endpoints ADD COLUMN default_voice TEXT NOT NULL DEFAULT ''`,
+// Each migration checks PRAGMA table_info before executing.
+var alterMigrations = []sqliteAlterMigration{
+	{table: "endpoints", column: "default_voice", sql: `ALTER TABLE endpoints ADD COLUMN default_voice TEXT NOT NULL DEFAULT ''`},
 }
 
 func (s *SQLiteStore) Close() error { return s.db.Close() }
