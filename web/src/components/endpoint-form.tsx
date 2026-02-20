@@ -4,6 +4,7 @@ import {
   Eye,
   EyeSlash,
   SpinnerGap,
+  Warning,
   X,
   XCircle,
 } from '@phosphor-icons/react'
@@ -39,6 +40,8 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
 
   const urlDirtyRef = useRef(false)
   const probe = useEndpointProbe(baseUrl, apiKey)
+  const urlInvalid =
+    urlDirtyRef.current && (!baseUrl || (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')))
 
   // Auto-populate models when probe succeeds after a URL change
   useEffect(() => {
@@ -120,15 +123,25 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
               size="icon"
               className="shrink-0"
               aria-label="Refresh endpoint"
-              disabled={probe.status === 'loading'}
+              disabled={probe.status === 'loading' || urlInvalid}
               onClick={probe.refresh}
             >
-              {probe.status === 'loading' && <SpinnerGap className="h-4 w-4 animate-spin" />}
-              {probe.status === 'success' && <Check className="h-4 w-4 text-green-600" />}
-              {probe.status === 'error' && <XCircle className="h-4 w-4 text-destructive" />}
-              {probe.status === 'idle' && <ArrowsClockwise className="h-4 w-4" />}
+              {urlInvalid && <Warning className="h-4 w-4 text-yellow-600" />}
+              {!urlInvalid && probe.status === 'loading' && (
+                <SpinnerGap className="h-4 w-4 animate-spin" />
+              )}
+              {!urlInvalid && probe.status === 'success' && (
+                <Check className="h-4 w-4 text-green-600" />
+              )}
+              {!urlInvalid && probe.status === 'error' && (
+                <XCircle className="h-4 w-4 text-destructive" />
+              )}
+              {!urlInvalid && probe.status === 'idle' && <ArrowsClockwise className="h-4 w-4" />}
             </Button>
           </div>
+          {urlInvalid && baseUrl && (
+            <p className="text-sm text-yellow-600">URL must start with http:// or https://</p>
+          )}
           {probe.error && <p className="text-sm text-destructive">{probe.error}</p>}
         </div>
       </div>

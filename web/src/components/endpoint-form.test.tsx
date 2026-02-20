@@ -482,6 +482,35 @@ describe('EndpointForm', () => {
     mockProbe.status = 'idle'
   })
 
+  it('shows warning icon when URL is emptied after editing', async () => {
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    const urlInput = screen.getByLabelText('Base URL')
+    await user.clear(urlInput)
+    expect(screen.getByTestId('icon-warning')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeDisabled()
+  })
+
+  it('shows warning icon and message for invalid URL scheme', async () => {
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Base URL'), 'ftp://bad.url')
+    expect(screen.getByTestId('icon-warning')).toBeInTheDocument()
+    expect(screen.getByText('URL must start with http:// or https://')).toBeInTheDocument()
+  })
+
+  it('does not show warning for untouched empty URL in create mode', () => {
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.queryByTestId('icon-warning')).not.toBeInTheDocument()
+  })
+
   it('does not auto-populate models on initial edit render', () => {
     mockProbe.models = [{ id: 'probed-model' }]
     mockProbe.status = 'success'
