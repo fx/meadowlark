@@ -67,21 +67,33 @@ func (b *InfoBuilder) Build(ctx context.Context) (*Info, error) {
 
 	var voices []TtsVoice
 
-	// Add canonical voices by discovering actual voices from each enabled endpoint.
+	// Discover voices from all enabled endpoints in parallel.
+	var enabled []model.Endpoint
 	for _, ep := range endpoints {
-		if !ep.Enabled {
-			continue
+		if ep.Enabled {
+			enabled = append(enabled, ep)
 		}
+	}
 
-		var voiceNames []string
-		if b.discoverer != nil {
-			dctx, cancel := context.WithTimeout(ctx, discoverTimeout)
-			voiceNames = b.discoverer.DiscoverVoices(dctx, &ep)
-			cancel()
+	discovered := make([][]string, len(enabled))
+	if b.discoverer != nil && len(enabled) > 0 {
+		var wg sync.WaitGroup
+		wg.Add(len(enabled))
+		for i, ep := range enabled {
+			go func(idx int, ep model.Endpoint) {
+				defer wg.Done()
+				dctx, cancel := context.WithTimeout(ctx, discoverTimeout)
+				defer cancel()
+				discovered[idx] = b.discoverer.DiscoverVoices(dctx, &ep)
+			}(i, ep)
 		}
+		wg.Wait()
+	}
 
+	// Build canonical voice entries from discovery results.
+	for i, ep := range enabled {
+		voiceNames := discovered[i]
 		if len(voiceNames) > 0 {
-			// Use discovered voice names.
 			for _, m := range ep.Models {
 				for _, v := range voiceNames {
 					voices = append(voices, TtsVoice{
