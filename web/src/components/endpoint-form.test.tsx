@@ -266,6 +266,7 @@ describe('EndpointForm', () => {
   })
 
   it('shows default voice select when probe returns voices', () => {
+    mockProbe.status = 'success'
     mockProbe.models = [{ id: 'tts-1' }]
     mockProbe.voices = [
       { id: 'alloy', name: 'Alloy' },
@@ -275,6 +276,7 @@ describe('EndpointForm', () => {
     expect(screen.getByText('Default Voice')).toBeInTheDocument()
     mockProbe.models = []
     mockProbe.voices = []
+    mockProbe.status = 'idle'
   })
 
   it('does not show default voice section when no voices available', () => {
@@ -306,6 +308,68 @@ describe('EndpointForm', () => {
     // so use getAllByText to allow multiple matches.
     expect(screen.getAllByText('alloy').length).toBeGreaterThan(0)
     mockProbe.voices = []
+  })
+
+  it('submits selected voice as default_voice', async () => {
+    mockProbe.status = 'success'
+    mockProbe.voices = [
+      { id: 'alloy', name: 'Alloy' },
+      { id: 'nova', name: 'Nova' },
+    ]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    // Open the select and choose "Nova"
+    await user.click(screen.getByRole('combobox', { name: 'Default Voice' }))
+    await user.click(screen.getByRole('option', { name: 'Nova' }))
+    await user.click(screen.getByText('Update'))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        default_voice: 'nova',
+      }),
+    )
+    mockProbe.voices = []
+    mockProbe.status = 'idle'
+  })
+
+  it('submits empty default_voice when None is selected', async () => {
+    mockProbe.status = 'success'
+    mockProbe.voices = [
+      { id: 'alloy', name: 'Alloy' },
+      { id: 'nova', name: 'Nova' },
+    ]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    const epWithVoice: Endpoint = {
+      ...mockEndpoint,
+      default_voice: 'alloy',
+    }
+    render(
+      <EndpointForm
+        endpoint={epWithVoice}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    // Open the select and choose "None" to clear the default voice
+    await user.click(screen.getByRole('combobox', { name: 'Default Voice' }))
+    await user.click(screen.getByRole('option', { name: 'None' }))
+    await user.click(screen.getByText('Update'))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        default_voice: '',
+      }),
+    )
+    mockProbe.voices = []
+    mockProbe.status = 'idle'
   })
 
   it('shows loading placeholder in combobox when loading', () => {
