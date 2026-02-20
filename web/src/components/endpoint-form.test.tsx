@@ -515,5 +515,4 @@ describe('EndpointForm', () => {
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.queryByTestId('icon-warning')).not.toBeInTheDocument()
   })
-
 })

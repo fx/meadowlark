@@ -114,12 +114,7 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         <div className="space-y-2">
           <Label htmlFor="ep-url">Base URL</Label>
           <div className="flex gap-2">
-            <Input
-              id="ep-url"
-              value={baseUrl}
-              onInput={handleUrlChange}
-              required
-            />
+            <Input id="ep-url" value={baseUrl} onInput={handleUrlChange} required />
             <Button
               type="button"
               variant="ghost"
