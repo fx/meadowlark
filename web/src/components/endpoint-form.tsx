@@ -1,9 +1,15 @@
 import { Eye, EyeSlash } from '@phosphor-icons/react'
 import { useCallback, useState } from 'preact/hooks'
 import { Button } from '@/components/ui/button'
-import { ComboBox } from '@/components/ui/combo-box'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useEndpointProbe } from '@/hooks/use-endpoint-probe'
@@ -29,11 +35,23 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
 
   const probe = useEndpointProbe(baseUrl, apiKey)
 
-  const modelOptions = probe.models.map((m) => ({ value: m.id, label: m.id }))
   const voiceOptions = probe.voices.map((v) => ({
     value: v.id,
     label: v.name ? `${v.name} (${v.id})` : v.id,
   }))
+
+  const appendModel = useCallback(
+    (modelId: string) => {
+      const current = models
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean)
+      if (!current.includes(modelId)) {
+        setModels(current.length > 0 ? `${models}, ${modelId}` : modelId)
+      }
+    },
+    [models],
+  )
 
   const handleSubmit = useCallback(
     (e: Event) => {
@@ -70,12 +88,19 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         </div>
         <div className="space-y-2">
           <Label htmlFor="ep-url">Base URL</Label>
-          <Input
-            id="ep-url"
-            value={baseUrl}
-            onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
-            required
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              id="ep-url"
+              value={baseUrl}
+              onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
+              required
+            />
+            {probe.loading && (
+              <output aria-label="Probing endpoint">
+                <div className="h-4 w-4 shrink-0 animate-spin border-2 border-muted-foreground border-t-transparent" />
+              </output>
+            )}
+          </div>
         </div>
       </div>
 
@@ -102,15 +127,29 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
 
       <div className="space-y-2">
         <Label htmlFor="ep-models">Models (comma-separated)</Label>
-        <ComboBox
-          id="ep-models"
-          value={models}
-          onChange={setModels}
-          options={modelOptions}
-          loading={probe.loading}
-          placeholder="tts-1, tts-1-hd"
-          required={isCreate}
-        />
+        <div className="flex gap-2">
+          <Input
+            id="ep-models"
+            value={models}
+            onInput={(e) => setModels((e.target as HTMLInputElement).value)}
+            placeholder="tts-1, tts-1-hd"
+            required={isCreate}
+          />
+          {probe.models.length > 0 && (
+            <Select value="" onValueChange={appendModel}>
+              <SelectTrigger aria-label="Add discovered model" className="w-auto shrink-0">
+                <SelectValue placeholder="Add..." />
+              </SelectTrigger>
+              <SelectContent>
+                {probe.models.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
         {probe.error && <p className="text-sm text-destructive">Probe error: {probe.error}</p>}
       </div>
 

@@ -1,8 +1,7 @@
-import { render, screen } from '@testing-library/preact'
+import { act, render, screen } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Endpoint } from '@/lib/api'
-import { EndpointForm } from './endpoint-form'
 
 // Mock useEndpointProbe to avoid real fetch calls and allow per-test overrides
 const mockProbe = {
@@ -15,6 +14,42 @@ const mockProbe = {
 vi.mock('@/hooks/use-endpoint-probe', () => ({
   useEndpointProbe: () => mockProbe,
 }))
+
+// Store onValueChange callback for model-add Select
+let selectOnValueChange: ((value: string) => void) | undefined
+
+vi.mock('@/components/ui/select', () => ({
+  Select: ({
+    children,
+    onValueChange,
+  }: {
+    children: preact.ComponentChildren
+    value?: string
+    onValueChange?: (value: string) => void
+  }) => {
+    selectOnValueChange = onValueChange
+    return <div data-testid="model-select">{children}</div>
+  },
+  SelectTrigger: ({
+    children,
+    'aria-label': ariaLabel,
+  }: {
+    children: preact.ComponentChildren
+    'aria-label'?: string
+    className?: string
+  }) => (
+    <button type="button" data-testid="model-select-trigger" aria-label={ariaLabel}>
+      {children}
+    </button>
+  ),
+  SelectValue: ({ placeholder }: { placeholder?: string }) => <span>{placeholder}</span>,
+  SelectContent: ({ children }: { children: preact.ComponentChildren }) => <div>{children}</div>,
+  SelectItem: ({ children, value }: { children: preact.ComponentChildren; value: string }) => (
+    <option value={value}>{children}</option>
+  ),
+}))
+
+import { EndpointForm } from './endpoint-form'
 
 const mockEndpoint: Endpoint = {
   id: 'ep-1',
@@ -206,5 +241,66 @@ describe('EndpointForm', () => {
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByText('Available voices: alloy')).toBeInTheDocument()
     mockProbe.voices = []
+  })
+
+  it('shows probing spinner near URL when loading', () => {
+    mockProbe.loading = true
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByLabelText('Probing endpoint')).toBeInTheDocument()
+    mockProbe.loading = false
+  })
+
+  it('hides probing spinner when not loading', () => {
+    mockProbe.loading = false
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.queryByLabelText('Probing endpoint')).not.toBeInTheDocument()
+  })
+
+  it('hides model Select when no probe models available', () => {
+    mockProbe.models = []
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.queryByTestId('model-select')).not.toBeInTheDocument()
+  })
+
+  it('shows model Select when probe returns models', () => {
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByTestId('model-select')).toBeInTheDocument()
+    expect(screen.getByText('Add...')).toBeInTheDocument()
+    mockProbe.models = []
+  })
+
+  it('appends model from Select to empty input', () => {
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    act(() => {
+      selectOnValueChange?.('tts-1')
+    })
+    expect(screen.getByLabelText('Models (comma-separated)')).toHaveValue('tts-1')
+    mockProbe.models = []
+  })
+
+  it('appends model with comma when input already has value', async () => {
+    const user = userEvent.setup()
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Models (comma-separated)'), 'custom-model')
+    act(() => {
+      selectOnValueChange?.('tts-1-hd')
+    })
+    expect(screen.getByLabelText('Models (comma-separated)')).toHaveValue('custom-model, tts-1-hd')
+    mockProbe.models = []
+  })
+
+  it('does not duplicate model when already in input', async () => {
+    const user = userEvent.setup()
+    mockProbe.models = [{ id: 'tts-1' }]
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Models (comma-separated)'), 'tts-1')
+    act(() => {
+      selectOnValueChange?.('tts-1')
+    })
+    expect(screen.getByLabelText('Models (comma-separated)')).toHaveValue('tts-1')
+    mockProbe.models = []
   })
 })
