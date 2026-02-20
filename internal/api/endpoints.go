@@ -340,12 +340,18 @@ func (s *Server) ProbeEndpoint(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
-	if strings.TrimSpace(req.URL) == "" {
+	trimmedURL := strings.TrimSpace(req.URL)
+	if trimmedURL == "" {
 		respondError(w, http.StatusBadRequest, "bad_request", "url is required")
 		return
 	}
 
-	client := tts.NewClient(strings.TrimSpace(req.URL), req.APIKey, nil)
+	if err := s.urlValidator(r.Context(), trimmedURL); err != nil {
+		respondError(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+
+	client := tts.NewClient(trimmedURL, req.APIKey, nil)
 	models, _ := client.ListModels(r.Context())
 	voices, _ := client.ListVoices(r.Context())
 

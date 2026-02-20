@@ -21,18 +21,22 @@ import (
 // ClientFactory creates a TTS Client for a given endpoint.
 type ClientFactory func(ep *model.Endpoint) *tts.Client
 
+// URLValidator validates a URL for SSRF safety.
+type URLValidator func(ctx context.Context, rawURL string) error
+
 // Server is the HTTP API server for Meadowlark.
 type Server struct {
-	store         store.Store
-	infoBuilder   *wyoming.InfoBuilder
-	clientFactory ClientFactory
-	listenAddr    string
-	startTime     time.Time
-	version       string
-	wyomingPort   int
-	httpPort      int
-	dbDriver      string
-	webFS         fs.FS
+	store          store.Store
+	infoBuilder    *wyoming.InfoBuilder
+	clientFactory  ClientFactory
+	urlValidator   URLValidator
+	listenAddr     string
+	startTime      time.Time
+	version        string
+	wyomingPort    int
+	httpPort       int
+	dbDriver       string
+	webFS          fs.FS
 }
 
 // NewServer creates a new HTTP API server.
@@ -47,17 +51,21 @@ func NewServer(
 	dbDriver string,
 	webFS fs.FS,
 ) *Server {
+	resolver := defaultResolver{}
 	return &Server{
 		store:         st,
 		infoBuilder:   ib,
 		clientFactory: cf,
-		listenAddr:    listenAddr,
-		startTime:     time.Now(),
-		version:       version,
-		wyomingPort:   wyomingPort,
-		httpPort:      httpPort,
-		dbDriver:      dbDriver,
-		webFS:         webFS,
+		urlValidator: func(ctx context.Context, rawURL string) error {
+			return validateProbeURL(ctx, rawURL, resolver)
+		},
+		listenAddr:  listenAddr,
+		startTime:   time.Now(),
+		version:     version,
+		wyomingPort: wyomingPort,
+		httpPort:    httpPort,
+		dbDriver:    dbDriver,
+		webFS:       webFS,
 	}
 }
 

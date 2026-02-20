@@ -15,12 +15,13 @@ import (
 
 func newTestServer(webFS *fstest.MapFS) *Server {
 	return &Server{
-		store:     &mockStore{},
-		version:   "test",
-		httpPort:  8080,
-		webFS:     webFS,
-		dbDriver:  "sqlite",
-		startTime: time.Now(),
+		store:        &mockStore{},
+		version:      "test",
+		httpPort:     8080,
+		webFS:        webFS,
+		dbDriver:     "sqlite",
+		startTime:    time.Now(),
+		urlValidator: noopValidator,
 		clientFactory: func(ep *model.Endpoint) *tts.Client {
 			return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
 		},

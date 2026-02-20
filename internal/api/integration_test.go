@@ -37,13 +37,14 @@ func setupIntegrationTest(t *testing.T) (string, func()) {
 		clientFactory: func(ep *model.Endpoint) *tts.Client {
 			return tts.NewClient("http://localhost:0", "", nil)
 		},
-		listenAddr:  ":0",
-		startTime:   time.Now(),
-		version:     "test",
-		wyomingPort: 10300,
-		httpPort:    8080,
-		dbDriver:    "sqlite",
-		webFS:       &webFS,
+		urlValidator: noopValidator,
+		listenAddr:   ":0",
+		startTime:    time.Now(),
+		version:      "test",
+		wyomingPort:  10300,
+		httpPort:     8080,
+		dbDriver:     "sqlite",
+		webFS:        &webFS,
 	}
 
 	ts := httptest.NewServer(srv.setupRoutes())

@@ -97,11 +97,12 @@ func (m *aliasStore) Close() error                    { return nil }
 
 func newAliasTestServer(st *aliasStore) *Server {
 	return &Server{
-		store:     st,
-		version:   "test",
-		httpPort:  8080,
-		dbDriver:  "sqlite",
-		startTime: time.Now(),
+		store:       st,
+		version:     "test",
+		httpPort:    8080,
+		dbDriver:    "sqlite",
+		startTime:   time.Now(),
+		urlValidator: noopValidator,
 		clientFactory: func(ep *model.Endpoint) *tts.Client {
 			return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
 		},
