@@ -84,6 +84,32 @@ func TestParseInput_JSONWithExtraFields(t *testing.T) {
 	assert.Equal(t, ptrFloat(2.0), result.Speed)
 }
 
+// --- ParseInput: JSON "message" key ---
+
+func TestParseInput_JSONMessageKey(t *testing.T) {
+	input := `{"message": "Hello World", "voice": "nova"}`
+	result := ParseInput(input)
+
+	assert.Equal(t, "Hello World", result.Input)
+	assert.Equal(t, "nova", result.Voice)
+}
+
+func TestParseInput_JSONInputOverridesMessage(t *testing.T) {
+	input := `{"input": "from input", "message": "from message"}`
+	result := ParseInput(input)
+
+	assert.Equal(t, "from input", result.Input)
+}
+
+func TestParseInput_JSONMessageWithAllFields(t *testing.T) {
+	input := `{"voice": "sohee", "instructions": "bla bla bla", "message": "testing"}`
+	result := ParseInput(input)
+
+	assert.Equal(t, "testing", result.Input)
+	assert.Equal(t, "sohee", result.Voice)
+	assert.Equal(t, ptrStr("bla bla bla"), result.Instructions)
+}
+
 // --- ParseInput: Tag format ---
 
 func TestParseInput_SingleTag(t *testing.T) {

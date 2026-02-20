@@ -18,7 +18,7 @@ type ParsedInput struct {
 // ParseInput parses the text field from a synthesize event.
 //
 // Parsing order:
-//  1. If text starts with "{", try JSON parsing.
+//  1. If text starts with "{", try JSON parsing ("input" or "message" key for text).
 //  2. If text starts with "[", try tag format parsing.
 //  3. Otherwise, treat entire text as plain input.
 func ParseInput(text string) ParsedInput {
@@ -46,6 +46,7 @@ func ParseInput(text string) ParsedInput {
 func parseJSON(text string) (ParsedInput, bool) {
 	var raw struct {
 		Input        string   `json:"input"`
+		Message      string   `json:"message"`
 		Voice        string   `json:"voice"`
 		Model        string   `json:"model"`
 		Speed        *float64 `json:"speed"`
@@ -54,8 +55,12 @@ func parseJSON(text string) (ParsedInput, bool) {
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
 		return ParsedInput{}, false
 	}
+	input := raw.Input
+	if input == "" {
+		input = raw.Message
+	}
 	return ParsedInput{
-		Input:        raw.Input,
+		Input:        input,
 		Voice:        raw.Voice,
 		Model:        raw.Model,
 		Speed:        raw.Speed,
