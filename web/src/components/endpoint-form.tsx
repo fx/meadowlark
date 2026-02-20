@@ -102,7 +102,7 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         base_url: baseUrl,
         api_key: apiKey || undefined,
         models: selectedModels,
-        default_voice: defaultVoice || undefined,
+        default_voice: defaultVoice,
         default_speed: speed && Number.isFinite(Number(speed)) ? Number(speed) : undefined,
         default_instructions: instructions || undefined,
         enabled,
@@ -216,14 +216,27 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         />
       </div>
 
-      {probe.voices.length > 0 && (
+      {(probe.voices.length > 0 || endpoint?.default_voice) && (
         <div className="space-y-2">
           <Label htmlFor="ep-default-voice">Default Voice</Label>
-          <Select value={defaultVoice} onValueChange={setDefaultVoice}>
+          <Select
+            value={defaultVoice || '__none__'}
+            onValueChange={(v) => setDefaultVoice(v === '__none__' ? '' : v)}
+            disabled={probe.status === 'loading'}
+          >
             <SelectTrigger id="ep-default-voice" className="w-full">
-              <SelectValue placeholder="Select default voice" />
+              <SelectValue
+                placeholder={
+                  probe.status === 'loading'
+                    ? 'Loading voices...'
+                    : probe.voices.length === 0
+                      ? 'No voices available'
+                      : 'Select default voice'
+                }
+              />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="__none__">None</SelectItem>
               {probe.voices.map((v) => (
                 <SelectItem key={v.id} value={v.id}>
                   {v.name || v.id}
