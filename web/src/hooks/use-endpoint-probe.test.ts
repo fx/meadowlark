@@ -42,10 +42,11 @@ describe('useEndpointProbe', () => {
     mockProbeOk([{ id: 'tts-1' }], [{ id: 'alloy', name: 'Alloy' }])
 
     const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', 'sk-test'))
-    expect(result.current.loading).toBe(true)
+    // loading stays false during debounce, only becomes true when fetch starts
+    expect(result.current.loading).toBe(false)
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false)
+      expect(result.current.models).toEqual([{ id: 'tts-1' }])
     }, WAIT_OPTS)
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -55,8 +56,8 @@ describe('useEndpointProbe', () => {
         body: JSON.stringify({ url: 'https://api.example.com/v1', api_key: 'sk-test' }),
       }),
     )
-    expect(result.current.models).toEqual([{ id: 'tts-1' }])
     expect(result.current.voices).toEqual([{ id: 'alloy', name: 'Alloy' }])
+    expect(result.current.loading).toBe(false)
   })
 
   it('sets error on probe failure', async () => {
@@ -97,6 +98,11 @@ describe('useEndpointProbe', () => {
     })
 
     const { result } = renderHook(() => useEndpointProbe('https://api.example.com/v1', ''))
+
+    // Wait for the fetch to fire (after debounce), then for loading to settle.
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    }, WAIT_OPTS)
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -194,17 +200,22 @@ describe('useEndpointProbe', () => {
 
     rerender({ url: 'https://second.example.com/v1' })
 
-    // Resolve the first (now aborted) request after the abort
+    // Resolve the first (now aborted) request after the abort.
+    // The .then handler checks controller.signal.aborted and skips state updates.
     if (resolveFetch) {
       resolveFetch({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ models: [{ id: 'old' }], voices: [] }),
+        json: () =>
+          Promise.resolve({ models: [{ id: 'old' }], voices: [{ id: 'stale', name: 'Stale' }] }),
       })
     }
 
     await waitFor(() => {
       expect(result.current.models).toEqual([{ id: 'new' }])
     }, WAIT_OPTS)
+
+    // Ensure the stale data from the aborted request was never applied.
+    expect(result.current.voices).toEqual([])
   })
 })

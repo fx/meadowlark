@@ -32,13 +32,13 @@ export function useEndpointProbe(url: string, apiKey: string): UseEndpointProbeR
       return
     }
 
-    setLoading(true)
     setError(undefined)
 
     const controller = new AbortController()
     abortRef.current = controller
 
     const timer = setTimeout(() => {
+      setLoading(true)
       fetch('/api/v1/endpoints/probe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
