@@ -8,3 +8,5 @@
 - **Dark variant `(&:is(.dark *))`**: Intentional. This is the upstream shadcn/ui pattern for Tailwind v4. The `.dark` class is on `<html>`, descendants match via `*`.
 - **`--destructive-foreground` matching `--destructive`**: Intentional. Newer shadcn/ui uses `text-white` on destructive buttons; this variable is for destructive text on neutral backgrounds.
 - **CLAUDE.md changes**: CLAUDE.md is part of this repo and tracked in git. Changes to it are intentional project documentation updates.
+- **No SSRF protection on probe/TTS endpoints**: Intentional. Meadowlark is a self-hosted home automation bridge that must connect to user-configured TTS endpoints, often on the local network. SSRF protection would break the core use case.
+- **Context propagation via derived contexts**: When goroutines use `context.WithTimeout(ctx, ...)` derived from a parent context, cancellation already propagates. Adding select-on-`ctx.Done()` wrappers around `wg.Wait()` is unnecessary and leaks goroutines.

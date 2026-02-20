@@ -1,4 +1,4 @@
-import { Plugs, Trash, WifiHigh } from '@phosphor-icons/react'
+import { Trash } from '@phosphor-icons/react'
 import { useCallback, useState } from 'preact/hooks'
 import { EndpointForm } from '@/components/endpoint-form'
 import { ExpandableRow } from '@/components/expandable-row'
@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useFetch } from '@/hooks/use-fetch'
 import { useMutation } from '@/hooks/use-mutation'
-import type { CreateEndpoint, Endpoint, TestResult, UpdateEndpoint } from '@/lib/api'
+import type { CreateEndpoint, Endpoint, UpdateEndpoint } from '@/lib/api'
 import { api } from '@/lib/api'
 
 function EndpointsPage() {
@@ -90,8 +90,6 @@ function EndpointRow({
   onToggle: (id: string | null) => void
   onUpdate: () => void
 }) {
-  const [testResult, setTestResult] = useState<TestResult | null>(null)
-  const [voicesResult, setVoicesResult] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const handleUpdate = useCallback(
@@ -125,24 +123,6 @@ function EndpointRow({
     [endpoint.id, onUpdate],
   )
 
-  const handleTest = useCallback(async () => {
-    try {
-      const result = await api.endpoints.test(endpoint.id)
-      setTestResult(result)
-    } catch (err) {
-      setTestResult({ ok: false, error: err instanceof Error ? err.message : String(err) })
-    }
-  }, [endpoint.id])
-
-  const handleDiscoverVoices = useCallback(async () => {
-    try {
-      const voices = await api.endpoints.voices(endpoint.id)
-      setVoicesResult(voices.length > 0 ? voices.join(', ') : 'None found')
-    } catch (err) {
-      setVoicesResult(`Error: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }, [endpoint.id])
-
   return (
     <ExpandableRow
       id={endpoint.id}
@@ -174,70 +154,32 @@ function EndpointRow({
             isSaving={saving}
           />
 
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label={`Test ${endpoint.name}`}
-              onClick={handleTest}
-            >
-              <WifiHigh className="mr-1 h-4 w-4" />
-              Test
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label={`Discover voices for ${endpoint.name}`}
-              onClick={handleDiscoverVoices}
-            >
-              <Plugs className="mr-1 h-4 w-4" />
-              Discover Voices
-            </Button>
-
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Delete ${endpoint.name}`}
-                >
-                  <Trash className="mr-1 h-4 w-4" />
-                  Delete
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Endpoint</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Are you sure you want to delete &quot;{endpoint.name}&quot;? This action cannot
-                    be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-
-            {testResult && (
-              <span
-                className={testResult.ok ? 'text-sm text-green-600' : 'text-sm text-destructive'}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-label={`Delete ${endpoint.name}`}
               >
-                {testResult.ok
-                  ? `Test: OK (${testResult.latency_ms}ms)`
-                  : `Test: ${testResult.error ?? 'Failed'}`}
-              </span>
-            )}
-
-            {voicesResult && (
-              <span className="text-sm text-muted-foreground">Voices: {voicesResult}</span>
-            )}
-          </div>
+                <Trash className="mr-1 h-4 w-4" />
+                Delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Endpoint</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete &quot;{endpoint.name}&quot;? This action cannot be
+                  undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       }
     />

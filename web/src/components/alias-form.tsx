@@ -44,8 +44,8 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
     }
     const controller = new AbortController()
     setVoicesLoading(true)
-    // Fetch available voice names for the selected endpoint
-    fetch(`/api/v1/endpoints/${endpointId}/voices`, { signal: controller.signal })
+    // Fetch configured models for the selected endpoint (used as voice options).
+    fetch(`/api/v1/endpoints/${endpointId}/configured-models`, { signal: controller.signal })
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json()

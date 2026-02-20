@@ -98,6 +98,20 @@ export interface TestResult {
   latency_ms?: number
 }
 
+export interface ProbeModel {
+  id: string
+}
+
+export interface ProbeVoice {
+  id: string
+  name: string
+}
+
+export interface ProbeResult {
+  models: ProbeModel[]
+  voices: ProbeVoice[]
+}
+
 export interface ApiError {
   error: {
     code: string
@@ -161,8 +175,8 @@ export const api = {
     create: (data: CreateEndpoint) => post<Endpoint>('/api/v1/endpoints', data),
     update: (id: string, data: UpdateEndpoint) => put<Endpoint>(`/api/v1/endpoints/${id}`, data),
     delete: (id: string) => del(`/api/v1/endpoints/${id}`),
-    test: (id: string) => post<TestResult>(`/api/v1/endpoints/${id}/test`),
-    voices: (id: string) => get<string[]>(`/api/v1/endpoints/${id}/voices`),
+    probe: (url: string, apiKey: string) =>
+      post<ProbeResult>('/api/v1/endpoints/probe', { url, api_key: apiKey }),
   },
   aliases: {
     list: () => get<VoiceAlias[]>('/api/v1/aliases'),

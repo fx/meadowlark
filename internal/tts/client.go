@@ -9,6 +9,17 @@ import (
 	"net/http"
 )
 
+// Model represents a model returned by the /v1/models endpoint.
+type Model struct {
+	ID string `json:"id"`
+}
+
+// Voice represents a voice returned by the /v1/audio/voices endpoint.
+type Voice struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // SynthesizeRequest contains the parameters for a TTS synthesis call.
 type SynthesizeRequest struct {
 	Model          string   `json:"model"`
@@ -67,4 +78,108 @@ func (c *Client) Synthesize(ctx context.Context, req *SynthesizeRequest) (io.Rea
 	}
 
 	return resp.Body, nil
+}
+
+// ListModels fetches available models from the /v1/models endpoint.
+// Returns an empty slice (not an error) on 404 or request failure.
+func (c *Client) ListModels(ctx context.Context) ([]Model, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
+	if err != nil {
+		return []Model{}, nil
+	}
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return []Model{}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return []Model{}, nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return []Model{}, nil
+	}
+
+	// OpenAI-style response: {"data": [{"id": "model-id", ...}]}
+	var listResp struct {
+		Data []Model `json:"data"`
+	}
+	if err := json.Unmarshal(body, &listResp); err != nil {
+		return []Model{}, nil
+	}
+	if listResp.Data == nil {
+		return []Model{}, nil
+	}
+	return listResp.Data, nil
+}
+
+// ListVoices fetches available voices from the /v1/audio/voices endpoint.
+// Handles both OpenAI-style ({"data": [...]}) and Speaches-style ({"voices": [...]}) responses.
+// Returns an empty slice (not an error) on 404 or request failure.
+func (c *Client) ListVoices(ctx context.Context) ([]Voice, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/audio/voices", nil)
+	if err != nil {
+		return []Voice{}, nil
+	}
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return []Voice{}, nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return []Voice{}, nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return []Voice{}, nil
+	}
+
+	// Try OpenAI-style: {"data": [{"id": "voice-id"}]}
+	var openAIResp struct {
+		Data []Voice `json:"data"`
+	}
+	if err := json.Unmarshal(body, &openAIResp); err == nil && len(openAIResp.Data) > 0 {
+		return openAIResp.Data, nil
+	}
+
+	// Try Speaches-style: {"voices": [{"voice_id": "...", "name": "..."}]}
+	var speachesResp struct {
+		Voices []struct {
+			VoiceID string `json:"voice_id"`
+			Name    string `json:"name"`
+		} `json:"voices"`
+	}
+	if err := json.Unmarshal(body, &speachesResp); err == nil && len(speachesResp.Voices) > 0 {
+		voices := make([]Voice, len(speachesResp.Voices))
+		for i, v := range speachesResp.Voices {
+			voices[i] = Voice{ID: v.VoiceID, Name: v.Name}
+		}
+		return voices, nil
+	}
+
+	// Try plain string array: {"voices": ["voice1", "voice2"]}
+	var stringResp struct {
+		Voices []string `json:"voices"`
+	}
+	if err := json.Unmarshal(body, &stringResp); err == nil && len(stringResp.Voices) > 0 {
+		voices := make([]Voice, len(stringResp.Voices))
+		for i, v := range stringResp.Voices {
+			voices[i] = Voice{ID: v, Name: v}
+		}
+		return voices, nil
+	}
+
+	return []Voice{}, nil
 }

@@ -251,7 +251,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-1/voices',
+        '/api/v1/endpoints/ep-1/configured-models',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -283,7 +283,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-2/voices',
+        '/api/v1/endpoints/ep-2/configured-models',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -309,7 +309,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-2/voices',
+        '/api/v1/endpoints/ep-2/configured-models',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })

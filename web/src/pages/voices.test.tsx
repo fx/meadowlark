@@ -71,6 +71,7 @@ describe('VoicesPage', () => {
 
     // Check table headers
     expect(screen.getByText('Voice Name')).toBeInTheDocument()
+    expect(screen.getByText('Voice')).toBeInTheDocument()
     expect(screen.getByText('Endpoint')).toBeInTheDocument()
     expect(screen.getByText('Model')).toBeInTheDocument()
     expect(screen.getByText('Type')).toBeInTheDocument()
@@ -144,11 +145,16 @@ describe('VoicesPage', () => {
     expect(await screen.findByText('Error: internal error')).toBeInTheDocument()
   })
 
-  it('displays endpoint and model columns', async () => {
+  it('displays voice, endpoint and model columns', async () => {
     mockVoicesResponse(voices)
     render(<VoicesPage />)
 
     await screen.findByText('alloy (OpenAI, tts-1)')
+
+    // Check voice column values
+    const alloyCells = screen.getAllByText('alloy')
+    expect(alloyCells.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('jenny')).toBeInTheDocument()
 
     // Check endpoint column values
     const openaiCells = screen.getAllByText('OpenAI')

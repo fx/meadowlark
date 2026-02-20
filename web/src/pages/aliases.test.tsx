@@ -93,7 +93,7 @@ function mockFetch(url: string) {
       json: () => Promise.resolve(mockEndpoints),
     })
   }
-  if (url.match(/\/api\/v1\/endpoints\/[^/]+\/voices/)) {
+  if (url.match(/\/api\/v1\/endpoints\/[^/]+\/configured-models/)) {
     return Promise.resolve({
       ok: true,
       json: () => Promise.resolve(['alloy', 'nova', 'shimmer']),

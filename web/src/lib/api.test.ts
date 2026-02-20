@@ -87,24 +87,19 @@ describe('api.endpoints', () => {
     })
   })
 
-  it('test calls POST /api/v1/endpoints/:id/test', async () => {
-    const testResult = { ok: true, latency_ms: 150 }
-    mockFetch.mockReturnValueOnce(jsonResponse(testResult))
-    const result = await api.endpoints.test('ep-1')
-    expect(result).toEqual(testResult)
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/test', {
+  it('probe calls POST /api/v1/endpoints/probe with url and api_key', async () => {
+    const probeResult = {
+      models: [{ id: 'tts-1' }],
+      voices: [{ id: 'alloy', name: 'Alloy' }],
+    }
+    mockFetch.mockReturnValueOnce(jsonResponse(probeResult))
+    const result = await api.endpoints.probe('https://api.example.com/v1', 'sk-test')
+    expect(result).toEqual(probeResult)
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/probe', {
       method: 'POST',
-      headers: undefined,
-      body: undefined,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://api.example.com/v1', api_key: 'sk-test' }),
     })
-  })
-
-  it('voices calls GET /api/v1/endpoints/:id/voices', async () => {
-    const voices = ['tts-1', 'gpt-4o-mini-tts']
-    mockFetch.mockReturnValueOnce(jsonResponse(voices))
-    const result = await api.endpoints.voices('ep-1')
-    expect(result).toEqual(voices)
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices', undefined)
   })
 })
 

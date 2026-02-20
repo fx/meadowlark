@@ -23,16 +23,16 @@ type ClientFactory func(ep *model.Endpoint) *tts.Client
 
 // Server is the HTTP API server for Meadowlark.
 type Server struct {
-	store         store.Store
-	infoBuilder   *wyoming.InfoBuilder
-	clientFactory ClientFactory
-	listenAddr    string
-	startTime     time.Time
-	version       string
-	wyomingPort   int
-	httpPort      int
-	dbDriver      string
-	webFS         fs.FS
+	store          store.Store
+	infoBuilder    *wyoming.InfoBuilder
+	clientFactory  ClientFactory
+	listenAddr     string
+	startTime      time.Time
+	version        string
+	wyomingPort    int
+	httpPort       int
+	dbDriver       string
+	webFS          fs.FS
 }
 
 // NewServer creates a new HTTP API server.
@@ -51,13 +51,13 @@ func NewServer(
 		store:         st,
 		infoBuilder:   ib,
 		clientFactory: cf,
-		listenAddr:    listenAddr,
-		startTime:     time.Now(),
-		version:       version,
-		wyomingPort:   wyomingPort,
-		httpPort:      httpPort,
-		dbDriver:      dbDriver,
-		webFS:         webFS,
+		listenAddr:  listenAddr,
+		startTime:   time.Now(),
+		version:     version,
+		wyomingPort: wyomingPort,
+		httpPort:    httpPort,
+		dbDriver:    dbDriver,
+		webFS:       webFS,
 	}
 }
 
@@ -113,11 +113,14 @@ func (s *Server) setupRoutes() *chi.Mux {
 		// Endpoints
 		r.Get("/endpoints", s.ListEndpoints)
 		r.Post("/endpoints", s.CreateEndpoint)
+		r.Post("/endpoints/probe", s.ProbeEndpoint)
 		r.Get("/endpoints/{id}", s.GetEndpoint)
 		r.Put("/endpoints/{id}", s.UpdateEndpoint)
 		r.Delete("/endpoints/{id}", s.DeleteEndpoint)
 		r.Post("/endpoints/{id}/test", s.TestEndpoint)
-		r.Get("/endpoints/{id}/voices", s.DiscoverVoices)
+		r.Get("/endpoints/{id}/configured-models", s.ListEndpointConfiguredModels)
+		r.Get("/endpoints/{id}/models", s.DiscoverModels)
+		r.Get("/endpoints/{id}/remote-voices", s.DiscoverRemoteVoices)
 
 		// Aliases
 		r.Get("/aliases", s.ListAliases)
