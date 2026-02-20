@@ -1,4 +1,12 @@
-import { Eye, EyeSlash, X } from '@phosphor-icons/react'
+import {
+  ArrowsClockwise,
+  Check,
+  Eye,
+  EyeSlash,
+  SpinnerGap,
+  X,
+  XCircle,
+} from '@phosphor-icons/react'
 import { useCallback, useState } from 'preact/hooks'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -34,11 +42,6 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const modelOptions = probe.models
     .filter((m) => !selectedModels.includes(m.id))
     .map((m) => ({ value: m.id, label: m.id }))
-
-  const voiceOptions = probe.voices.map((v) => ({
-    value: v.id,
-    label: v.name ? `${v.name} (${v.id})` : v.id,
-  }))
 
   const addModel = useCallback(
     (modelId: string) => {
@@ -89,12 +92,29 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         </div>
         <div className="space-y-2">
           <Label htmlFor="ep-url">Base URL</Label>
-          <Input
-            id="ep-url"
-            value={baseUrl}
-            onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
-            required
-          />
+          <div className="flex gap-2">
+            <Input
+              id="ep-url"
+              value={baseUrl}
+              onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
+              required
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              aria-label="Refresh endpoint"
+              disabled={probe.status === 'loading'}
+              onClick={probe.refresh}
+            >
+              {probe.status === 'loading' && <SpinnerGap className="h-4 w-4 animate-spin" />}
+              {probe.status === 'success' && <Check className="h-4 w-4 text-green-600" />}
+              {probe.status === 'error' && <XCircle className="h-4 w-4 text-destructive" />}
+              {probe.status === 'idle' && <ArrowsClockwise className="h-4 w-4" />}
+            </Button>
+          </div>
+          {probe.error && <p className="text-sm text-destructive">{probe.error}</p>}
         </div>
       </div>
 
@@ -149,22 +169,13 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
             }
           }}
           options={modelOptions}
-          loading={probe.loading}
+          loading={probe.status === 'loading'}
           placeholder={
             selectedModels.length > 0 ? 'Add another model...' : 'Search or type a model name'
           }
           required={isCreate && selectedModels.length === 0}
         />
-        {probe.error && <p className="text-sm text-destructive">Probe error: {probe.error}</p>}
       </div>
-
-      {voiceOptions.length > 0 && (
-        <div className="space-y-2">
-          <span className="text-sm text-muted-foreground">
-            Available voices: {voiceOptions.map((v) => v.label).join(', ')}
-          </span>
-        </div>
-      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -200,6 +211,19 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
           placeholder="Optional instructions for TTS"
         />
       </div>
+
+      {probe.voices.length > 0 && (
+        <div className="space-y-2">
+          <Label>Available Voices</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {probe.voices.map((v) => (
+              <Badge key={v.id} variant="outline">
+                {v.name || v.id}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={isSaving}>
