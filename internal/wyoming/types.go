@@ -186,13 +186,17 @@ func (i *Info) ToEvent() *Event {
 				}
 				speakers = s
 			}
-			voices[vi] = map[string]any{
+			vm := map[string]any{
 				"name":        v.Name,
 				"description": v.Description,
 				"installed":   v.Installed,
 				"languages":   toAnySlice(v.Languages),
-				"speakers":    speakers,
+				"attribution": map[string]any{"name": "", "url": ""},
 			}
+			if speakers != nil {
+				vm["speakers"] = speakers
+			}
+			voices[vi] = vm
 		}
 		ttsSlice[idx] = map[string]any{
 			"name":        prog.Name,
@@ -200,6 +204,7 @@ func (i *Info) ToEvent() *Event {
 			"installed":   prog.Installed,
 			"version":     prog.Version,
 			"voices":      voices,
+			"attribution": map[string]any{"name": "", "url": ""},
 		}
 	}
 	return &Event{

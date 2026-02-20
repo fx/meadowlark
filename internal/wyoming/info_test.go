@@ -31,7 +31,7 @@ func (m *mockAliasLister) ListVoiceAliases(_ context.Context) ([]model.VoiceAlia
 }
 
 func TestInfoBuilder_Build_EmptyState(t *testing.T) {
-	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, nil, "1.0.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
@@ -79,7 +79,7 @@ func TestInfoBuilder_Build_WithEndpointsAndAliases(t *testing.T) {
 		},
 	}
 
-	builder := NewInfoBuilder(endpoints, aliases, "0.2.0")
+	builder := NewInfoBuilder(endpoints, aliases, nil, "0.2.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
@@ -104,6 +104,106 @@ func TestInfoBuilder_Build_WithEndpointsAndAliases(t *testing.T) {
 	assert.Equal(t, []string{"en", "fr"}, prog.Voices[2].Languages)
 }
 
+// mockVoiceDiscoverer implements VoiceDiscoverer for testing.
+type mockVoiceDiscoverer struct {
+	// voicesByEndpoint maps endpoint ID to discovered voice names.
+	voicesByEndpoint map[string][]string
+}
+
+func (m *mockVoiceDiscoverer) DiscoverVoices(_ context.Context, ep *model.Endpoint) []string {
+	return m.voicesByEndpoint[ep.ID]
+}
+
+// Regression: InfoBuilder must expose actual discovered voices, not model names.
+// Without this, HA shows "Qwen/Qwen3-TTS-..." instead of "aiden", "serena", etc.
+func TestInfoBuilder_Build_WithVoiceDiscovery(t *testing.T) {
+	endpoints := &mockEndpointLister{
+		endpoints: []model.Endpoint{
+			{
+				ID:      "ep1",
+				Name:    "my-endpoint",
+				Enabled: true,
+				Models:  model.StringSlice{"my-model"},
+			},
+		},
+	}
+
+	discoverer := &mockVoiceDiscoverer{
+		voicesByEndpoint: map[string][]string{
+			"ep1": {"aiden", "serena", "vivian"},
+		},
+	}
+
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, discoverer, "1.0.0")
+	info, err := builder.Build(context.Background())
+	require.NoError(t, err)
+
+	prog := info.Tts[0]
+	require.Len(t, prog.Voices, 3)
+
+	assert.Equal(t, "aiden (my-endpoint, my-model)", prog.Voices[0].Name)
+	assert.Equal(t, "serena (my-endpoint, my-model)", prog.Voices[1].Name)
+	assert.Equal(t, "vivian (my-endpoint, my-model)", prog.Voices[2].Name)
+}
+
+// When discovery returns nothing, fall back to model names.
+func TestInfoBuilder_Build_VoiceDiscoveryFallback(t *testing.T) {
+	endpoints := &mockEndpointLister{
+		endpoints: []model.Endpoint{
+			{
+				ID:      "ep1",
+				Name:    "my-endpoint",
+				Enabled: true,
+				Models:  model.StringSlice{"tts-1"},
+			},
+		},
+	}
+
+	discoverer := &mockVoiceDiscoverer{
+		voicesByEndpoint: map[string][]string{}, // empty = discovery failed
+	}
+
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, discoverer, "1.0.0")
+	info, err := builder.Build(context.Background())
+	require.NoError(t, err)
+
+	prog := info.Tts[0]
+	require.Len(t, prog.Voices, 1)
+	assert.Equal(t, "tts-1 (my-endpoint, tts-1)", prog.Voices[0].Name)
+}
+
+// Discovery with multiple models creates voice x model combinations.
+func TestInfoBuilder_Build_VoiceDiscoveryMultipleModels(t *testing.T) {
+	endpoints := &mockEndpointLister{
+		endpoints: []model.Endpoint{
+			{
+				ID:      "ep1",
+				Name:    "ep",
+				Enabled: true,
+				Models:  model.StringSlice{"model-a", "model-b"},
+			},
+		},
+	}
+
+	discoverer := &mockVoiceDiscoverer{
+		voicesByEndpoint: map[string][]string{
+			"ep1": {"alice", "bob"},
+		},
+	}
+
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, discoverer, "1.0.0")
+	info, err := builder.Build(context.Background())
+	require.NoError(t, err)
+
+	// 2 models x 2 voices = 4 canonical voices.
+	prog := info.Tts[0]
+	require.Len(t, prog.Voices, 4)
+	assert.Equal(t, "alice (ep, model-a)", prog.Voices[0].Name)
+	assert.Equal(t, "bob (ep, model-a)", prog.Voices[1].Name)
+	assert.Equal(t, "alice (ep, model-b)", prog.Voices[2].Name)
+	assert.Equal(t, "bob (ep, model-b)", prog.Voices[3].Name)
+}
+
 func TestInfoBuilder_Build_AliasDefaultLanguages(t *testing.T) {
 	aliases := &mockAliasLister{
 		aliases: []model.VoiceAlias{
@@ -116,7 +216,7 @@ func TestInfoBuilder_Build_AliasDefaultLanguages(t *testing.T) {
 		},
 	}
 
-	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, nil, "1.0.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
@@ -126,7 +226,7 @@ func TestInfoBuilder_Build_AliasDefaultLanguages(t *testing.T) {
 
 func TestInfoBuilder_Build_EndpointListError(t *testing.T) {
 	endpoints := &mockEndpointLister{err: errors.New("db error")}
-	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, "1.0.0")
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, nil, "1.0.0")
 
 	_, err := builder.Build(context.Background())
 	assert.ErrorContains(t, err, "db error")
@@ -134,14 +234,14 @@ func TestInfoBuilder_Build_EndpointListError(t *testing.T) {
 
 func TestInfoBuilder_Build_AliasListError(t *testing.T) {
 	aliases := &mockAliasLister{err: errors.New("alias error")}
-	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, nil, "1.0.0")
 
 	_, err := builder.Build(context.Background())
 	assert.ErrorContains(t, err, "alias error")
 }
 
 func TestInfoBuilder_Cached(t *testing.T) {
-	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, nil, "1.0.0")
 
 	// Before Build, Cached returns nil.
 	assert.Nil(t, builder.Cached())
@@ -156,7 +256,7 @@ func TestInfoBuilder_Cached(t *testing.T) {
 
 func TestInfoBuilder_Build_RebuildUpdatesCache(t *testing.T) {
 	aliases := &mockAliasLister{}
-	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, "1.0.0")
+	builder := NewInfoBuilder(&mockEndpointLister{}, aliases, nil, "1.0.0")
 
 	info1, err := builder.Build(context.Background())
 	require.NoError(t, err)
