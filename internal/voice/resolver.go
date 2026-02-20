@@ -32,10 +32,20 @@ func NewResolver(endpoints EndpointLister, aliases AliasLister) *Resolver {
 // Resolve takes a voice name string and returns a ResolvedVoice.
 //
 // Resolution priority:
+//  0. If name is empty, fall back to the first enabled endpoint's DefaultVoice
 //  1. Voice alias (by name, must be enabled)
 //  2. Canonical name ("voice (endpoint, model)" format)
 //  3. Fallback to first enabled endpoint's first model and the voice name as-is
 func (r *Resolver) Resolve(ctx context.Context, name string) (*model.ResolvedVoice, error) {
+	// 0. If voice is empty, try the default voice from the first enabled endpoint.
+	if name == "" {
+		defaultVoice, err := r.resolveDefaultVoice(ctx)
+		if err != nil {
+			return nil, err
+		}
+		name = defaultVoice
+	}
+
 	// 1. Try alias resolution.
 	resolved, err := r.resolveAlias(ctx, name)
 	if err != nil {
@@ -56,6 +66,20 @@ func (r *Resolver) Resolve(ctx context.Context, name string) (*model.ResolvedVoi
 
 	// 3. Fallback to first enabled endpoint.
 	return r.resolveFallback(ctx, name)
+}
+
+// resolveDefaultVoice finds the default voice from the first enabled endpoint.
+func (r *Resolver) resolveDefaultVoice(ctx context.Context) (string, error) {
+	endpoints, err := r.endpoints.ListEndpoints(ctx)
+	if err != nil {
+		return "", fmt.Errorf("voice: resolve default voice: %w", err)
+	}
+	for _, ep := range endpoints {
+		if ep.Enabled && ep.DefaultVoice != "" {
+			return ep.DefaultVoice, nil
+		}
+	}
+	return "", fmt.Errorf("voice: no voice specified and no default voice configured")
 }
 
 // resolveAlias looks up the name in voice aliases.
