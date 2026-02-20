@@ -169,5 +169,17 @@ func (c *Client) ListVoices(ctx context.Context) ([]Voice, error) {
 		return voices, nil
 	}
 
+	// Try plain string array: {"voices": ["voice1", "voice2"]}
+	var stringResp struct {
+		Voices []string `json:"voices"`
+	}
+	if err := json.Unmarshal(body, &stringResp); err == nil && len(stringResp.Voices) > 0 {
+		voices := make([]Voice, len(stringResp.Voices))
+		for i, v := range stringResp.Voices {
+			voices[i] = Voice{ID: v, Name: v}
+		}
+		return voices, nil
+	}
+
 	return []Voice{}, nil
 }

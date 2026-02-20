@@ -295,6 +295,23 @@ func TestListVoices_SpeachesStyle(t *testing.T) {
 	assert.Equal(t, "adam", voices[1].ID)
 }
 
+func TestListVoices_StringArrayStyle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"voices":["aiden","dylan","eric","vivian"]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	require.Len(t, voices, 4)
+	assert.Equal(t, "aiden", voices[0].ID)
+	assert.Equal(t, "aiden", voices[0].Name)
+	assert.Equal(t, "vivian", voices[3].ID)
+	assert.Equal(t, "vivian", voices[3].Name)
+}
+
 func TestListVoices_404ReturnsEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
