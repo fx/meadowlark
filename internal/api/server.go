@@ -126,7 +126,7 @@ func (s *Server) setupRoutes() *chi.Mux {
 		r.Put("/endpoints/{id}", s.UpdateEndpoint)
 		r.Delete("/endpoints/{id}", s.DeleteEndpoint)
 		r.Post("/endpoints/{id}/test", s.TestEndpoint)
-		r.Get("/endpoints/{id}/voices", s.DiscoverVoices)
+		r.Get("/endpoints/{id}/configured-models", s.ListEndpointConfiguredModels)
 		r.Get("/endpoints/{id}/models", s.DiscoverModels)
 		r.Get("/endpoints/{id}/remote-voices", s.DiscoverRemoteVoices)
 

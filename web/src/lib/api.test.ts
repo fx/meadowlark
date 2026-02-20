@@ -99,12 +99,12 @@ describe('api.endpoints', () => {
     })
   })
 
-  it('voices calls GET /api/v1/endpoints/:id/voices', async () => {
-    const voices = ['tts-1', 'gpt-4o-mini-tts']
-    mockFetch.mockReturnValueOnce(jsonResponse(voices))
-    const result = await api.endpoints.voices('ep-1')
-    expect(result).toEqual(voices)
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices', undefined)
+  it('configuredModels calls GET /api/v1/endpoints/:id/configured-models', async () => {
+    const models = ['tts-1', 'gpt-4o-mini-tts']
+    mockFetch.mockReturnValueOnce(jsonResponse(models))
+    const result = await api.endpoints.configuredModels('ep-1')
+    expect(result).toEqual(models)
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/configured-models', undefined)
   })
 
   it('probe calls POST /api/v1/endpoints/probe with url and api_key', async () => {

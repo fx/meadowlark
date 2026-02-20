@@ -391,10 +391,10 @@ func TestTestEndpoint_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-func TestDiscoverVoices_ReturnsModels(t *testing.T) {
+func TestListEndpointConfiguredModels_ReturnsModels(t *testing.T) {
 	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "OpenAI", BaseURL: "https://api.openai.com/v1", Models: model.StringSlice{"tts-1", "tts-1-hd", "gpt-4o-mini-tts"}, Enabled: true}}}
 	_, ts := newEndpointTestServer(ms); defer ts.Close()
-	resp, err := http.Get(ts.URL + "/api/v1/endpoints/ep1/voices")
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/ep1/configured-models")
 	require.NoError(t, err); defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	var body []string
@@ -402,10 +402,10 @@ func TestDiscoverVoices_ReturnsModels(t *testing.T) {
 	assert.Equal(t, []string{"tts-1", "tts-1-hd", "gpt-4o-mini-tts"}, body)
 }
 
-func TestDiscoverVoices_NotFound(t *testing.T) {
+func TestListEndpointConfiguredModels_NotFound(t *testing.T) {
 	ms := &endpointMockStore{}
 	_, ts := newEndpointTestServer(ms); defer ts.Close()
-	resp, err := http.Get(ts.URL + "/api/v1/endpoints/nonexistent/voices")
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/nonexistent/configured-models")
 	require.NoError(t, err); defer resp.Body.Close()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }

@@ -271,12 +271,12 @@ func (s *Server) TestEndpoint(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, testEndpointResponse{OK: true, LatencyMS: latency})
 }
 
-// DiscoverVoices returns the configured models list for an endpoint.
-func (s *Server) DiscoverVoices(w http.ResponseWriter, r *http.Request) {
+// ListEndpointConfiguredModels returns the configured models list for an endpoint.
+func (s *Server) ListEndpointConfiguredModels(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ep, err := s.store.GetEndpoint(r.Context(), id)
 	if err != nil {
-		slog.Error("discover voices: get", "error", err)
+		slog.Error("list endpoint configured models: get", "error", err)
 		respondError(w, http.StatusInternalServerError, "internal_error", "failed to get endpoint")
 		return
 	}

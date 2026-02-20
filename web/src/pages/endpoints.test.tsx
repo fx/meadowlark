@@ -273,7 +273,7 @@ describe('EndpointsPage', () => {
   it('discovers voices and shows results', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.endsWith('/voices')) {
+      if (url.endsWith('/configured-models')) {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -297,7 +297,7 @@ describe('EndpointsPage', () => {
   it('discovers voices and handles empty result', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.endsWith('/voices')) {
+      if (url.endsWith('/configured-models')) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) })
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
@@ -317,7 +317,7 @@ describe('EndpointsPage', () => {
   it('discovers voices and handles network error', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.endsWith('/voices')) {
+      if (url.endsWith('/configured-models')) {
         return Promise.reject(new Error('fetch failed'))
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })
@@ -337,7 +337,7 @@ describe('EndpointsPage', () => {
   it('discovers voices and handles non-Error throw', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.endsWith('/voices')) {
+      if (url.endsWith('/configured-models')) {
         return Promise.reject('string error')
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mockEndpoints) })

@@ -136,8 +136,8 @@ function EndpointRow({
 
   const handleDiscoverVoices = useCallback(async () => {
     try {
-      const voices = await api.endpoints.voices(endpoint.id)
-      setVoicesResult(voices.length > 0 ? voices.join(', ') : 'None found')
+      const models = await api.endpoints.configuredModels(endpoint.id)
+      setVoicesResult(models.length > 0 ? models.join(', ') : 'None found')
     } catch (err) {
       setVoicesResult(`Error: ${err instanceof Error ? err.message : String(err)}`)
     }
