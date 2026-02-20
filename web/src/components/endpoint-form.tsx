@@ -14,6 +14,13 @@ import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useEndpointProbe } from '@/hooks/use-endpoint-probe'
@@ -34,6 +41,7 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const [showApiKey, setShowApiKey] = useState(false)
   const [selectedModels, setSelectedModels] = useState<string[]>(endpoint?.models ?? [])
   const [modelInput, setModelInput] = useState('')
+  const [defaultVoice, setDefaultVoice] = useState(endpoint?.default_voice ?? '')
   const [speed, setSpeed] = useState(endpoint?.default_speed?.toString() ?? '')
   const [instructions, setInstructions] = useState(endpoint?.default_instructions ?? '')
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
@@ -50,14 +58,18 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   useEffect(() => {
     if (urlDirtyRef.current && probe.status === 'success') {
       setSelectedModels(probe.models.map((m) => m.id))
+      if (probe.voices.length > 0 && !defaultVoice) {
+        setDefaultVoice(probe.voices[0].id)
+      }
     }
-  }, [probe.status, probe.models])
+  }, [probe.status, probe.models, probe.voices, defaultVoice])
 
   const handleUrlChange = useCallback((e: Event) => {
     urlDirtyRef.current = true
     setBaseUrl((e.target as HTMLInputElement).value)
     setSelectedModels([])
     setModelInput('')
+    setDefaultVoice('')
   }, [])
 
   const modelOptions = probe.models
@@ -90,13 +102,14 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         base_url: baseUrl,
         api_key: apiKey || undefined,
         models: selectedModels,
+        default_voice: defaultVoice || undefined,
         default_speed: speed && Number.isFinite(Number(speed)) ? Number(speed) : undefined,
         default_instructions: instructions || undefined,
         enabled,
       }
       onSubmit(data)
     },
-    [name, baseUrl, apiKey, selectedModels, speed, instructions, enabled, onSubmit],
+    [name, baseUrl, apiKey, selectedModels, defaultVoice, speed, instructions, enabled, onSubmit],
   )
 
   return (
@@ -203,6 +216,24 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         />
       </div>
 
+      {probe.voices.length > 0 && (
+        <div className="space-y-2">
+          <Label htmlFor="ep-default-voice">Default Voice</Label>
+          <Select value={defaultVoice} onValueChange={setDefaultVoice}>
+            <SelectTrigger id="ep-default-voice" className="w-full">
+              <SelectValue placeholder="Select default voice" />
+            </SelectTrigger>
+            <SelectContent>
+              {probe.voices.map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  {v.name || v.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="ep-speed">Default Speed</Label>
@@ -237,19 +268,6 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
           placeholder="Optional instructions for TTS"
         />
       </div>
-
-      {probe.voices.length > 0 && (
-        <div className="space-y-2">
-          <Label>Available Voices</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {probe.voices.map((v) => (
-              <Badge key={v.id} variant="outline">
-                {v.name || v.id}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={isSaving}>
