@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS endpoints (
     base_url                TEXT NOT NULL,
     api_key                 TEXT DEFAULT '',
     models                  TEXT NOT NULL DEFAULT '[]',
+    default_voice           TEXT NOT NULL DEFAULT '',
     default_speed           DOUBLE PRECISION,
     default_instructions    TEXT,
     default_response_format TEXT NOT NULL DEFAULT 'wav',
@@ -67,7 +68,17 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
+	// Idempotent ALTER TABLE migrations (errors ignored when column already exists).
+	for _, stmt := range pgAlterMigrations {
+		_, _ = s.pool.Exec(ctx, stmt)
+	}
 	return nil
+}
+
+// pgAlterMigrations are run after the initial schema creation.
+// Errors are silently ignored (e.g. "column already exists") to ensure idempotency.
+var pgAlterMigrations = []string{
+	`ALTER TABLE endpoints ADD COLUMN default_voice TEXT NOT NULL DEFAULT ''`,
 }
 
 func (s *PostgresStore) Close() error {
@@ -76,7 +87,7 @@ func (s *PostgresStore) Close() error {
 }
 
 func (s *PostgresStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, name, base_url, api_key, models, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints ORDER BY name`)
+	rows, err := s.pool.Query(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("store: list endpoints: %w", err)
 	}
@@ -93,7 +104,7 @@ func (s *PostgresStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, er
 }
 
 func (s *PostgresStore) GetEndpoint(ctx context.Context, id string) (*model.Endpoint, error) {
-	row := s.pool.QueryRow(ctx, `SELECT id, name, base_url, api_key, models, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints WHERE id = $1`, id)
+	row := s.pool.QueryRow(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints WHERE id = $1`, id)
 	ep, err := scanPgEndpointRow(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -115,8 +126,8 @@ func (s *PostgresStore) CreateEndpoint(ctx context.Context, e *model.Endpoint) e
 	if err != nil {
 		return fmt.Errorf("store: marshal models: %w", err)
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO endpoints (id, name, base_url, api_key, models, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		e.ID, e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.CreatedAt, e.UpdatedAt)
+	_, err = s.pool.Exec(ctx, `INSERT INTO endpoints (id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		e.ID, e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.CreatedAt, e.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("store: create endpoint: %w", err)
 	}
@@ -129,8 +140,8 @@ func (s *PostgresStore) UpdateEndpoint(ctx context.Context, e *model.Endpoint) e
 	if err != nil {
 		return fmt.Errorf("store: marshal models: %w", err)
 	}
-	ct, err := s.pool.Exec(ctx, `UPDATE endpoints SET name = $1, base_url = $2, api_key = $3, models = $4, default_speed = $5, default_instructions = $6, default_response_format = $7, enabled = $8, updated_at = $9 WHERE id = $10`,
-		e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.UpdatedAt, e.ID)
+	ct, err := s.pool.Exec(ctx, `UPDATE endpoints SET name = $1, base_url = $2, api_key = $3, models = $4, default_voice = $5, default_speed = $6, default_instructions = $7, default_response_format = $8, enabled = $9, updated_at = $10 WHERE id = $11`,
+		e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.UpdatedAt, e.ID)
 	if err != nil {
 		return fmt.Errorf("store: update endpoint: %w", err)
 	}
@@ -239,7 +250,7 @@ func scanPgEndpointFromScanner(sc pgScanner) (model.Endpoint, error) {
 	var ep model.Endpoint
 	var modelsJSON string
 	err := sc.Scan(&ep.ID, &ep.Name, &ep.BaseURL, &ep.APIKey, &modelsJSON,
-		&ep.DefaultSpeed, &ep.DefaultInstructions, &ep.DefaultResponseFormat,
+		&ep.DefaultVoice, &ep.DefaultSpeed, &ep.DefaultInstructions, &ep.DefaultResponseFormat,
 		&ep.Enabled, &ep.CreatedAt, &ep.UpdatedAt)
 	if err != nil {
 		return ep, err

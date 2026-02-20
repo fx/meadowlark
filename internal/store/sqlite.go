@@ -48,6 +48,10 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("store: migrate: %w", err)
 	}
+	// Idempotent ALTER TABLE migrations (errors ignored when column already exists).
+	for _, stmt := range alterMigrations {
+		_, _ = s.db.ExecContext(ctx, stmt)
+	}
 	return nil
 }
 
@@ -58,6 +62,7 @@ CREATE TABLE IF NOT EXISTS endpoints (
     base_url                TEXT NOT NULL,
     api_key                 TEXT DEFAULT '',
     models                  TEXT NOT NULL DEFAULT '[]',
+    default_voice           TEXT NOT NULL DEFAULT '',
     default_speed           REAL,
     default_instructions    TEXT,
     default_response_format TEXT NOT NULL DEFAULT 'wav',
@@ -79,12 +84,19 @@ CREATE TABLE IF NOT EXISTS voice_aliases (
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
 `
+
+// alterMigrations are run after the initial schema creation.
+// Errors are silently ignored (e.g. "duplicate column name") to ensure idempotency.
+var alterMigrations = []string{
+	`ALTER TABLE endpoints ADD COLUMN default_voice TEXT NOT NULL DEFAULT ''`,
+}
 
 func (s *SQLiteStore) Close() error { return s.db.Close() }
 
 func (s *SQLiteStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, base_url, api_key, models, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("store: list endpoints: %w", err)
 	}
@@ -101,7 +113,7 @@ func (s *SQLiteStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, erro
 }
 
 func (s *SQLiteStore) GetEndpoint(ctx context.Context, id string) (*model.Endpoint, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, name, base_url, api_key, models, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints WHERE id = ?`, id)
 	ep, err := scanEndpointRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -121,8 +133,8 @@ func (s *SQLiteStore) CreateEndpoint(ctx context.Context, e *model.Endpoint) err
 	now := time.Now().UTC()
 	e.CreatedAt = now
 	e.UpdatedAt = now
-	_, err := s.db.ExecContext(ctx, `INSERT INTO endpoints (id, name, base_url, api_key, models, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.Name, e.BaseURL, e.APIKey, e.Models, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.CreatedAt.Format(time.RFC3339), e.UpdatedAt.Format(time.RFC3339))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO endpoints (id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.Name, e.BaseURL, e.APIKey, e.Models, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.CreatedAt.Format(time.RFC3339), e.UpdatedAt.Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("store: create endpoint: %w", err)
 	}
@@ -133,8 +145,8 @@ func (s *SQLiteStore) UpdateEndpoint(ctx context.Context, e *model.Endpoint) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e.UpdatedAt = time.Now().UTC()
-	res, err := s.db.ExecContext(ctx, `UPDATE endpoints SET name = ?, base_url = ?, api_key = ?, models = ?, default_speed = ?, default_instructions = ?, default_response_format = ?, enabled = ?, updated_at = ? WHERE id = ?`,
-		e.Name, e.BaseURL, e.APIKey, e.Models, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.UpdatedAt.Format(time.RFC3339), e.ID)
+	res, err := s.db.ExecContext(ctx, `UPDATE endpoints SET name = ?, base_url = ?, api_key = ?, models = ?, default_voice = ?, default_speed = ?, default_instructions = ?, default_response_format = ?, enabled = ?, updated_at = ? WHERE id = ?`,
+		e.Name, e.BaseURL, e.APIKey, e.Models, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.UpdatedAt.Format(time.RFC3339), e.ID)
 	if err != nil {
 		return fmt.Errorf("store: update endpoint: %w", err)
 	}
@@ -258,7 +270,7 @@ func scanEndpointFromScanner(sc scanner) (model.Endpoint, error) {
 	var ep model.Endpoint
 	var createdAt, updatedAt string
 	err := sc.Scan(&ep.ID, &ep.Name, &ep.BaseURL, &ep.APIKey, &ep.Models,
-		&ep.DefaultSpeed, &ep.DefaultInstructions, &ep.DefaultResponseFormat,
+		&ep.DefaultVoice, &ep.DefaultSpeed, &ep.DefaultInstructions, &ep.DefaultResponseFormat,
 		&ep.Enabled, &createdAt, &updatedAt)
 	if err != nil {
 		return ep, fmt.Errorf("store: scan endpoint: %w", err)
