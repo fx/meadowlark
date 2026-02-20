@@ -110,6 +110,12 @@ func TestParseInput_JSONMessageWithAllFields(t *testing.T) {
 	assert.Equal(t, ptrStr("bla bla bla"), result.Instructions)
 }
 
+func TestParseInput_JSONEmptyInputFallsBackToMessage(t *testing.T) {
+	input := `{"input": "", "message": "fallback"}`
+	result := ParseInput(input)
+	assert.Equal(t, "fallback", result.Input)
+}
+
 // --- ParseInput: Tag format ---
 
 func TestParseInput_SingleTag(t *testing.T) {
