@@ -453,4 +453,51 @@ describe('EndpointForm', () => {
     expect(screen.queryByText('tts-1')).not.toBeInTheDocument()
     expect(screen.queryByText('tts-1-hd')).not.toBeInTheDocument()
   })
+
+  it('clears selected models when URL is emptied', async () => {
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    expect(screen.getByText('tts-1')).toBeInTheDocument()
+    const urlInput = screen.getByLabelText('Base URL')
+    await user.clear(urlInput)
+    expect(screen.queryByText('tts-1')).not.toBeInTheDocument()
+    expect(screen.queryByText('tts-1-hd')).not.toBeInTheDocument()
+  })
+
+  it('auto-populates models from probe on success after URL change', async () => {
+    mockProbe.models = [{ id: 'new-model' }]
+    mockProbe.status = 'success'
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Base URL'), 'https://new.api.com')
+    expect(screen.getByText('new-model')).toBeInTheDocument()
+    mockProbe.models = []
+    mockProbe.status = 'idle'
+  })
+
+  it('does not auto-populate models on initial edit render', () => {
+    mockProbe.models = [{ id: 'probed-model' }]
+    mockProbe.status = 'success'
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    // Should show the endpoint's saved models, not probe models
+    expect(screen.getByText('tts-1')).toBeInTheDocument()
+    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
+    expect(screen.queryByText('probed-model')).not.toBeInTheDocument()
+    mockProbe.models = []
+    mockProbe.status = 'idle'
+  })
 })

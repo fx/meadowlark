@@ -37,17 +37,22 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const [instructions, setInstructions] = useState(endpoint?.default_instructions ?? '')
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
 
-  const prevUrlRef = useRef(baseUrl)
+  const urlDirtyRef = useRef(false)
   const probe = useEndpointProbe(baseUrl, apiKey)
 
-  // Clear selected models when URL changes
+  // Auto-populate models when probe succeeds after a URL change
   useEffect(() => {
-    if (baseUrl !== prevUrlRef.current) {
-      prevUrlRef.current = baseUrl
-      setSelectedModels([])
-      setModelInput('')
+    if (urlDirtyRef.current && probe.status === 'success') {
+      setSelectedModels(probe.models.map((m) => m.id))
     }
-  }, [baseUrl])
+  }, [baseUrl, probe.status, probe.models])
+
+  const handleUrlChange = useCallback((e: Event) => {
+    urlDirtyRef.current = true
+    setBaseUrl((e.target as HTMLInputElement).value)
+    setSelectedModels([])
+    setModelInput('')
+  }, [])
 
   const modelOptions = probe.models
     .filter((m) => !selectedModels.includes(m.id))
@@ -106,7 +111,7 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
             <Input
               id="ep-url"
               value={baseUrl}
-              onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)}
+              onInput={handleUrlChange}
               required
             />
             <Button
