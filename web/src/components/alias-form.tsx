@@ -217,5 +217,5 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
   )
 }
 
-export { AliasForm }
 export type { AliasFormProps }
+export { AliasForm }

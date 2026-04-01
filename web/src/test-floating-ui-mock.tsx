@@ -80,4 +80,4 @@ function autoUpdate(_reference: unknown, _floating: unknown, update: () => void)
   return () => {}
 }
 
-export { useFloating, arrow, offset, shift, flip, size, hide, limitShift, autoUpdate }
+export { arrow, autoUpdate, flip, hide, limitShift, offset, shift, size, useFloating }

@@ -25,5 +25,5 @@ function Switch({ className, size = 'default', ...props }: SwitchProps) {
   )
 }
 
-export { Switch }
 export type { SwitchProps }
+export { Switch }

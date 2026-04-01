@@ -66,4 +66,4 @@ function TableCaption({ className, ...props }: ComponentProps<'caption'>) {
   return <caption className={cn('text-muted-foreground mt-4 text-sm', className)} {...props} />
 }
 
-export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption }
+export { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow }

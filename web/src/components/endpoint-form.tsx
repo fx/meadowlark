@@ -296,5 +296,5 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   )
 }
 
-export { EndpointForm }
 export type { EndpointFormProps }
+export { EndpointForm }

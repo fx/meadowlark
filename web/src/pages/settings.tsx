@@ -106,4 +106,4 @@ function SettingsPage() {
   )
 }
 
-export { SettingsPage, formatUptime }
+export { formatUptime, SettingsPage }

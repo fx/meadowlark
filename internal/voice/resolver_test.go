@@ -407,6 +407,31 @@ func TestResolve_EmptyVoice_FallsBackToDefaultVoice(t *testing.T) {
 	assert.Equal(t, "tts-1", resolved.Model)
 }
 
+func TestResolve_DefaultVoiceLiteral_FallsBackToDefaultVoice(t *testing.T) {
+	eps := []model.Endpoint{
+		{
+			ID:           "ep-1",
+			Name:         "OpenAI",
+			Models:       model.StringSlice{"tts-1"},
+			DefaultVoice: "alloy",
+			Enabled:      true,
+		},
+	}
+	r := NewResolver(
+		&mockEndpointLister{endpoints: eps},
+		&mockAliasLister{aliases: nil},
+	)
+
+	// "default" should resolve the same as empty string
+	resolved, err := r.Resolve(context.Background(), "default")
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+
+	assert.Equal(t, "alloy", resolved.Voice)
+	assert.Equal(t, "ep-1", resolved.EndpointID)
+	assert.Equal(t, "tts-1", resolved.Model)
+}
+
 func TestResolve_EmptyVoice_NoDefaultVoiceConfigured(t *testing.T) {
 	eps := []model.Endpoint{
 		{

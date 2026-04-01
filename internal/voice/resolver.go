@@ -32,14 +32,14 @@ func NewResolver(endpoints EndpointLister, aliases AliasLister) *Resolver {
 // Resolve takes a voice name string and returns a ResolvedVoice.
 //
 // Resolution priority:
-//  0. If name is empty, resolve directly from the first enabled endpoint's DefaultVoice
+//  0. If name is empty or "default", resolve from the first enabled endpoint's DefaultVoice
 //     using that endpoint's own ID and first model for consistency
 //  1. Voice alias (by name, must be enabled)
 //  2. Canonical name ("voice (endpoint, model)" format)
 //  3. Fallback to first enabled endpoint's first model and the voice name as-is
 func (r *Resolver) Resolve(ctx context.Context, name string) (*model.ResolvedVoice, error) {
-	// 0. If voice is empty, resolve directly to ensure endpoint+voice consistency.
-	if name == "" {
+	// 0. If voice is empty or "default", resolve to the configured default voice.
+	if name == "" || name == "default" {
 		return r.resolveDefaultVoice(ctx)
 	}
 
