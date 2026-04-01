@@ -38,8 +38,8 @@ func NewResolver(endpoints EndpointLister, aliases AliasLister) *Resolver {
 //  2. Canonical name ("voice (endpoint, model)" format)
 //  3. Fallback to first enabled endpoint's first model and the voice name as-is
 func (r *Resolver) Resolve(ctx context.Context, name string) (*model.ResolvedVoice, error) {
-	// 0. If voice is empty, resolve directly to ensure endpoint+voice consistency.
-	if name == "" {
+	// 0. If voice is empty or "default", resolve to the configured default voice.
+	if name == "" || name == "default" {
 		return r.resolveDefaultVoice(ctx)
 	}
 
