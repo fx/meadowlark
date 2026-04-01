@@ -73,5 +73,5 @@ function useTheme() {
   return context
 }
 
-export { ThemeProvider, useTheme }
 export type { Theme, ThemeProviderProps }
+export { ThemeProvider, useTheme }

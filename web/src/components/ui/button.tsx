@@ -50,5 +50,5 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   },
 )
 
-export { Button, buttonVariants }
 export type { ButtonProps }
+export { Button, buttonVariants }

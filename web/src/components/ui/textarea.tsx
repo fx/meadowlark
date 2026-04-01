@@ -15,5 +15,5 @@ function Textarea({ className, ...props }: TextareaProps) {
   )
 }
 
-export { Textarea }
 export type { TextareaProps }
+export { Textarea }
