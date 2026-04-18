@@ -299,6 +299,23 @@ func TestListVoices_SpeachesStyle(t *testing.T) {
 	assert.Equal(t, "adam", voices[1].ID)
 }
 
+func TestListVoices_GenericVoicesArray(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"voices":[{"id":"Vivian","name":"Vivian"},{"id":"Ryan","name":"Ryan"}]}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	voices, err := client.ListVoices(context.Background())
+	require.NoError(t, err)
+	require.Len(t, voices, 2)
+	assert.Equal(t, "Vivian", voices[0].ID)
+	assert.Equal(t, "Vivian", voices[0].Name)
+	assert.Equal(t, "Ryan", voices[1].ID)
+	assert.Equal(t, "Ryan", voices[1].Name)
+}
+
 func TestListVoices_StringArrayStyle(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

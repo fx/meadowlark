@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 )
 
 // Model represents a model returned by the /v1/models endpoint.
@@ -165,7 +166,8 @@ func (c *Client) ListModels(ctx context.Context) ([]Model, error) {
 }
 
 // ListVoices fetches available voices from the /v1/audio/voices endpoint.
-// Handles both OpenAI-style ({"data": [...]}) and Speaches-style ({"voices": [...]}) responses.
+// Supports OpenAI-style ({"data": [...]}), generic ({"voices": [{"id","name"}]}),
+// Speaches-style ({"voices": [{"voice_id","name"}]}), and plain string array responses.
 // Returns an empty slice (not an error) on 404 or request failure.
 func (c *Client) ListVoices(ctx context.Context) ([]Voice, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/audio/voices", nil)
@@ -197,6 +199,17 @@ func (c *Client) ListVoices(ctx context.Context) ([]Voice, error) {
 	}
 	if err := json.Unmarshal(body, &openAIResp); err == nil && len(openAIResp.Data) > 0 {
 		return openAIResp.Data, nil
+	}
+
+	// Try generic voices array: {"voices": [{"id": "...", "name": "..."}]}
+	var voicesResp struct {
+		Voices []Voice `json:"voices"`
+	}
+	if err := json.Unmarshal(body, &voicesResp); err == nil && len(voicesResp.Voices) > 0 {
+		voices := slices.DeleteFunc(voicesResp.Voices, func(v Voice) bool { return v.ID == "" })
+		if len(voices) > 0 {
+			return voices, nil
+		}
 	}
 
 	// Try Speaches-style: {"voices": [{"voice_id": "...", "name": "..."}]}
