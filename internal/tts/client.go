@@ -166,7 +166,8 @@ func (c *Client) ListModels(ctx context.Context) ([]Model, error) {
 }
 
 // ListVoices fetches available voices from the /v1/audio/voices endpoint.
-// Handles both OpenAI-style ({"data": [...]}) and Speaches-style ({"voices": [...]}) responses.
+// Supports OpenAI-style ({"data": [...]}), generic ({"voices": [{"id","name"}]}),
+// Speaches-style ({"voices": [{"voice_id","name"}]}), and plain string array responses.
 // Returns an empty slice (not an error) on 404 or request failure.
 func (c *Client) ListVoices(ctx context.Context) ([]Voice, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/audio/voices", nil)
