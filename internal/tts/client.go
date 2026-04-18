@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 )
 
 // Model represents a model returned by the /v1/models endpoint.
@@ -204,14 +205,7 @@ func (c *Client) ListVoices(ctx context.Context) ([]Voice, error) {
 		Voices []Voice `json:"voices"`
 	}
 	if err := json.Unmarshal(body, &voicesResp); err == nil && len(voicesResp.Voices) > 0 {
-		hasID := false
-		for _, v := range voicesResp.Voices {
-			if v.ID != "" {
-				hasID = true
-				break
-			}
-		}
-		if hasID {
+		if slices.ContainsFunc(voicesResp.Voices, func(v Voice) bool { return v.ID != "" }) {
 			return voicesResp.Voices, nil
 		}
 	}
