@@ -206,8 +206,9 @@ func (c *Client) ListVoices(ctx context.Context) ([]Voice, error) {
 		Voices []Voice `json:"voices"`
 	}
 	if err := json.Unmarshal(body, &voicesResp); err == nil && len(voicesResp.Voices) > 0 {
-		if slices.ContainsFunc(voicesResp.Voices, func(v Voice) bool { return v.ID != "" }) {
-			return voicesResp.Voices, nil
+		voices := slices.DeleteFunc(voicesResp.Voices, func(v Voice) bool { return v.ID == "" })
+		if len(voices) > 0 {
+			return voices, nil
 		}
 	}
 
