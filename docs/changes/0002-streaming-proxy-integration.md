@@ -1,7 +1,7 @@
 # 0002: Streaming Proxy Integration
 
 **Spec:** [tts-synthesis](../specs/tts-synthesis/), [data-persistence](../specs/data-persistence/), [http-api](../specs/http-api/), [frontend](../specs/frontend/)
-**Status:** draft
+**Status:** complete
 **Depends on:** [0001-streaming-tts-client](0001-streaming-tts-client.md)
 
 ## Summary
@@ -155,27 +155,27 @@ The API client types in `web/src/lib/api.ts` gain the two new fields on `Endpoin
 ## Tasks
 
 ### Backend: Endpoint Model + Database
-- [ ] Add `StreamingEnabled bool` and `StreamSampleRate int` to `model.Endpoint` in `internal/model/model.go`
+- [x] Add `StreamingEnabled bool` and `StreamSampleRate int` to `model.Endpoint` in `internal/model/model.go` (PR #37)
   - JSON tags: `json:"streaming_enabled"` and `json:"stream_sample_rate"`
-- [ ] Add alter migration for SQLite in `internal/store/sqlite.go`
+- [x] Add alter migration for SQLite in `internal/store/sqlite.go` (PR #37)
   - `ALTER TABLE endpoints ADD COLUMN streaming_enabled INTEGER NOT NULL DEFAULT 0`
   - `ALTER TABLE endpoints ADD COLUMN stream_sample_rate INTEGER NOT NULL DEFAULT 24000`
   - Add to `alterMigrations` slice, check column existence before altering
-- [ ] Add alter migration for PostgreSQL in `internal/store/postgres.go`
+- [x] Add alter migration for PostgreSQL in `internal/store/postgres.go` (PR #37)
   - `ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS streaming_enabled BOOLEAN NOT NULL DEFAULT FALSE`
   - `ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS stream_sample_rate INTEGER NOT NULL DEFAULT 24000`
-- [ ] Update SQLite `scanEndpoint` to read the two new columns
-- [ ] Update PostgreSQL `scanEndpoint` to read the two new columns
-- [ ] Update SQLite/PostgreSQL `CreateEndpoint` and `UpdateEndpoint` to write the two new columns
-- [ ] Add store tests: round-trip create/read with streaming fields, migration idempotency
+- [x] Update SQLite `scanEndpoint` to read the two new columns (PR #37)
+- [x] Update PostgreSQL `scanEndpoint` to read the two new columns (PR #37)
+- [x] Update SQLite/PostgreSQL `CreateEndpoint` and `UpdateEndpoint` to write the two new columns (PR #37)
+- [x] Add store tests: round-trip create/read with streaming fields, migration idempotency (PR #37)
 
 ### Backend: Proxy Integration
-- [ ] Modify `doSynthesize` in `internal/tts/proxy.go` to branch on `ep.StreamingEnabled`
+- [x] Modify `doSynthesize` in `internal/tts/proxy.go` to branch on `ep.StreamingEnabled` (PR #37)
   - Streaming path: build `StreamSynthesizeRequest`, call `client.SynthesizeStream`, build `AudioFormat` from config
   - Buffered path: existing code unchanged
   - Shared: PCM chunking loop reads from `body` (streaming) or `wavReader` (buffered)
-- [ ] Default `StreamSampleRate` to 24000 when zero in the proxy (not the model)
-- [ ] Add proxy tests for streaming mode in `internal/tts/proxy_test.go`
+- [x] Default `StreamSampleRate` to 24000 when zero in the proxy (not the model) (PR #37)
+- [x] Add proxy tests for streaming mode in `internal/tts/proxy_test.go` (PR #37)
   - Test: streaming endpoint → mock server returns raw PCM → verify `AudioStart` has config-based format + correct `AudioChunk` events
   - Test: streaming endpoint with custom sample rate (16000) → verify `AudioStart.Rate == 16000`
   - Test: streaming endpoint with `StreamSampleRate: 0` → verify defaults to 24000
@@ -183,12 +183,12 @@ The API client types in `web/src/lib/api.ts` gain the two new fields on `Endpoin
   - Test: non-streaming endpoint → existing tests still pass (no regression)
 
 ### Backend: HTTP API
-- [ ] Update `createEndpointRequest` and `updateEndpointRequest` in `internal/api/endpoints.go`
+- [x] Update `createEndpointRequest` and `updateEndpointRequest` in `internal/api/endpoints.go` (PR #37)
   - Add `StreamingEnabled *bool` and `StreamSampleRate *int` fields
   - Validate `stream_sample_rate` range 8000–48000 when present
-- [ ] Update `CreateEndpoint` handler to map new fields to `model.Endpoint`
-- [ ] Update `UpdateEndpoint` handler to map new fields
-- [ ] Add API integration tests for streaming fields in `internal/api/integration_test.go`
+- [x] Update `CreateEndpoint` handler to map new fields to `model.Endpoint` (PR #37)
+- [x] Update `UpdateEndpoint` handler to map new fields (PR #37)
+- [x] Add API integration tests for streaming fields in `internal/api/integration_test.go` (PR #37)
   - Test: create endpoint with `streaming_enabled: true, stream_sample_rate: 24000`
   - Test: update existing endpoint to enable streaming
   - Test: invalid sample rate (e.g., 100) returns 400
