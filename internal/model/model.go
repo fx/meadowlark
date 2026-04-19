@@ -58,6 +58,8 @@ type Endpoint struct {
 	DefaultInstructions   *string     `json:"default_instructions,omitempty"`
 	DefaultResponseFormat string      `json:"default_response_format"`
 	Enabled               bool        `json:"enabled"`
+	StreamingEnabled      bool        `json:"streaming_enabled"`
+	StreamSampleRate      int         `json:"stream_sample_rate"`
 	CreatedAt             time.Time   `json:"created_at"`
 	UpdatedAt             time.Time   `json:"updated_at"`
 }

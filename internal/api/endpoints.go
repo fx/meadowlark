@@ -55,6 +55,8 @@ type createEndpointRequest struct {
 	DefaultInstructions   *string           `json:"default_instructions"`
 	DefaultResponseFormat string            `json:"default_response_format"`
 	Enabled               *bool             `json:"enabled"`
+	StreamingEnabled      *bool             `json:"streaming_enabled,omitempty"`
+	StreamSampleRate      *int              `json:"stream_sample_rate,omitempty"`
 }
 
 // CreateEndpoint creates a new endpoint.
@@ -86,6 +88,10 @@ func (s *Server) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "bad_request", "default_speed must be between 0.25 and 4.0")
 		return
 	}
+	if req.StreamSampleRate != nil && (*req.StreamSampleRate < 8000 || *req.StreamSampleRate > 48000) {
+		respondError(w, http.StatusBadRequest, "bad_request", "stream_sample_rate must be between 8000 and 48000")
+		return
+	}
 	existing, err := s.store.ListEndpoints(r.Context())
 	if err != nil {
 		slog.Error("create endpoint: list for duplicate check", "error", err)
@@ -112,6 +118,12 @@ func (s *Server) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 		Models: req.Models, DefaultVoice: req.DefaultVoice, DefaultSpeed: req.DefaultSpeed, DefaultInstructions: req.DefaultInstructions,
 		DefaultResponseFormat: responseFormat, Enabled: enabled, CreatedAt: now, UpdatedAt: now,
 	}
+	if req.StreamingEnabled != nil {
+		ep.StreamingEnabled = *req.StreamingEnabled
+	}
+	if req.StreamSampleRate != nil {
+		ep.StreamSampleRate = *req.StreamSampleRate
+	}
 	if err := s.store.CreateEndpoint(r.Context(), ep); err != nil {
 		slog.Error("create endpoint", "error", err)
 		respondError(w, http.StatusInternalServerError, "internal_error", "failed to create endpoint")
@@ -131,6 +143,8 @@ type updateEndpointRequest struct {
 	DefaultInstructions   *string            `json:"default_instructions"`
 	DefaultResponseFormat *string            `json:"default_response_format"`
 	Enabled               *bool              `json:"enabled"`
+	StreamingEnabled      *bool              `json:"streaming_enabled,omitempty"`
+	StreamSampleRate      *int               `json:"stream_sample_rate,omitempty"`
 }
 
 // UpdateEndpoint updates an existing endpoint.
@@ -211,6 +225,16 @@ func (s *Server) UpdateEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Enabled != nil {
 		ep.Enabled = *req.Enabled
+	}
+	if req.StreamSampleRate != nil && (*req.StreamSampleRate < 8000 || *req.StreamSampleRate > 48000) {
+		respondError(w, http.StatusBadRequest, "bad_request", "stream_sample_rate must be between 8000 and 48000")
+		return
+	}
+	if req.StreamingEnabled != nil {
+		ep.StreamingEnabled = *req.StreamingEnabled
+	}
+	if req.StreamSampleRate != nil {
+		ep.StreamSampleRate = *req.StreamSampleRate
 	}
 	if err := s.store.UpdateEndpoint(r.Context(), ep); err != nil {
 		slog.Error("update endpoint", "error", err)

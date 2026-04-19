@@ -546,3 +546,210 @@ func TestProxy_HandleSynthesize_UnsupportedResponseFormat(t *testing.T) {
 	errEv, _ := wyoming.ErrorFromEvent(events[0])
 	assert.Contains(t, errEv.Text, "unsupported response format")
 }
+
+func TestProxy_HandleSynthesize_StreamingMode(t *testing.T) {
+	// Generate raw PCM data (no WAV header).
+	pcmData := make([]byte, 4096)
+	for i := range pcmData {
+		pcmData[i] = byte(i % 256)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/audio/speech", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(pcmData)
+	}))
+	defer server.Close()
+
+	ep := &model.Endpoint{
+		ID:               "ep-1",
+		Name:             "StreamingEP",
+		BaseURL:          server.URL,
+		APIKey:           "test-key",
+		Models:           model.StringSlice{"tts-1"},
+		Enabled:          true,
+		StreamingEnabled: true,
+		StreamSampleRate: 24000,
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, server.Client()) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hello stream", Voice: "alloy"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.Len(t, events, 4) // audio-start + 2 chunks + audio-stop
+
+	// Verify audio-start uses config-based format.
+	assert.Equal(t, wyoming.TypeAudioStart, events[0].Type)
+	audioStart, err := wyoming.AudioStartFromEvent(events[0])
+	require.NoError(t, err)
+	assert.Equal(t, 24000, audioStart.Rate)
+	assert.Equal(t, 2, audioStart.Width)
+	assert.Equal(t, 1, audioStart.Channels)
+
+	// Verify chunks.
+	chunk1, _ := wyoming.AudioChunkFromEvent(events[1])
+	chunk2, _ := wyoming.AudioChunkFromEvent(events[2])
+	allPCM := append(chunk1.Audio, chunk2.Audio...)
+	assert.Equal(t, pcmData, allPCM)
+
+	// Verify audio-stop.
+	assert.Equal(t, wyoming.TypeAudioStop, events[3].Type)
+}
+
+func TestProxy_HandleSynthesize_StreamingCustomSampleRate(t *testing.T) {
+	pcmData := make([]byte, 512)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(pcmData)
+	}))
+	defer server.Close()
+
+	ep := &model.Endpoint{
+		ID:               "ep-1",
+		Name:             "CustomRate",
+		BaseURL:          server.URL,
+		APIKey:           "key",
+		Models:           model.StringSlice{"tts-1"},
+		Enabled:          true,
+		StreamingEnabled: true,
+		StreamSampleRate: 16000,
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, server.Client()) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hi", Voice: "alloy"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.GreaterOrEqual(t, len(events), 3)
+	audioStart, err := wyoming.AudioStartFromEvent(events[0])
+	require.NoError(t, err)
+	assert.Equal(t, 16000, audioStart.Rate)
+}
+
+func TestProxy_HandleSynthesize_StreamingDefaultSampleRate(t *testing.T) {
+	pcmData := make([]byte, 512)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(pcmData)
+	}))
+	defer server.Close()
+
+	ep := &model.Endpoint{
+		ID:               "ep-1",
+		Name:             "DefaultRate",
+		BaseURL:          server.URL,
+		APIKey:           "key",
+		Models:           model.StringSlice{"tts-1"},
+		Enabled:          true,
+		StreamingEnabled: true,
+		StreamSampleRate: 0, // Should default to 24000.
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, server.Client()) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hi", Voice: "alloy"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.GreaterOrEqual(t, len(events), 3)
+	audioStart, err := wyoming.AudioStartFromEvent(events[0])
+	require.NoError(t, err)
+	assert.Equal(t, 24000, audioStart.Rate)
+}
+
+func TestProxy_HandleSynthesize_StreamingAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("streaming error"))
+	}))
+	defer server.Close()
+
+	ep := &model.Endpoint{
+		ID:               "ep-1",
+		Name:             "ErrorStream",
+		BaseURL:          server.URL,
+		APIKey:           "key",
+		Models:           model.StringSlice{"tts-1"},
+		Enabled:          true,
+		StreamingEnabled: true,
+		StreamSampleRate: 24000,
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, server.Client()) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hello", Voice: "alloy"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.Len(t, events, 1)
+	assert.Equal(t, wyoming.TypeError, events[0].Type)
+	errEv, _ := wyoming.ErrorFromEvent(events[0])
+	assert.Contains(t, errEv.Text, "tts api call (streaming)")
+	assert.Equal(t, "tts-error", errEv.Code)
+}
+
+func TestProxy_HandleSynthesize_StreamingNonRegression(t *testing.T) {
+	// Non-streaming endpoint still works identically.
+	pcmData := make([]byte, 512)
+	wavData := buildTestWAV(22050, 2, 1, pcmData)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "audio/wav")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(wavData)
+	}))
+	defer server.Close()
+
+	ep := &model.Endpoint{
+		ID:                    "ep-1",
+		Name:                  "Buffered",
+		BaseURL:               server.URL,
+		APIKey:                "key",
+		Models:                model.StringSlice{"tts-1"},
+		DefaultResponseFormat: "wav",
+		Enabled:               true,
+		StreamingEnabled:      false,
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, server.Client()) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hello", Voice: "alloy"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.Len(t, events, 3)
+	assert.Equal(t, wyoming.TypeAudioStart, events[0].Type)
+	audioStart, err := wyoming.AudioStartFromEvent(events[0])
+	require.NoError(t, err)
+	assert.Equal(t, 22050, audioStart.Rate)
+	assert.Equal(t, wyoming.TypeAudioChunk, events[1].Type)
+	assert.Equal(t, wyoming.TypeAudioStop, events[2].Type)
+}

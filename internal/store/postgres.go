@@ -80,6 +80,8 @@ func (s *PostgresStore) Migrate(ctx context.Context) error {
 // real errors (permissions, connection) are properly propagated.
 var pgAlterMigrations = []string{
 	`ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS default_voice TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS streaming_enabled BOOLEAN NOT NULL DEFAULT FALSE`,
+	`ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS stream_sample_rate INTEGER NOT NULL DEFAULT 24000`,
 }
 
 func (s *PostgresStore) Close() error {
@@ -88,7 +90,7 @@ func (s *PostgresStore) Close() error {
 }
 
 func (s *PostgresStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints ORDER BY name`)
+	rows, err := s.pool.Query(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, streaming_enabled, stream_sample_rate, created_at, updated_at FROM endpoints ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("store: list endpoints: %w", err)
 	}
@@ -105,7 +107,7 @@ func (s *PostgresStore) ListEndpoints(ctx context.Context) ([]model.Endpoint, er
 }
 
 func (s *PostgresStore) GetEndpoint(ctx context.Context, id string) (*model.Endpoint, error) {
-	row := s.pool.QueryRow(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at FROM endpoints WHERE id = $1`, id)
+	row := s.pool.QueryRow(ctx, `SELECT id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, streaming_enabled, stream_sample_rate, created_at, updated_at FROM endpoints WHERE id = $1`, id)
 	ep, err := scanPgEndpointRow(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -127,8 +129,8 @@ func (s *PostgresStore) CreateEndpoint(ctx context.Context, e *model.Endpoint) e
 	if err != nil {
 		return fmt.Errorf("store: marshal models: %w", err)
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO endpoints (id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-		e.ID, e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.CreatedAt, e.UpdatedAt)
+	_, err = s.pool.Exec(ctx, `INSERT INTO endpoints (id, name, base_url, api_key, models, default_voice, default_speed, default_instructions, default_response_format, enabled, streaming_enabled, stream_sample_rate, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		e.ID, e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.StreamingEnabled, e.StreamSampleRate, e.CreatedAt, e.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("store: create endpoint: %w", err)
 	}
@@ -141,8 +143,8 @@ func (s *PostgresStore) UpdateEndpoint(ctx context.Context, e *model.Endpoint) e
 	if err != nil {
 		return fmt.Errorf("store: marshal models: %w", err)
 	}
-	ct, err := s.pool.Exec(ctx, `UPDATE endpoints SET name = $1, base_url = $2, api_key = $3, models = $4, default_voice = $5, default_speed = $6, default_instructions = $7, default_response_format = $8, enabled = $9, updated_at = $10 WHERE id = $11`,
-		e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.UpdatedAt, e.ID)
+	ct, err := s.pool.Exec(ctx, `UPDATE endpoints SET name = $1, base_url = $2, api_key = $3, models = $4, default_voice = $5, default_speed = $6, default_instructions = $7, default_response_format = $8, enabled = $9, streaming_enabled = $10, stream_sample_rate = $11, updated_at = $12 WHERE id = $13`,
+		e.Name, e.BaseURL, e.APIKey, modelsJSON, e.DefaultVoice, e.DefaultSpeed, e.DefaultInstructions, e.DefaultResponseFormat, e.Enabled, e.StreamingEnabled, e.StreamSampleRate, e.UpdatedAt, e.ID)
 	if err != nil {
 		return fmt.Errorf("store: update endpoint: %w", err)
 	}
@@ -252,7 +254,7 @@ func scanPgEndpointFromScanner(sc pgScanner) (model.Endpoint, error) {
 	var modelsJSON string
 	err := sc.Scan(&ep.ID, &ep.Name, &ep.BaseURL, &ep.APIKey, &modelsJSON,
 		&ep.DefaultVoice, &ep.DefaultSpeed, &ep.DefaultInstructions, &ep.DefaultResponseFormat,
-		&ep.Enabled, &ep.CreatedAt, &ep.UpdatedAt)
+		&ep.Enabled, &ep.StreamingEnabled, &ep.StreamSampleRate, &ep.CreatedAt, &ep.UpdatedAt)
 	if err != nil {
 		return ep, err
 	}

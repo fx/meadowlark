@@ -95,38 +95,65 @@ func (p *Proxy) doSynthesize(ctx context.Context, ev *wyoming.Synthesize, w io.W
 	// 4. Merge parameters: input overrides > alias defaults > endpoint defaults.
 	merged := voice.MergeParams(parsed, aliasDefaults, epDefaults)
 
-	// The proxy always parses the response as WAV (via WAVReader + PCM),
-	// so only WAV is currently supported here.
-	if ep.DefaultResponseFormat != "" && ep.DefaultResponseFormat != "wav" {
-		return fmt.Errorf("unsupported response format %q; only %q is supported by proxy", ep.DefaultResponseFormat, "wav")
-	}
-	responseFormat := "wav"
-
-	// 5. Call TTS client.
+	// 5. Call TTS client — streaming or buffered based on endpoint config.
 	client := p.clientFactory(ep)
-	req := &SynthesizeRequest{
-		Model:          merged.Model,
-		Voice:          merged.Voice,
-		Input:          merged.Input,
-		ResponseFormat: responseFormat,
-		Speed:          merged.Speed,
-		Instructions:   merged.Instructions,
+
+	var pcmReader io.Reader
+	var format *AudioFormat
+
+	if ep.StreamingEnabled {
+		// Streaming mode: request raw PCM, no WAV header.
+		streamReq := &StreamSynthesizeRequest{
+			Model:          merged.Model,
+			Voice:          merged.Voice,
+			Input:          merged.Input,
+			ResponseFormat: "pcm",
+			Speed:          merged.Speed,
+			Instructions:   merged.Instructions,
+			Stream:         true,
+		}
+		body, streamErr := client.SynthesizeStream(ctx, streamReq)
+		if streamErr != nil {
+			return fmt.Errorf("tts api call (streaming): %w", streamErr)
+		}
+		defer body.Close()
+
+		sampleRate := ep.StreamSampleRate
+		if sampleRate == 0 {
+			sampleRate = 24000
+		}
+		format = &AudioFormat{Rate: sampleRate, Width: 2, Channels: 1}
+		pcmReader = body
+	} else {
+		// Buffered mode: WAV response (existing behavior).
+		if ep.DefaultResponseFormat != "" && ep.DefaultResponseFormat != "wav" {
+			return fmt.Errorf("unsupported response format %q; only %q is supported by proxy", ep.DefaultResponseFormat, "wav")
+		}
+
+		req := &SynthesizeRequest{
+			Model:          merged.Model,
+			Voice:          merged.Voice,
+			Input:          merged.Input,
+			ResponseFormat: "wav",
+			Speed:          merged.Speed,
+			Instructions:   merged.Instructions,
+		}
+		body, synthErr := client.Synthesize(ctx, req)
+		if synthErr != nil {
+			return fmt.Errorf("tts api call: %w", synthErr)
+		}
+		defer body.Close()
+
+		wavReader := NewWAVReader(body)
+		wavFormat, fmtErr := wavReader.ReadFormat()
+		if fmtErr != nil {
+			return fmt.Errorf("parse wav header: %w", fmtErr)
+		}
+		format = wavFormat
+		pcmReader = wavReader
 	}
 
-	body, err := client.Synthesize(ctx, req)
-	if err != nil {
-		return fmt.Errorf("tts api call: %w", err)
-	}
-	defer body.Close()
-
-	// 6. Parse WAV header to get audio format.
-	wavReader := NewWAVReader(body)
-	format, err := wavReader.ReadFormat()
-	if err != nil {
-		return fmt.Errorf("parse wav header: %w", err)
-	}
-
-	// 7. Send audio-start event.
+	// 6. Send audio-start event.
 	audioStart := &wyoming.AudioStart{
 		Rate:     format.Rate,
 		Width:    format.Width,
@@ -136,10 +163,10 @@ func (p *Proxy) doSynthesize(ctx context.Context, ev *wyoming.Synthesize, w io.W
 		return fmt.Errorf("write audio-start: %w", err)
 	}
 
-	// 8. Read PCM data and send audio-chunk events (2048-byte chunks).
+	// 7. Read PCM data and send audio-chunk events (2048-byte chunks).
 	buf := make([]byte, chunkSize)
 	for {
-		n, readErr := wavReader.Read(buf)
+		n, readErr := pcmReader.Read(buf)
 		if n > 0 {
 			chunk := &wyoming.AudioChunk{
 				Rate:     format.Rate,
@@ -160,7 +187,7 @@ func (p *Proxy) doSynthesize(ctx context.Context, ev *wyoming.Synthesize, w io.W
 		}
 	}
 
-	// 9. Send audio-stop event.
+	// 8. Send audio-stop event.
 	audioStop := &wyoming.AudioStop{}
 	if err := wyoming.WriteEvent(w, audioStop.ToEvent()); err != nil {
 		return fmt.Errorf("write audio-stop: %w", err)

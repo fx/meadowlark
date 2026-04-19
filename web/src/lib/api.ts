@@ -11,6 +11,8 @@ export interface Endpoint {
   default_speed?: number
   default_instructions?: string
   default_response_format: string
+  streaming_enabled: boolean
+  stream_sample_rate: number
   enabled: boolean
   created_at: string
   updated_at: string
@@ -25,6 +27,8 @@ export interface CreateEndpoint {
   default_speed?: number
   default_instructions?: string
   default_response_format?: string
+  streaming_enabled?: boolean
+  stream_sample_rate?: number
   enabled?: boolean
 }
 
@@ -37,6 +41,8 @@ export interface UpdateEndpoint {
   default_speed?: number
   default_instructions?: string
   default_response_format?: string
+  streaming_enabled?: boolean
+  stream_sample_rate?: number
   enabled?: boolean
 }
 
