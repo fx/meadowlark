@@ -1,0 +1,50 @@
+# Documentation Index
+# Auto-updated by /spec-writer and /project-management skills
+
+specs:
+  - name: wyoming-protocol
+    path: specs/wyoming-protocol/
+    description: TCP server, wire format, event types, info builder, and Zeroconf/mDNS
+    status: active
+
+  - name: tts-synthesis
+    path: specs/tts-synthesis/
+    description: OpenAI-compatible HTTP client, WAV parsing, and proxy orchestration
+    status: active
+
+  - name: voice-resolution
+    path: specs/voice-resolution/
+    description: Priority-based resolver, input parsing, parameter merging, canonical naming
+    status: active
+
+  - name: http-api
+    path: specs/http-api/
+    description: REST endpoints, middleware, SPA serving, error format
+    status: active
+
+  - name: data-persistence
+    path: specs/data-persistence/
+    description: Store interface, SQLite/PostgreSQL implementations, schema, migrations
+    status: active
+
+  - name: frontend
+    path: specs/frontend/
+    description: Preact SPA, pages, hooks, theme system, UI components
+    status: active
+
+changes:
+  - id: "0001"
+    name: streaming-tts-client
+    path: changes/0001-streaming-tts-client.md
+    description: Add SynthesizeStream method for streaming PCM responses from TTS endpoints
+    spec: tts-synthesis
+    status: draft
+    depends_on: []
+
+  - id: "0002"
+    name: streaming-proxy-integration
+    path: changes/0002-streaming-proxy-integration.md
+    description: Wire streaming into proxy, add endpoint config, database migration, API, and frontend
+    spec: tts-synthesis
+    status: draft
+    depends_on: ["0001"]

@@ -79,6 +79,9 @@ Air watches both Go and frontend source files:
 ## Key Conventions
 
 - **Conventional commits** required: `feat:`, `fix:`, `docs:`, `ci:`, etc.
-- **Task completion**: Every PR must mark completed tasks as done (`- [x]`) in the relevant spec file under `docs/specs/`.
 - **CGO_ENABLED=0** for production builds (set in Makefile/Dockerfile), but NOT in mise.toml env because `go test -race` requires CGO.
-- **Specs** live in `docs/specs/` with numbered filenames. Full requirements in `docs/meadowlark.md`.
+- **Specs** live in `docs/specs/<feature>/index.md` as living documents. Full requirements in `docs/meadowlark.md`.
+
+## Task Tracking
+
+**You MUST load the `/project-management` skill before creating, modifying, or completing any task.** It owns all task-tracking rules and knows where tasks belong. Do not manage tasks without it.
