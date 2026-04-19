@@ -458,6 +458,203 @@ func TestSynthesize_WAVResponsePreservesBody(t *testing.T) {
 	assert.Equal(t, wavData, data)
 }
 
+func TestSynthesizeStream_RequestBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/audio/speech", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+		var reqBody map[string]any
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		require.NoError(t, err)
+
+		assert.Equal(t, true, reqBody["stream"])
+		assert.Equal(t, "pcm", reqBody["response_format"])
+		assert.Equal(t, "tts-1", reqBody["model"])
+		assert.Equal(t, "alloy", reqBody["voice"])
+		assert.Equal(t, "Hello", reqBody["input"])
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pcm-data"))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	require.NoError(t, err)
+	defer body.Close()
+}
+
+func TestSynthesizeStream_AuthHeaderPresent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer sk-test-key", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pcm-data"))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "sk-test-key", nil)
+	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	require.NoError(t, err)
+	body.Close()
+}
+
+func TestSynthesizeStream_AuthHeaderAbsentWhenEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pcm-data"))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	require.NoError(t, err)
+	body.Close()
+}
+
+func TestSynthesizeStream_NonSuccessReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error": "out of memory"}`))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	assert.Nil(t, body)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+	assert.Contains(t, err.Error(), "out of memory")
+}
+
+func TestSynthesizeStream_IncrementalRead(t *testing.T) {
+	chunks := [][]byte{
+		{0x01, 0x02, 0x03, 0x04},
+		{0x05, 0x06, 0x07, 0x08},
+		{0x09, 0x0a, 0x0b, 0x0c},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+
+		w.WriteHeader(http.StatusOK)
+		for _, chunk := range chunks {
+			w.Write(chunk)
+			flusher.Flush()
+		}
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	require.NoError(t, err)
+	defer body.Close()
+
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+
+	var expected []byte
+	for _, chunk := range chunks {
+		expected = append(expected, chunk...)
+	}
+	assert.Equal(t, expected, data)
+}
+
+func TestSynthesizeStream_OptionalFields(t *testing.T) {
+	t.Run("omitted when nil", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var reqBody map[string]any
+			err := json.NewDecoder(r.Body).Decode(&reqBody)
+			require.NoError(t, err)
+
+			assert.NotContains(t, reqBody, "speed")
+			assert.NotContains(t, reqBody, "instructions")
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "", nil)
+		body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+			Model: "tts-1",
+			Voice: "alloy",
+			Input: "Hello",
+		})
+		require.NoError(t, err)
+		body.Close()
+	})
+
+	t.Run("included when set", func(t *testing.T) {
+		speed := 1.5
+		instructions := "speak slowly"
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var reqBody map[string]any
+			err := json.NewDecoder(r.Body).Decode(&reqBody)
+			require.NoError(t, err)
+
+			assert.Equal(t, 1.5, reqBody["speed"])
+			assert.Equal(t, "speak slowly", reqBody["instructions"])
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		client := NewClient(srv.URL, "", nil)
+		body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+			Model:        "tts-1",
+			Voice:        "alloy",
+			Input:        "Hello",
+			Speed:        &speed,
+			Instructions: &instructions,
+		})
+		require.NoError(t, err)
+		body.Close()
+	})
+}
+
+func TestSynthesizeStream_ContextCancellation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(ctx, &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	assert.Nil(t, body)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "tts: send request:")
+}
+
 func TestTruncateBody(t *testing.T) {
 	assert.Equal(t, "short", truncateBody("short", 500))
 	assert.Equal(t, "abc...", truncateBody("abcdef", 3))

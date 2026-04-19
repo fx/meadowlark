@@ -32,6 +32,17 @@ type SynthesizeRequest struct {
 	Instructions   *string  `json:"instructions,omitempty"`
 }
 
+// StreamSynthesizeRequest contains the parameters for a streaming TTS synthesis call.
+type StreamSynthesizeRequest struct {
+	Model          string   `json:"model"`
+	Voice          string   `json:"voice"`
+	Input          string   `json:"input"`
+	ResponseFormat string   `json:"response_format"`
+	Speed          *float64 `json:"speed,omitempty"`
+	Instructions   *string  `json:"instructions,omitempty"`
+	Stream         bool     `json:"stream"`
+}
+
 // Client is an OpenAI-compatible TTS HTTP client.
 type Client struct {
 	baseURL    string
@@ -116,6 +127,47 @@ func (c *Client) Synthesize(ctx context.Context, req *SynthesizeRequest) (io.Rea
 type readCloser struct {
 	io.Reader
 	io.Closer
+}
+
+// SynthesizeStream sends a streaming TTS request and returns the response body
+// for incremental PCM consumption. The caller is responsible for closing the
+// returned ReadCloser.
+func (c *Client) SynthesizeStream(ctx context.Context, req *StreamSynthesizeRequest) (io.ReadCloser, error) {
+	req.Stream = true
+	req.ResponseFormat = "pcm"
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("tts: marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/audio/speech", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("tts: create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("tts: send request: %w", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		truncated := truncateBody(string(errBody), 500)
+		slog.Error("tts: non-2xx response from TTS endpoint",
+			"status_code", resp.StatusCode,
+			"content_type", resp.Header.Get("Content-Type"),
+			"response_body", truncated,
+		)
+		return nil, fmt.Errorf("tts: API error %d: %s", resp.StatusCode, truncated)
+	}
+
+	return resp.Body, nil
 }
 
 // truncateBody truncates a string to maxLen characters, appending "..." if truncated.
