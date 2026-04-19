@@ -33,10 +33,18 @@ specs:
     status: active
 
 changes:
-  # - id: "NNNN"
-  #   name: <change-name>
-  #   path: changes/NNNN-<change-name>.md
-  #   description: <one-line description>
-  #   spec: <spec-name>
-  #   status: draft | in-progress | complete
-  #   depends_on: []
+  - id: "0001"
+    name: streaming-tts-client
+    path: changes/0001-streaming-tts-client.md
+    description: Add SynthesizeStream method for streaming PCM responses from TTS endpoints
+    spec: tts-synthesis
+    status: draft
+    depends_on: []
+
+  - id: "0002"
+    name: streaming-proxy-integration
+    path: changes/0002-streaming-proxy-integration.md
+    description: Wire streaming into proxy, add endpoint config, database migration, API, and frontend
+    spec: tts-synthesis
+    status: draft
+    depends_on: ["0001"]

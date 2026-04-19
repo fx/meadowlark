@@ -4,7 +4,12 @@ Living specification for Meadowlark's text-to-speech synthesis pipeline — the 
 
 ## Overview
 
-The TTS system receives Wyoming `synthesize` events, resolves the voice configuration, calls an OpenAI-compatible `/audio/speech` endpoint, parses the WAV response, and streams PCM audio back as Wyoming events. The entire pipeline is non-streaming: the full WAV response is buffered before audio chunks are sent.
+The TTS system receives Wyoming `synthesize` events, resolves the voice configuration, calls an OpenAI-compatible `/audio/speech` endpoint, and streams PCM audio back as Wyoming events.
+
+Two synthesis modes are supported:
+
+- **Buffered (WAV):** The default. The full WAV response is received, the header is parsed for audio format, and PCM data is chunked into Wyoming events. Works with all endpoints.
+- **Streaming (PCM):** Opt-in per endpoint. Sends `"stream": true` with `response_format: "pcm"` to endpoints that support it. Raw PCM bytes are forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format is determined from endpoint configuration rather than a WAV header.
 
 **Package:** `internal/tts/`
 
@@ -22,7 +27,7 @@ type Client struct {
 
 `NewClient(baseURL, apiKey, httpClient)` creates a client. If `httpClient` is nil, `http.DefaultClient` is used.
 
-### Synthesize
+### Synthesize (Buffered)
 
 `Synthesize(ctx, req) → (io.ReadCloser, error)`
 
@@ -66,6 +71,56 @@ The client validates the response is WAV audio by checking the first 4 bytes for
 - Optional fields (`Speed`, `Instructions`, `ResponseFormat`) MUST be omitted from JSON when nil/empty.
 - The response body MUST be returned as an `io.ReadCloser` for streaming consumption.
 - Error response bodies MUST be truncated to 500 characters for logging.
+
+### SynthesizeStream (Streaming)
+
+`SynthesizeStream(ctx, req) → (io.ReadCloser, error)`
+
+Sends a `POST {baseURL}/audio/speech` request with `"stream": true` in the JSON body:
+
+```go
+type StreamSynthesizeRequest struct {
+    Model          string   `json:"model"`
+    Voice          string   `json:"voice"`
+    Input          string   `json:"input"`
+    ResponseFormat string   `json:"response_format"`  // MUST be "pcm"
+    Speed          *float64 `json:"speed,omitempty"`
+    Instructions   *string  `json:"instructions,omitempty"`
+    Stream         bool     `json:"stream"`            // Always true
+}
+```
+
+#### Response Format
+
+The endpoint MUST return raw PCM audio bytes via HTTP chunked transfer encoding:
+- **Content-Type:** `audio/pcm` (MAY vary by endpoint; not validated)
+- **Format:** 16-bit signed little-endian PCM, mono, at the sample rate configured on the endpoint (typically 24000 Hz)
+- **No WAV header** — the response is a flat stream of PCM samples
+
+#### Response Validation
+
+Unlike `Synthesize`, `SynthesizeStream` MUST NOT perform RIFF magic byte validation. The response body is returned directly as an `io.ReadCloser`. Non-2xx status codes MUST still be detected and reported as errors.
+
+#### Requirements
+
+- `SynthesizeStream` MUST set `"stream": true` and `"response_format": "pcm"` in the request body.
+- The response body MUST be returned immediately without buffering — the caller reads PCM bytes incrementally.
+- Authorization MUST follow the same rules as `Synthesize`.
+- Non-2xx responses MUST be reported with the same error format as `Synthesize`.
+
+#### Scenarios
+
+**GIVEN** an endpoint that supports streaming,
+**WHEN** `SynthesizeStream` is called,
+**THEN** the request body MUST contain `"stream": true` and `"response_format": "pcm"`.
+
+**GIVEN** a streaming endpoint returns a 500 error,
+**WHEN** `SynthesizeStream` is called,
+**THEN** it MUST return an error with the status code and truncated body.
+
+**GIVEN** a streaming endpoint returns raw PCM bytes,
+**WHEN** the caller reads from the returned `io.ReadCloser`,
+**THEN** each read MUST return PCM bytes as they arrive from the HTTP response (no buffering).
 
 ### ListModels
 
@@ -173,11 +228,12 @@ type ClientFactory func(ep *model.Endpoint) *Client
 4. **Fetch endpoint** → `endpoints.GetEndpoint(ctx, resolved.EndpointID)`. Error if not found or disabled.
 5. **Build endpoint defaults** (speed, instructions from endpoint config).
 6. **Merge parameters** → `voice.MergeParams(input, aliasDefaults, endpointDefaults)`. Priority: input > alias > endpoint.
-7. **Call TTS API** → Forces `response_format = "wav"`. Returns error if endpoint's `DefaultResponseFormat` is non-empty and not `"wav"`.
-8. **Parse WAV header** → `WAVReader.ReadFormat()` extracts `AudioFormat`.
-9. **Stream audio chunks**:
+7. **Select synthesis mode** based on `endpoint.StreamingEnabled`:
+   - **Streaming:** Call `client.SynthesizeStream(ctx, req)` with `response_format: "pcm"`. Build `AudioFormat` from endpoint's `StreamSampleRate` (default 24000), width 2, channels 1.
+   - **Buffered:** Call `client.Synthesize(ctx, req)` with `response_format: "wav"`. Parse WAV header via `WAVReader.ReadFormat()` to determine `AudioFormat`.
+8. **Stream audio chunks**:
    - Send `AudioStart` event with rate, width, channels.
-   - Read PCM in 2048-byte chunks, send `AudioChunk` events.
+   - Read PCM from the appropriate source (streaming: response body directly, buffered: WAVReader) in 2048-byte chunks, send `AudioChunk` events.
    - Send `AudioStop` on EOF.
 
 ### Error Handling
@@ -192,9 +248,9 @@ All errors in `doSynthesize` are caught by `HandleSynthesize`, which:
 | Voice resolution fails | `"resolve voice: ..."` |
 | Endpoint not found | `"get endpoint: ..."` |
 | Endpoint disabled | `"endpoint ... is disabled"` |
-| Unsupported response format | `"endpoint ... uses unsupported response format: ..."` |
+| Unsupported response format (buffered) | `"endpoint ... uses unsupported response format: ..."` |
 | TTS API call fails | `"tts api call: ..."` |
-| WAV parsing fails | `"parse wav header: ..."` |
+| WAV parsing fails (buffered only) | `"parse wav header: ..."` |
 | PCM read error | `"read pcm data: ..."` |
 
 ### Constants
@@ -205,16 +261,22 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 
 ### Requirements
 
-- The proxy MUST force `response_format = "wav"` regardless of client request.
+- When streaming is disabled, the proxy MUST force `response_format = "wav"`.
+- When streaming is enabled, the proxy MUST use `response_format = "pcm"` and `stream = true`.
 - Audio MUST be chunked in exactly 2048-byte segments (final chunk MAY be smaller).
 - Synthesis errors MUST result in a Wyoming `Error` event, never a crash.
 - The connection MUST remain usable after a synthesis error.
+- Streaming mode MUST be a per-endpoint opt-in — it MUST NOT be the default.
 
 ### Scenarios
 
-**GIVEN** a synthesis request for voice `"alloy (OpenAI, tts-1)"`,
+**GIVEN** a synthesis request to an endpoint with `StreamingEnabled: false`,
 **WHEN** the TTS endpoint returns a valid WAV response with 4096 bytes of PCM,
-**THEN** the proxy MUST send `AudioStart` (with correct format) → 2 `AudioChunk` events (2048 bytes each) → `AudioStop`.
+**THEN** the proxy MUST send `AudioStart` (with format from WAV header) → 2 `AudioChunk` events (2048 bytes each) → `AudioStop`.
+
+**GIVEN** a synthesis request to an endpoint with `StreamingEnabled: true` and `StreamSampleRate: 24000`,
+**WHEN** the TTS endpoint returns streaming PCM bytes,
+**THEN** the proxy MUST immediately send `AudioStart` (rate=24000, width=2, channels=1) and forward PCM chunks as they arrive from the HTTP response.
 
 **GIVEN** a synthesis request with an invalid voice alias,
 **WHEN** voice resolution fails,
@@ -224,24 +286,54 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 **WHEN** the endpoint is fetched,
 **THEN** the proxy MUST return an error stating the endpoint is disabled.
 
-## Current Limitations
+**GIVEN** a streaming endpoint that disconnects mid-response,
+**WHEN** the proxy reads from the response body,
+**THEN** it MUST send `AudioStop` for any audio already sent, then send a Wyoming `Error` event.
 
-- **No HTTP streaming:** The full WAV response is buffered before chunking begins. The upstream Qwen3-TTS FastAPI supports `stream=true` for PCM/WAV, but Meadowlark does not use it.
-- **WAV only:** The proxy rejects non-WAV response formats. MP3/AAC are not supported.
-- **Fixed chunk size:** The 2048-byte chunk size is not configurable.
-- **No response format negotiation:** `response_format` is always forced to `"wav"`.
+## Endpoint Streaming Configuration
+
+The `Endpoint` model includes streaming configuration:
+
+```go
+type Endpoint struct {
+    // ... existing fields ...
+    StreamingEnabled  bool  `json:"streaming_enabled"`   // Opt-in streaming mode
+    StreamSampleRate  int   `json:"stream_sample_rate"`  // PCM sample rate (default: 24000)
+}
+```
+
+### Requirements
+
+- `StreamingEnabled` MUST default to `false` for backwards compatibility.
+- `StreamSampleRate` MUST default to `24000` when zero/unset.
+- The audio format for streaming is fixed at 16-bit signed LE mono PCM — only the sample rate is configurable.
+- These fields MUST be exposed in the HTTP API for endpoint CRUD and in the frontend endpoint form.
+
+### Audio Format Convention
+
+The de facto standard across OpenAI, Qwen3-TTS, and Speaches for PCM streaming is:
+
+| Parameter | Value |
+|-----------|-------|
+| Sample rate | 24000 Hz (configurable via `StreamSampleRate`) |
+| Bit depth | 16-bit (Width = 2) |
+| Encoding | Signed little-endian integer |
+| Channels | 1 (mono) |
+
+This format MUST be assumed for all streaming responses. WAV header parsing is not used in streaming mode.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `internal/tts/tts.go` | Package declaration |
-| `internal/tts/client.go` | OpenAI-compatible HTTP client |
+| `internal/tts/client.go` | OpenAI-compatible HTTP client (buffered + streaming) |
 | `internal/tts/proxy.go` | Synthesis proxy orchestration |
-| `internal/tts/wav.go` | WAV header parser and PCM reader |
+| `internal/tts/wav.go` | WAV header parser and PCM reader (buffered mode only) |
 
 ## Changelog
 
 | Date | Description | Document |
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
+| 2026-04-19 | Add streaming PCM synthesis mode (spec + changes) | [0001](../../changes/0001-streaming-tts-client.md), [0002](../../changes/0002-streaming-proxy-integration.md) |

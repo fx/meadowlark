@@ -15,3 +15,5 @@
 
 | # | Change | Spec | Status | Depends On |
 |---|--------|------|--------|------------|
+| 0001 | [streaming-tts-client](changes/0001-streaming-tts-client.md) | [tts-synthesis](specs/tts-synthesis/) | draft | — |
+| 0002 | [streaming-proxy-integration](changes/0002-streaming-proxy-integration.md) | [tts-synthesis](specs/tts-synthesis/) | draft | 0001 |
