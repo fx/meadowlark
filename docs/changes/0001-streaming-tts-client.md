@@ -1,7 +1,7 @@
 # 0001: Streaming TTS Client
 
 **Spec:** [tts-synthesis](../specs/tts-synthesis/)
-**Status:** draft
+**Status:** complete
 **Depends on:** —
 
 ## Summary
@@ -90,16 +90,16 @@ func (c *Client) SynthesizeStream(ctx context.Context, req *StreamSynthesizeRequ
 
 ## Tasks
 
-- [ ] Add `StreamSynthesizeRequest` struct to `internal/tts/client.go`
+- [x] Add `StreamSynthesizeRequest` struct to `internal/tts/client.go` (PR #36)
   - `Model`, `Voice`, `Input`, `ResponseFormat`, `Speed`, `Instructions`, `Stream` fields
   - `ResponseFormat` is non-omitempty (always sent)
   - `Stream` is non-omitempty (always sent as `true`)
-- [ ] Add `SynthesizeStream` method to `Client` in `internal/tts/client.go`
+- [x] Add `SynthesizeStream` method to `Client` in `internal/tts/client.go` (PR #36)
   - Build HTTP request identical to `Synthesize` (same URL, same auth, same content-type)
   - Force `req.Stream = true` and `req.ResponseFormat = "pcm"` at the start of the method
   - On non-2xx: same error handling as `Synthesize` (read body, truncate 500 chars)
   - On success: return `resp.Body` directly (no RIFF check, no `io.MultiReader`)
-- [ ] Add tests for `SynthesizeStream` in `internal/tts/client_test.go`
+- [x] Add tests for `SynthesizeStream` in `internal/tts/client_test.go` (PR #36)
   - Test: request body contains `"stream":true` and `"response_format":"pcm"`
   - Test: auth header present when API key set
   - Test: auth header absent when API key empty
