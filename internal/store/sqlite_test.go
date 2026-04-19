@@ -333,6 +333,56 @@ func TestVoiceAlias_LanguagesRoundTrip(t *testing.T) {
 	assert.Equal(t, model.StringSlice{"en", "es", "fr", "de"}, got.Languages)
 }
 
+func TestCreateEndpoint_StreamingFields(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("StreamingEP")
+	ep.StreamingEnabled = true
+	ep.StreamSampleRate = 16000
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.True(t, got.StreamingEnabled)
+	assert.Equal(t, 16000, got.StreamSampleRate)
+}
+
+func TestMigrate_StreamingColumnsIdempotent(t *testing.T) {
+	s, err := NewSQLiteStore(":memory:")
+	require.NoError(t, err)
+	defer s.Close()
+	ctx := context.Background()
+	require.NoError(t, s.Migrate(ctx))
+	require.NoError(t, s.Migrate(ctx))
+	// Verify default values after migration.
+	ep := makeEndpoint("AfterMigrate")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.False(t, got.StreamingEnabled)
+	assert.Equal(t, 0, got.StreamSampleRate)
+}
+
+func TestUpdateEndpoint_StreamingFields(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("OriginalStreaming")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	// Initially defaults.
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.False(t, got.StreamingEnabled)
+	assert.Equal(t, 0, got.StreamSampleRate)
+	// Update to enable streaming.
+	ep.StreamingEnabled = true
+	ep.StreamSampleRate = 44100
+	require.NoError(t, s.UpdateEndpoint(ctx, ep))
+	got, err = s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.True(t, got.StreamingEnabled)
+	assert.Equal(t, 44100, got.StreamSampleRate)
+}
+
 func TestSQLiteStore_ImplementsStore(t *testing.T) {
 	var _ Store = (*SQLiteStore)(nil)
 }
