@@ -641,7 +641,7 @@ describe('EndpointForm', () => {
     expect(screen.queryByLabelText('Sample Rate')).not.toBeInTheDocument()
   })
 
-  it('sample rate validation (min/max)', async () => {
+  it('sample rate validation (min/max/step)', async () => {
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     // Enable streaming to show sample rate
@@ -649,6 +649,33 @@ describe('EndpointForm', () => {
     const sampleRateInput = screen.getByLabelText('Sample Rate')
     expect(sampleRateInput).toHaveAttribute('min', '8000')
     expect(sampleRateInput).toHaveAttribute('max', '48000')
+    expect(sampleRateInput).toHaveAttribute('step', '1')
+  })
+
+  it('clamps sample rate on blur', async () => {
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.click(screen.getByRole('switch', { name: 'Streaming' }))
+    const sampleRateInput = screen.getByLabelText('Sample Rate')
+    // Type a value below min
+    await user.clear(sampleRateInput)
+    await user.type(sampleRateInput, '100')
+    await user.tab() // trigger blur
+    expect(sampleRateInput).toHaveValue(8000)
+    // Type a value above max
+    await user.clear(sampleRateInput)
+    await user.type(sampleRateInput, '99999')
+    await user.tab()
+    expect(sampleRateInput).toHaveValue(48000)
+    // Type a fractional value
+    await user.clear(sampleRateInput)
+    await user.type(sampleRateInput, '22050.7')
+    await user.tab()
+    expect(sampleRateInput).toHaveValue(22051)
+    // Empty value on blur should not change
+    await user.clear(sampleRateInput)
+    await user.tab()
+    expect(sampleRateInput).toHaveValue(null)
   })
 
   it('submits custom sample rate when streaming is enabled', async () => {
@@ -697,6 +724,23 @@ describe('EndpointForm', () => {
     )
     // Sample rate should be visible and populated
     expect(screen.getByLabelText('Sample Rate')).toHaveValue(16000)
+  })
+
+  it('treats zero sample rate as unset and defaults to 24000', () => {
+    const zeroRateEndpoint: Endpoint = {
+      ...mockEndpoint,
+      streaming_enabled: true,
+      stream_sample_rate: 0,
+    }
+    render(
+      <EndpointForm
+        endpoint={zeroRateEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    expect(screen.getByLabelText('Sample Rate')).toHaveValue(24000)
   })
 
   it('defaults sample rate to 24000 when input is cleared', async () => {

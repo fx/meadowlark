@@ -46,9 +46,10 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const [instructions, setInstructions] = useState(endpoint?.default_instructions ?? '')
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
   const [streamingEnabled, setStreamingEnabled] = useState(endpoint?.streaming_enabled ?? false)
-  const [streamSampleRate, setStreamSampleRate] = useState(
-    endpoint?.stream_sample_rate?.toString() ?? '24000',
-  )
+  const [streamSampleRate, setStreamSampleRate] = useState(() => {
+    const sampleRate = endpoint?.stream_sample_rate
+    return sampleRate && sampleRate > 0 ? sampleRate.toString() : '24000'
+  })
 
   const urlDirtyRef = useRef(false)
   const probe = useEndpointProbe(baseUrl, apiKey)
@@ -110,7 +111,9 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         default_speed: speed && Number.isFinite(Number(speed)) ? Number(speed) : undefined,
         default_instructions: instructions || undefined,
         streaming_enabled: streamingEnabled,
-        stream_sample_rate: streamingEnabled ? Number(streamSampleRate) || 24000 : undefined,
+        stream_sample_rate: streamingEnabled
+          ? Math.min(48000, Math.max(8000, Math.round(Number(streamSampleRate) || 24000)))
+          : undefined,
         enabled,
       }
       onSubmit(data)
@@ -315,8 +318,15 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
               type="number"
               min="8000"
               max="48000"
+              step="1"
               value={streamSampleRate}
               onInput={(e) => setStreamSampleRate((e.target as HTMLInputElement).value)}
+              onBlur={(e) => {
+                const value = (e.target as HTMLInputElement).value
+                if (value === '') return
+                const clamped = Math.min(48000, Math.max(8000, Math.round(Number(value))))
+                setStreamSampleRate(String(clamped))
+              }}
               placeholder="24000"
             />
           </div>
