@@ -1,8 +1,14 @@
+# PR Review
+
+## Task Cross-Reference
+
+Cross-reference every PR against task lists in `docs/changes/` and `docs/tasks.md`. If the PR completes work tracked in those files, the task checkboxes MUST be updated in this same PR. Request changes if missing.
+
+---
+
 # Copilot Instructions
 
 ## PR Review Checklist (CRITICAL)
-
-- **Task completion**: EVERY PR MUST mark completed task(s) as done (`- [x]`) in the relevant tracking file (`docs/PROJECT.md` or the spec file in `docs/specs/`). REQUEST CHANGES if missing.
 - **TypeScript in devDependencies**: TypeScript belongs in `devDependencies` for this project. Do not suggest moving or removing it. It is used for type-checking only (`noEmit: true`).
 - **`@theme inline` in globals.css**: Intentional. Tailwind v4 uses `@theme inline` with CSS custom property indirection (`:root`/`.dark` blocks + `var()` refs). Do not flag as breaking theme switching.
 - **Dark variant `(&:is(.dark *))`**: Intentional. This is the upstream shadcn/ui pattern for Tailwind v4. The `.dark` class is on `<html>`, descendants match via `*`.
