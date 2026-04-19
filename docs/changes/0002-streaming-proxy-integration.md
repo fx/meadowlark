@@ -195,16 +195,16 @@ The API client types in `web/src/lib/api.ts` gain the two new fields on `Endpoin
   - Test: default values when fields omitted
 
 ### Frontend: Endpoint Form
-- [ ] Add `streaming_enabled` and `stream_sample_rate` to `Endpoint`, `CreateEndpoint`, `UpdateEndpoint` types in `web/src/lib/api.ts`
-- [ ] Add streaming toggle (Switch) to `EndpointForm` in `web/src/components/endpoint-form.tsx`
+- [x] Add `streaming_enabled` and `stream_sample_rate` to `Endpoint`, `CreateEndpoint`, `UpdateEndpoint` types in `web/src/lib/api.ts` (PR #37)
+- [x] Add streaming toggle (Switch) to `EndpointForm` in `web/src/components/endpoint-form.tsx` (PR #37)
   - Label: "Streaming"
   - Description/tooltip: "Enable streaming PCM responses for lower time-to-first-audio"
-- [ ] Add sample rate input (number) to `EndpointForm`, shown only when streaming is enabled
+- [x] Add sample rate input (number) to `EndpointForm`, shown only when streaming is enabled (PR #37)
   - Label: "Sample Rate"
   - Default: 24000, min: 8000, max: 48000
-- [ ] Add tests for new form fields in `web/src/components/endpoint-form.test.tsx`
+- [x] Add tests for new form fields in `web/src/components/endpoint-form.test.tsx` (PR #37)
   - Test: streaming toggle renders and submits correct value
   - Test: sample rate input shown/hidden based on streaming toggle
   - Test: sample rate validation (min/max)
   - Test: edit mode populates streaming fields from existing endpoint
-- [ ] Update endpoint page tests if needed in `web/src/pages/endpoints.test.tsx`
+- [x] Update endpoint page tests if needed in `web/src/pages/endpoints.test.tsx` (PR #37)
