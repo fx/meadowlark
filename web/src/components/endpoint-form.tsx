@@ -45,6 +45,10 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
   const [speed, setSpeed] = useState(endpoint?.default_speed?.toString() ?? '')
   const [instructions, setInstructions] = useState(endpoint?.default_instructions ?? '')
   const [enabled, setEnabled] = useState(endpoint?.enabled ?? true)
+  const [streamingEnabled, setStreamingEnabled] = useState(endpoint?.streaming_enabled ?? false)
+  const [streamSampleRate, setStreamSampleRate] = useState(
+    endpoint?.stream_sample_rate?.toString() ?? '24000',
+  )
 
   const urlDirtyRef = useRef(false)
   const probe = useEndpointProbe(baseUrl, apiKey)
@@ -105,11 +109,25 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
         default_voice: defaultVoice,
         default_speed: speed && Number.isFinite(Number(speed)) ? Number(speed) : undefined,
         default_instructions: instructions || undefined,
+        streaming_enabled: streamingEnabled,
+        stream_sample_rate: streamingEnabled ? Number(streamSampleRate) || 24000 : undefined,
         enabled,
       }
       onSubmit(data)
     },
-    [name, baseUrl, apiKey, selectedModels, defaultVoice, speed, instructions, enabled, onSubmit],
+    [
+      name,
+      baseUrl,
+      apiKey,
+      selectedModels,
+      defaultVoice,
+      speed,
+      instructions,
+      streamingEnabled,
+      streamSampleRate,
+      enabled,
+      onSubmit,
+    ],
   )
 
   return (
@@ -272,6 +290,37 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
           />
           <Label htmlFor="ep-enabled">Enabled</Label>
         </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex items-center gap-2 pt-6">
+          <Switch
+            id="ep-streaming"
+            checked={streamingEnabled}
+            onCheckedChange={setStreamingEnabled}
+            aria-label="Streaming"
+          />
+          <Label htmlFor="ep-streaming">
+            Streaming
+            <span className="text-muted-foreground ml-2 text-xs font-normal">
+              Enable streaming PCM responses for lower time-to-first-audio
+            </span>
+          </Label>
+        </div>
+        {streamingEnabled && (
+          <div className="space-y-2">
+            <Label htmlFor="ep-sample-rate">Sample Rate</Label>
+            <Input
+              id="ep-sample-rate"
+              type="number"
+              min="8000"
+              max="48000"
+              value={streamSampleRate}
+              onInput={(e) => setStreamSampleRate((e.target as HTMLInputElement).value)}
+              placeholder="24000"
+            />
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">

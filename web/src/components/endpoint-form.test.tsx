@@ -29,6 +29,8 @@ const mockEndpoint: Endpoint = {
   default_speed: 1.5,
   default_instructions: 'Speak clearly',
   default_response_format: 'wav',
+  streaming_enabled: false,
+  stream_sample_rate: 24000,
   enabled: true,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
@@ -600,5 +602,141 @@ describe('EndpointForm', () => {
   it('does not show warning for untouched empty URL in create mode', () => {
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.queryByTestId('icon-warning')).not.toBeInTheDocument()
+  })
+
+  it('streaming toggle renders and submits correct value', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'Stream EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
+    // Enable streaming
+    await user.click(screen.getByRole('switch', { name: 'Streaming' }))
+    await user.click(screen.getByText('Create'))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streaming_enabled: true,
+        stream_sample_rate: 24000,
+      }),
+    )
+    mockProbe.models = []
+  })
+
+  it('sample rate input shown/hidden based on streaming toggle', async () => {
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    // Sample rate should not be visible by default
+    expect(screen.queryByLabelText('Sample Rate')).not.toBeInTheDocument()
+    // Enable streaming
+    await user.click(screen.getByRole('switch', { name: 'Streaming' }))
+    // Sample rate should now be visible
+    expect(screen.getByLabelText('Sample Rate')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sample Rate')).toHaveValue(24000)
+    // Disable streaming
+    await user.click(screen.getByRole('switch', { name: 'Streaming' }))
+    // Sample rate should be hidden again
+    expect(screen.queryByLabelText('Sample Rate')).not.toBeInTheDocument()
+  })
+
+  it('sample rate validation (min/max)', async () => {
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    // Enable streaming to show sample rate
+    await user.click(screen.getByRole('switch', { name: 'Streaming' }))
+    const sampleRateInput = screen.getByLabelText('Sample Rate')
+    expect(sampleRateInput).toHaveAttribute('min', '8000')
+    expect(sampleRateInput).toHaveAttribute('max', '48000')
+  })
+
+  it('submits custom sample rate when streaming is enabled', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'Stream EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
+    // Enable streaming
+    await user.click(screen.getByRole('switch', { name: 'Streaming' }))
+    // Change sample rate
+    const sampleRateInput = screen.getByLabelText('Sample Rate')
+    await user.clear(sampleRateInput)
+    await user.type(sampleRateInput, '44100')
+    await user.click(screen.getByText('Create'))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streaming_enabled: true,
+        stream_sample_rate: 44100,
+      }),
+    )
+    mockProbe.models = []
+  })
+
+  it('edit mode populates streaming fields from existing endpoint', () => {
+    const streamingEndpoint: Endpoint = {
+      ...mockEndpoint,
+      streaming_enabled: true,
+      stream_sample_rate: 16000,
+    }
+    render(
+      <EndpointForm
+        endpoint={streamingEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    // Streaming toggle should be checked
+    expect(screen.getByRole('switch', { name: 'Streaming' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
+    // Sample rate should be visible and populated
+    expect(screen.getByLabelText('Sample Rate')).toHaveValue(16000)
+  })
+
+  it('defaults sample rate to 24000 when input is cleared', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'Fallback EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
+    await user.click(screen.getByRole('switch', { name: 'Streaming' }))
+    // Clear the sample rate to trigger the || 24000 fallback
+    await user.clear(screen.getByLabelText('Sample Rate'))
+    await user.click(screen.getByText('Create'))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streaming_enabled: true,
+        stream_sample_rate: 24000,
+      }),
+    )
+    mockProbe.models = []
+  })
+
+  it('does not submit stream_sample_rate when streaming is disabled', async () => {
+    mockProbe.models = [{ id: 'tts-1' }]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Name'), 'No Stream')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await openModelsDropdown(user)
+    await user.click(screen.getByText('tts-1'))
+    await user.click(screen.getByText('Create'))
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streaming_enabled: false,
+        stream_sample_rate: undefined,
+      }),
+    )
+    mockProbe.models = []
   })
 })
