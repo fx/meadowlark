@@ -133,7 +133,7 @@ Migrations are embedded in Go source code and run on every startup via `Migrate(
 - `Migrate()` MUST be idempotent — safe to run on every startup.
 - New columns MUST have default values to avoid breaking existing data.
 - Foreign key constraints MUST be enforced (SQLite: `PRAGMA foreign_keys=ON`).
-- `voice_aliases.endpoint_id` MUST reference `endpoints.id` with cascade behavior.
+- `voice_aliases.endpoint_id` MUST reference `endpoints.id`. The FK uses default RESTRICT behavior — deleting an endpoint with existing aliases MUST fail with a foreign key error. The API layer handles this by returning an error to the user.
 
 ## Data Models
 
@@ -229,7 +229,7 @@ The `--db-driver` flag (or `MEADOWLARK_DB_DRIVER` env var) selects the implement
 
 **GIVEN** an endpoint is deleted,
 **WHEN** voice aliases reference that endpoint,
-**THEN** the aliases MUST be cascade-deleted (via FK constraint).
+**THEN** the delete MUST fail with a foreign key constraint error (RESTRICT behavior). Aliases MUST be deleted first before the endpoint can be removed.
 
 ## Files
 

@@ -47,7 +47,7 @@ Applied to all routes in this order:
 | POST | `/api/v1/endpoints` | `CreateEndpoint` | Create a new endpoint |
 | GET | `/api/v1/endpoints/{id}` | `GetEndpoint` | Get endpoint by ID |
 | PUT | `/api/v1/endpoints/{id}` | `UpdateEndpoint` | Update endpoint |
-| DELETE | `/api/v1/endpoints/{id}` | `DeleteEndpoint` | Delete endpoint (cascading) |
+| DELETE | `/api/v1/endpoints/{id}` | `DeleteEndpoint` | Delete endpoint (fails if aliases exist) |
 | POST | `/api/v1/endpoints/{id}/test` | `TestEndpoint` | Test connectivity |
 | POST | `/api/v1/endpoints/probe` | `ProbeEndpoint` | Probe URL without saving |
 | GET | `/api/v1/endpoints/{id}/configured-models` | `ListEndpointConfiguredModels` | List configured models |
@@ -220,7 +220,7 @@ The embedded `web/dist/` filesystem is mounted at `/`. The SPA fallback logic:
 
 - Static files MUST be served with correct MIME types.
 - Non-API, non-file requests MUST serve `index.html` for SPA routing.
-- `/api/` paths that don't match a route MUST return 404 JSON error, not `index.html`.
+- `/api/` paths that don't match a route MUST return a 404 response, not `index.html`. Currently this uses the default `http.NotFound` handler (plain text), not the JSON error envelope.
 
 ## Files
 

@@ -6,10 +6,10 @@ Living specification for Meadowlark's text-to-speech synthesis pipeline — the 
 
 The TTS system receives Wyoming `synthesize` events, resolves the voice configuration, calls an OpenAI-compatible `/audio/speech` endpoint, and streams PCM audio back as Wyoming events.
 
-Two synthesis modes are supported:
+Two synthesis modes are defined:
 
-- **Buffered (WAV):** The default. The full WAV response is received, the header is parsed for audio format, and PCM data is chunked into Wyoming events. Works with all endpoints.
-- **Streaming (PCM):** Opt-in per endpoint. Sends `"stream": true` with `response_format: "pcm"` to endpoints that support it. Raw PCM bytes are forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format is determined from endpoint configuration rather than a WAV header.
+- **Buffered (WAV):** The current default. The full WAV response is received, the header is parsed for audio format, and PCM data is chunked into Wyoming events. Works with all endpoints.
+- **Streaming (PCM):** *Planned — see [0001](../../changes/0001-streaming-tts-client.md) and [0002](../../changes/0002-streaming-proxy-integration.md).* Opt-in per endpoint. Will send `"stream": true` with `response_format: "pcm"` to endpoints that support it. Raw PCM bytes will be forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format will be determined from endpoint configuration rather than a WAV header.
 
 **Package:** `internal/tts/`
 
@@ -72,11 +72,13 @@ The client validates the response is WAV audio by checking the first 4 bytes for
 - The response body MUST be returned as an `io.ReadCloser` for streaming consumption.
 - Error response bodies MUST be truncated to 500 characters for logging.
 
-### SynthesizeStream (Streaming)
+### SynthesizeStream (Streaming) — *Planned*
+
+> **Not yet implemented.** See [0001-streaming-tts-client](../../changes/0001-streaming-tts-client.md) for the implementation plan.
 
 `SynthesizeStream(ctx, req) → (io.ReadCloser, error)`
 
-Sends a `POST {baseURL}/audio/speech` request with `"stream": true` in the JSON body:
+Will send a `POST {baseURL}/audio/speech` request with `"stream": true` in the JSON body:
 
 ```go
 type StreamSynthesizeRequest struct {
@@ -228,13 +230,14 @@ type ClientFactory func(ep *model.Endpoint) *Client
 4. **Fetch endpoint** → `endpoints.GetEndpoint(ctx, resolved.EndpointID)`. Error if not found or disabled.
 5. **Build endpoint defaults** (speed, instructions from endpoint config).
 6. **Merge parameters** → `voice.MergeParams(input, aliasDefaults, endpointDefaults)`. Priority: input > alias > endpoint.
-7. **Select synthesis mode** based on `endpoint.StreamingEnabled`:
-   - **Streaming:** Call `client.SynthesizeStream(ctx, req)` with `response_format: "pcm"`. Build `AudioFormat` from endpoint's `StreamSampleRate` (default 24000), width 2, channels 1.
-   - **Buffered:** Call `client.Synthesize(ctx, req)` with `response_format: "wav"`. Parse WAV header via `WAVReader.ReadFormat()` to determine `AudioFormat`.
-8. **Stream audio chunks**:
+7. **Call TTS API** → Forces `response_format = "wav"`. Returns error if endpoint's `DefaultResponseFormat` is non-empty and not `"wav"`.
+8. **Parse WAV header** → `WAVReader.ReadFormat()` extracts `AudioFormat`.
+9. **Stream audio chunks**:
    - Send `AudioStart` event with rate, width, channels.
-   - Read PCM from the appropriate source (streaming: response body directly, buffered: WAVReader) in 2048-byte chunks, send `AudioChunk` events.
+   - Read PCM in 2048-byte chunks, send `AudioChunk` events.
    - Send `AudioStop` on EOF.
+
+> **Planned:** Step 7 will gain a streaming branch based on `endpoint.StreamingEnabled` — see [0002-streaming-proxy-integration](../../changes/0002-streaming-proxy-integration.md). When streaming is enabled, the proxy will call `SynthesizeStream` with `response_format: "pcm"`, build `AudioFormat` from endpoint config, and forward PCM chunks directly from the HTTP response.
 
 ### Error Handling
 
@@ -261,22 +264,18 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 
 ### Requirements
 
-- When streaming is disabled, the proxy MUST force `response_format = "wav"`.
-- When streaming is enabled, the proxy MUST use `response_format = "pcm"` and `stream = true`.
+- The proxy MUST force `response_format = "wav"` regardless of client request.
 - Audio MUST be chunked in exactly 2048-byte segments (final chunk MAY be smaller).
 - Synthesis errors MUST result in a Wyoming `Error` event, never a crash.
 - The connection MUST remain usable after a synthesis error.
-- Streaming mode MUST be a per-endpoint opt-in — it MUST NOT be the default.
+
+> **Planned (streaming):** When implemented, streaming mode MUST be per-endpoint opt-in (default off), MUST use `response_format = "pcm"` and `stream = true`, and MUST derive audio format from endpoint config.
 
 ### Scenarios
 
-**GIVEN** a synthesis request to an endpoint with `StreamingEnabled: false`,
+**GIVEN** a synthesis request for voice `"alloy (OpenAI, tts-1)"`,
 **WHEN** the TTS endpoint returns a valid WAV response with 4096 bytes of PCM,
 **THEN** the proxy MUST send `AudioStart` (with format from WAV header) → 2 `AudioChunk` events (2048 bytes each) → `AudioStop`.
-
-**GIVEN** a synthesis request to an endpoint with `StreamingEnabled: true` and `StreamSampleRate: 24000`,
-**WHEN** the TTS endpoint returns streaming PCM bytes,
-**THEN** the proxy MUST immediately send `AudioStart` (rate=24000, width=2, channels=1) and forward PCM chunks as they arrive from the HTTP response.
 
 **GIVEN** a synthesis request with an invalid voice alias,
 **WHEN** voice resolution fails,
@@ -286,13 +285,15 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 **WHEN** the endpoint is fetched,
 **THEN** the proxy MUST return an error stating the endpoint is disabled.
 
-**GIVEN** a streaming endpoint that disconnects mid-response,
+**GIVEN** an endpoint that disconnects mid-response,
 **WHEN** the proxy reads from the response body,
 **THEN** it MUST send `AudioStop` for any audio already sent, then send a Wyoming `Error` event.
 
-## Endpoint Streaming Configuration
+## Endpoint Streaming Configuration — *Planned*
 
-The `Endpoint` model includes streaming configuration:
+> **Not yet implemented.** See [0002-streaming-proxy-integration](../../changes/0002-streaming-proxy-integration.md) for the implementation plan.
+
+The `Endpoint` model will include streaming configuration:
 
 ```go
 type Endpoint struct {

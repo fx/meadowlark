@@ -80,7 +80,7 @@ Air watches both Go and frontend source files:
 
 - **Conventional commits** required: `feat:`, `fix:`, `docs:`, `ci:`, etc.
 - **CGO_ENABLED=0** for production builds (set in Makefile/Dockerfile), but NOT in mise.toml env because `go test -race` requires CGO.
-- **Specs** live in `docs/specs/` with numbered filenames. Full requirements in `docs/meadowlark.md`.
+- **Specs** live in `docs/specs/<feature>/index.md` as living documents. Full requirements in `docs/meadowlark.md`.
 
 ## Task Tracking
 
