@@ -366,3 +366,77 @@ func TestIntegration_SPAFallback(t *testing.T) {
 	// SPA fallback serves index.html for unknown paths.
 	assert.Equal(t, http.StatusOK, resp3.StatusCode)
 }
+
+func TestIntegration_EndpointStreaming(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	baseURL, cleanup := setupIntegrationTest(t)
+	defer cleanup()
+
+	// CREATE with streaming enabled.
+	resp := doJSON(t, http.MethodPost, baseURL+"/api/v1/endpoints", map[string]any{
+		"name":               "StreamEP",
+		"base_url":           "https://api.example.com/v1",
+		"models":             []string{"tts-1"},
+		"streaming_enabled":  true,
+		"stream_sample_rate": 24000,
+	})
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	var created model.Endpoint
+	decodeJSON(t, resp, &created)
+	assert.True(t, created.StreamingEnabled)
+	assert.Equal(t, 24000, created.StreamSampleRate)
+
+	epID := created.ID
+
+	// UPDATE sample rate.
+	resp = doJSON(t, http.MethodPut, baseURL+"/api/v1/endpoints/"+epID, map[string]any{
+		"stream_sample_rate": 16000,
+	})
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var updated model.Endpoint
+	decodeJSON(t, resp, &updated)
+	assert.Equal(t, 16000, updated.StreamSampleRate)
+	assert.True(t, updated.StreamingEnabled) // unchanged
+
+	// INVALID sample rate (too low).
+	resp = doJSON(t, http.MethodPost, baseURL+"/api/v1/endpoints", map[string]any{
+		"name":               "BadRate1",
+		"base_url":           "https://api.example.com/v1",
+		"models":             []string{"tts-1"},
+		"stream_sample_rate": 100,
+	})
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp.Body.Close()
+
+	// INVALID sample rate (too high).
+	resp = doJSON(t, http.MethodPost, baseURL+"/api/v1/endpoints", map[string]any{
+		"name":               "BadRate2",
+		"base_url":           "https://api.example.com/v1",
+		"models":             []string{"tts-1"},
+		"stream_sample_rate": 50000,
+	})
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp.Body.Close()
+
+	// INVALID sample rate on update.
+	resp = doJSON(t, http.MethodPut, baseURL+"/api/v1/endpoints/"+epID, map[string]any{
+		"stream_sample_rate": 100,
+	})
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	resp.Body.Close()
+
+	// CREATE without streaming fields — verify defaults.
+	resp = doJSON(t, http.MethodPost, baseURL+"/api/v1/endpoints", map[string]any{
+		"name":     "DefaultsEP",
+		"base_url": "https://api.example.com/v1",
+		"models":   []string{"tts-1"},
+	})
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	var defaultEP model.Endpoint
+	decodeJSON(t, resp, &defaultEP)
+	assert.False(t, defaultEP.StreamingEnabled)
+	assert.Equal(t, 0, defaultEP.StreamSampleRate)
+}
