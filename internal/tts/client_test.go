@@ -481,9 +481,11 @@ func TestSynthesizeStream_RequestBody(t *testing.T) {
 
 	client := NewClient(srv.URL, "", nil)
 	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
-		Model: "tts-1",
-		Voice: "alloy",
-		Input: "Hello",
+		Model:          "tts-1",
+		Voice:          "alloy",
+		Input:          "Hello",
+		Stream:         false,
+		ResponseFormat: "wav",
 	})
 	require.NoError(t, err)
 	defer body.Close()
@@ -542,6 +544,29 @@ func TestSynthesizeStream_NonSuccessReturnsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 	assert.Contains(t, err.Error(), "out of memory")
+}
+
+func TestSynthesizeStream_NonSuccessTruncatesBody(t *testing.T) {
+	longBody := make([]byte, 600)
+	for i := range longBody {
+		longBody[i] = 'x'
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(longBody)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	assert.Nil(t, body)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+	assert.Contains(t, err.Error(), "...")
 }
 
 func TestSynthesizeStream_IncrementalRead(t *testing.T) {
@@ -635,7 +660,7 @@ func TestSynthesizeStream_OptionalFields(t *testing.T) {
 	})
 }
 
-func TestSynthesizeStream_ContextCancellation(t *testing.T) {
+func TestSynthesizeStream_ContextCancellationBeforeSend(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -653,6 +678,51 @@ func TestSynthesizeStream_ContextCancellation(t *testing.T) {
 	assert.Nil(t, body)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "tts: send request:")
+}
+
+func TestSynthesizeStream_ContextCancellationDuringRead(t *testing.T) {
+	started := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok)
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte{0x01, 0x02})
+		flusher.Flush()
+		close(started)
+
+		// Block until client cancels
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(ctx, &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	require.NoError(t, err)
+	defer body.Close()
+
+	// Wait for server to start streaming
+	<-started
+
+	// Read initial bytes
+	buf := make([]byte, 2)
+	_, err = io.ReadFull(body, buf)
+	require.NoError(t, err)
+	assert.Equal(t, []byte{0x01, 0x02}, buf)
+
+	// Cancel context mid-stream
+	cancel()
+
+	// Next read should fail
+	_, err = io.ReadAll(body)
+	require.Error(t, err)
 }
 
 func TestTruncateBody(t *testing.T) {

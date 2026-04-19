@@ -133,10 +133,11 @@ type readCloser struct {
 // for incremental PCM consumption. The caller is responsible for closing the
 // returned ReadCloser.
 func (c *Client) SynthesizeStream(ctx context.Context, req *StreamSynthesizeRequest) (io.ReadCloser, error) {
-	req.Stream = true
-	req.ResponseFormat = "pcm"
+	streamReq := *req
+	streamReq.Stream = true
+	streamReq.ResponseFormat = "pcm"
 
-	body, err := json.Marshal(req)
+	body, err := json.Marshal(streamReq)
 	if err != nil {
 		return nil, fmt.Errorf("tts: marshal request: %w", err)
 	}
