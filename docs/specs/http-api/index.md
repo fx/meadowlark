@@ -50,9 +50,12 @@ Applied to all routes in this order:
 | DELETE | `/api/v1/endpoints/{id}` | `DeleteEndpoint` | Delete endpoint (fails if aliases exist) |
 | POST | `/api/v1/endpoints/{id}/test` | `TestEndpoint` | Test connectivity |
 | POST | `/api/v1/endpoints/probe` | `ProbeEndpoint` | Probe URL without saving |
-| GET | `/api/v1/endpoints/{id}/configured-models` | `ListEndpointConfiguredModels` | List configured models |
-| GET | `/api/v1/endpoints/{id}/models` | `DiscoverModels` | Discover models from endpoint |
-| GET | `/api/v1/endpoints/{id}/remote-voices` | `DiscoverRemoteVoices` | Discover voices from endpoint |
+| GET | `/api/v1/endpoints/{id}/configured-models` | `ListEndpointConfiguredModels` | List the endpoint's enabled models. Response: `[]string` (model IDs). |
+| GET | `/api/v1/endpoints/{id}/models` | `DiscoverModels` | Live-probe upstream for available models. Response: `[]tts.Model`. |
+| GET | `/api/v1/endpoints/{id}/remote-voices` | `DiscoverRemoteVoices` | Live-probe upstream for available voices. Response: `[]tts.Voice` (`{id, name}`). |
+| GET | `/api/v1/endpoints/{id}/voices` | `ListEndpointVoices` | List persisted per-endpoint voices and their enabled state. Response: `[]EndpointVoice`. |
+| PUT | `/api/v1/endpoints/{id}/voices/{voiceId}` | `SetEndpointVoiceEnabled` | Toggle a single voice's `enabled` flag. Body: `{"enabled": bool}`. |
+| POST | `/api/v1/endpoints/{id}/voices/refresh` | `RefreshEndpointVoices` | Re-probe upstream and upsert into `endpoint_voices`. New voices default to `enabled = false`. Response: `[]EndpointVoice`. |
 
 #### Create Endpoint Request
 
@@ -62,11 +65,14 @@ Applied to all routes in this order:
   "base_url": "https://...",
   "api_key": "string",
   "models": ["tts-1", "tts-1-hd"],
+  "default_model": "tts-1",
   "default_voice": "string",
   "default_speed": 1.0,
   "default_instructions": "string",
   "default_response_format": "wav",
-  "enabled": true
+  "enabled": true,
+  "streaming_enabled": false,
+  "stream_sample_rate": 24000
 }
 ```
 
@@ -74,10 +80,13 @@ Applied to all routes in this order:
 
 - `name`: REQUIRED, non-empty, unique across all endpoints.
 - `base_url`: REQUIRED, MUST be a valid URL.
-- `models`: REQUIRED, MUST be a non-empty array.
+- `models`: REQUIRED, MUST be a non-empty array. Represents the **enabled** model subset for this endpoint.
+- `default_model`: OPTIONAL. When non-empty, MUST be a member of `models`; otherwise the API MUST respond `400 Bad Request` with code `invalid_default_model`. When empty, the resolver treats `models[0]` as the implicit default.
 - `default_speed`: if present, MUST be in range 0.25–4.0.
 - `enabled`: defaults to `true`.
 - `default_response_format`: defaults to `"wav"`.
+- `streaming_enabled`: defaults to `false`.
+- `stream_sample_rate`: defaults to `24000`; if present, MUST be in range 8000–48000.
 
 #### TestEndpoint
 
@@ -238,3 +247,4 @@ The embedded `web/dist/` filesystem is mounted at `/`. The SPA fallback logic:
 | Date | Description | Document |
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
+| 2026-05-04 | Documented `default_model` field on Create/Update Endpoint, response shapes for `/configured-models` vs `/remote-voices`, and the new `/endpoints/{id}/voices` toggle routes | [0003-alias-form-voice-fix](../../changes/0003-alias-form-voice-fix.md), [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |

@@ -26,6 +26,11 @@ type Store interface {
     UpdateVoiceAlias(ctx context.Context, a *model.VoiceAlias) error
     DeleteVoiceAlias(ctx context.Context, id string) error
 
+    // Endpoint Voices (per-endpoint enable/disable state)
+    ListEndpointVoices(ctx context.Context, endpointID string) ([]model.EndpointVoice, error)
+    UpsertEndpointVoices(ctx context.Context, endpointID string, voices []model.EndpointVoice) error
+    SetEndpointVoiceEnabled(ctx context.Context, endpointID, voiceID string, enabled bool) error
+
     // Lifecycle
     Migrate(ctx context.Context) error
     Close() error
@@ -60,14 +65,27 @@ CREATE TABLE IF NOT EXISTS endpoints (
     name TEXT NOT NULL UNIQUE,
     base_url TEXT NOT NULL,
     api_key TEXT DEFAULT '',
-    models TEXT NOT NULL DEFAULT '[]',
+    models TEXT NOT NULL DEFAULT '[]',          -- JSON array of ENABLED model IDs
+    default_model TEXT NOT NULL DEFAULT '',     -- Selected default; MUST be in models when non-empty
     default_voice TEXT NOT NULL DEFAULT '',
     default_speed REAL,
     default_instructions TEXT,
     default_response_format TEXT NOT NULL DEFAULT 'wav',
     enabled INTEGER NOT NULL DEFAULT 1,
+    streaming_enabled INTEGER NOT NULL DEFAULT 0,
+    stream_sample_rate INTEGER NOT NULL DEFAULT 24000,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS endpoint_voices (
+    endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+    voice_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 0,         -- New voices default to disabled
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (endpoint_id, voice_id)
 );
 
 CREATE TABLE IF NOT EXISTS voice_aliases (
@@ -84,6 +102,11 @@ CREATE TABLE IF NOT EXISTS voice_aliases (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 ```
+
+**Notes on the `endpoint_voices` table:**
+- `endpoint_id` carries `ON DELETE CASCADE` because voice-toggle state is meaningless without the endpoint. This contrasts with `voice_aliases.endpoint_id`, which uses RESTRICT so the operator must explicitly remove aliases before removing the endpoint.
+- `voice_id` is the upstream-provided voice identifier (e.g. `"alloy"`, `"clone:abc123"`). It is NOT a UUID.
+- `enabled` defaults to `0` so newly discovered voices appear in the management UI but are excluded from the canonical voice list and `/api/v1/voices` until the operator opts each in.
 
 ### Data Serialization
 
@@ -134,6 +157,8 @@ Migrations are embedded in Go source code and run on every startup via `Migrate(
 - New columns MUST have default values to avoid breaking existing data.
 - Foreign key constraints MUST be enforced (SQLite: `PRAGMA foreign_keys=ON`).
 - `voice_aliases.endpoint_id` MUST reference `endpoints.id`. The FK uses default RESTRICT behavior — deleting an endpoint with existing aliases MUST fail with a foreign key error. The API layer handles this by returning an error to the user.
+- `endpoint_voices.endpoint_id` MUST reference `endpoints.id` with `ON DELETE CASCADE`. Voice-toggle state is per-endpoint scratch state and MUST be removed when its endpoint is deleted.
+- The `endpoints.default_model` column is added via an idempotent alter migration. When a row's `default_model` is empty after migration, callers MUST treat the first entry of `models` as the implicit default (see [voice-resolution: Default Model](../voice-resolution/index.md#default-model)).
 
 ## Data Models
 
@@ -146,13 +171,29 @@ type Endpoint struct {
     BaseURL               string      `json:"base_url"`
     APIKey                string      `json:"api_key,omitempty"`
     Models                StringSlice `json:"models"`
+    DefaultModel          string      `json:"default_model"`
     DefaultVoice          string      `json:"default_voice"`
     DefaultSpeed          *float64    `json:"default_speed"`
     DefaultInstructions   *string     `json:"default_instructions"`
     DefaultResponseFormat string      `json:"default_response_format"`
     Enabled               bool        `json:"enabled"`
+    StreamingEnabled      bool        `json:"streaming_enabled"`
+    StreamSampleRate      int         `json:"stream_sample_rate"`
     CreatedAt             time.Time   `json:"created_at"`
     UpdatedAt             time.Time   `json:"updated_at"`
+}
+```
+
+### EndpointVoice
+
+```go
+type EndpointVoice struct {
+    EndpointID string    `json:"endpoint_id"`
+    VoiceID    string    `json:"voice_id"`
+    Name       string    `json:"name"`
+    Enabled    bool      `json:"enabled"`
+    CreatedAt  time.Time `json:"created_at"`
+    UpdatedAt  time.Time `json:"updated_at"`
 }
 ```
 
@@ -245,3 +286,4 @@ The `--db-driver` flag (or `MEADOWLARK_DB_DRIVER` env var) selects the implement
 | Date | Description | Document |
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
+| 2026-05-04 | Added `endpoints.default_model` column, `endpoint_voices` table, and corresponding `EndpointVoice` model + Store methods | [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |

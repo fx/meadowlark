@@ -48,3 +48,27 @@ changes:
     spec: tts-synthesis
     status: draft
     depends_on: ["0001"]
+
+  - id: "0003"
+    name: alias-form-voice-fix
+    path: changes/0003-alias-form-voice-fix.md
+    description: Fix alias form so the Voice select fetches /remote-voices instead of /configured-models, surfacing clone:* and other dynamic voices
+    spec: frontend
+    status: draft
+    depends_on: []
+
+  - id: "0004"
+    name: endpoint-models-toggle
+    path: changes/0004-endpoint-models-toggle.md
+    description: Replace endpoint-form chips with a model toggle list, default-disabled discovered models, add default_model column and picker, restructure form layout
+    spec: voice-resolution
+    status: draft
+    depends_on: []
+
+  - id: "0005"
+    name: endpoint-voice-toggle
+    path: changes/0005-endpoint-voice-toggle.md
+    description: Persist per-endpoint voice enable/disable state, default-disabled on discovery, filter system /voices and Wyoming describe; aliases bypass the filter
+    spec: voice-resolution
+    status: draft
+    depends_on: ["0004"]
