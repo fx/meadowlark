@@ -54,7 +54,7 @@ changes:
     path: changes/0003-alias-form-voice-fix.md
     description: Fix alias form so the Voice select fetches /remote-voices instead of /configured-models, surfacing clone:* and other dynamic voices
     spec: frontend
-    status: draft
+    status: complete
     depends_on: []
 
   - id: "0004"

@@ -5,12 +5,12 @@
 Fix the voice alias form so the Voice dropdown populates from the endpoint's live remote voices (`/remote-voices`), not from the endpoint's configured model list (`/configured-models`). The current code shows model IDs in the Voice dropdown, which both duplicates the Model dropdown and hides upstream-discovered voices such as `clone:*` from qwen3-tts.
 
 **Spec:** [voice-resolution](../specs/voice-resolution/), [frontend](../specs/frontend/), [http-api](../specs/http-api/)
-**Status:** draft
+**Status:** complete
 **Depends On:** —
 
 ## Motivation
 
-`web/src/components/alias-form.tsx:48` currently fetches:
+Before this change, `web/src/components/alias-form.tsx` fetched:
 
 ```ts
 fetch(`/api/v1/endpoints/${endpointId}/configured-models`, { signal: controller.signal })
@@ -22,13 +22,13 @@ fetch(`/api/v1/endpoints/${endpointId}/configured-models`, { signal: controller.
   })
 ```
 
-`/configured-models` returns `[]string` of **model IDs** (e.g. `["tts-1", "qwen3-tts"]`). The form treats this as the Voice list. Result:
+`/configured-models` returns `[]string` of **model IDs** (e.g. `["tts-1", "qwen3-tts"]`). The form treated this as the Voice list. Result:
 
-- The Model and Voice dropdowns surface the same values.
-- Voices that only exist in upstream voice discovery — including dynamic `clone:*` voices from qwen3-tts — never appear in the alias form, so operators cannot create aliases for them.
-- The frontend spec already says: *"Voice selection (fetched from endpoint remote voices)"* (frontend spec line 105). The implementation contradicts the spec.
+- The Model and Voice dropdowns surfaced the same values.
+- Voices that only exist in upstream voice discovery — including dynamic `clone:*` voices from qwen3-tts — never appeared in the alias form, so operators could not create aliases for them.
+- The frontend spec already said: *"Voice selection (fetched from endpoint remote voices)"* (frontend spec line 105). The implementation contradicted the spec.
 
-The backend already exposes the correct endpoint: `GET /api/v1/endpoints/{id}/remote-voices` (`internal/api/endpoints.go:338`), which calls `client.ListVoices` and returns `[]tts.Voice` (`{id, name}`).
+The backend already exposed the correct endpoint: `GET /api/v1/endpoints/{id}/remote-voices` (`internal/api/endpoints.go:338`), which calls `client.ListVoices` and returns `[]tts.Voice` (`{id, name}`). This change wires the alias form to that endpoint.
 
 ## Requirements
 
@@ -112,19 +112,19 @@ No backend, schema, or API changes. The endpoint and the response shape already 
 
 ## Tasks
 
-- [ ] Fix Voice dropdown source in `web/src/components/alias-form.tsx`
-  - [ ] Change `useEffect` fetch URL from `/configured-models` to `/remote-voices`
-  - [ ] Update local `voices` state type from `string[]` to `{id: string; name: string}[]`
-  - [ ] Update Select rendering: option `value={v.id}`, label `{v.name || v.id}`; show `id` as secondary text when `name !== id`
-  - [ ] Preserve free-text fallback for empty / failing probes
-- [ ] Update tests in `web/src/components/alias-form.test.tsx`
-  - [ ] Update existing fetch mocks to return `[]tts.Voice` JSON shape
-  - [ ] Add test: dropdown lists names from `/remote-voices`, submits IDs
-  - [ ] Add test: fetch returns 502 → form falls back to text input and submits typed value
-  - [ ] Add test: fetch returns `[]` → form falls back to text input
-  - [ ] Add test: in-flight request is aborted when endpoint selection changes
-- [ ] Update `web/src/lib/api.ts` if a typed helper for `/remote-voices` is added (OPTIONAL — only if the existing fetch is moved into the API client)
-- [ ] Verify `web/src/components/alias-form.test.tsx` and `web/src/pages/aliases.test.tsx` retain 100% coverage with `cd web && bun run test`
+- [x] Fix Voice dropdown source in `web/src/components/alias-form.tsx`
+  - [x] Change `useEffect` fetch URL from `/configured-models` to `/remote-voices`
+  - [x] Update local `voices` state type from `string[]` to `{id: string; name: string}[]`
+  - [x] Update Select rendering: option `value={v.id}`, label `{v.name || v.id}`; show `id` as secondary text when `name !== id`
+  - [x] Preserve free-text fallback for empty / failing probes
+- [x] Update tests in `web/src/components/alias-form.test.tsx`
+  - [x] Update existing fetch mocks to return `[]tts.Voice` JSON shape
+  - [x] Add test: dropdown lists names from `/remote-voices`, submits IDs
+  - [x] Add test: fetch returns 502 → form falls back to text input and submits typed value
+  - [x] Add test: fetch returns `[]` → form falls back to text input
+  - [x] Add test: in-flight request is aborted when endpoint selection changes
+- [ ] Update `web/src/lib/api.ts` if a typed helper for `/remote-voices` is added (OPTIONAL — not done; existing inline fetch was kept since this change is intentionally narrow)
+- [x] Verify `web/src/components/alias-form.test.tsx` and `web/src/pages/aliases.test.tsx` retain 100% coverage with `cd web && bun run test`
 
 ## Open Questions
 
