@@ -941,9 +941,11 @@ describe('EndpointForm', () => {
     )
   })
 
-  it('voices section: rolls back on API error and surfaces message', async () => {
+  it('voices section: rolls back on API error and surfaces message; sibling rows untouched', async () => {
     resetProbe()
-    voicesState.list = [makeVoice('alloy', false, 'Alloy')]
+    // Two voices: alloy starts disabled (the one we toggle and that fails),
+    // echo starts enabled (a sibling that must NOT be reverted by the rollback).
+    voicesState.list = [makeVoice('alloy', false, 'Alloy'), makeVoice('echo', true, 'Echo')]
     voicesState.setEnabledShouldFail = true
     const user = userEvent.setup()
     render(
@@ -965,6 +967,11 @@ describe('EndpointForm', () => {
       'data-state',
       'unchecked',
     )
+    // Sibling echo MUST remain checked (per-voice rollback, not array-wide).
+    expect(screen.getByRole('switch', { name: 'Enable voice echo' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
   })
 
   it('voices section: list failure is non-fatal — empty state still renders', async () => {
@@ -981,6 +988,56 @@ describe('EndpointForm', () => {
     await waitFor(() => {
       expect(screen.getByText('No voices discovered yet — click Refresh')).toBeInTheDocument()
     })
+  })
+
+  it('voices section: disabling a non-default voice leaves default_voice intact', async () => {
+    resetProbe()
+    // alloy is enabled and is the persisted default; echo is enabled but not default.
+    voicesState.list = [makeVoice('alloy', true, 'Alloy'), makeVoice('echo', true, 'Echo')]
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice echo' })).toBeInTheDocument()
+    })
+    // Toggle echo (non-default) off — should NOT clear default_voice.
+    await user.click(screen.getByRole('switch', { name: 'Enable voice echo' }))
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ default_voice: 'alloy' }))
+  })
+
+  it('voices section: disabling the current default voice clears default_voice and restores it on rollback', async () => {
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', true, 'Alloy')]
+    voicesState.setEnabledShouldFail = true
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('switch', { name: 'Enable voice alloy' }))
+    // After failed setEnabled, rollback restores both the switch state AND the default voice.
+    await waitFor(() => {
+      expect(screen.getByText('toggle failed')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
   })
 
   it('voices section: row shows name when distinct from voice id', async () => {

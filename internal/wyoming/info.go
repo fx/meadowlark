@@ -24,13 +24,6 @@ type EndpointVoiceLister interface {
 	ListEndpointVoices(ctx context.Context, endpointID string) ([]model.EndpointVoice, error)
 }
 
-// VoiceDiscoverer is retained for backwards compatibility but is no longer
-// consulted by InfoBuilder. The canonical voice list is built from persisted
-// endpoint_voices rows; live probes have moved to the explicit Refresh flow.
-type VoiceDiscoverer interface {
-	DiscoverVoices(ctx context.Context, ep *model.Endpoint) []string
-}
-
 // InfoBuilder aggregates canonical voices from persisted endpoint_voices and
 // enabled voice aliases, then builds a complete Info event.
 type InfoBuilder struct {
@@ -43,9 +36,8 @@ type InfoBuilder struct {
 	cache *Info
 }
 
-// NewInfoBuilder creates a new InfoBuilder. The endpointVoices argument is the
-// persisted-state lister; the legacy VoiceDiscoverer parameter is accepted for
-// callers that still pass it but is ignored.
+// NewInfoBuilder creates a new InfoBuilder. endpointVoices is the
+// persisted-state lister used to source the canonical voice list.
 func NewInfoBuilder(endpoints EndpointLister, aliases AliasLister, endpointVoices EndpointVoiceLister, version string) *InfoBuilder {
 	return &InfoBuilder{
 		endpoints:      endpoints,

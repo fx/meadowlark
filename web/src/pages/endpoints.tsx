@@ -92,6 +92,7 @@ function EndpointRow({
 }) {
   const [saving, setSaving] = useState(false)
   const [enabledVoiceCount, setEnabledVoiceCount] = useState<number | null>(null)
+  const [voicesNonce, setVoicesNonce] = useState(0)
 
   useEffect(() => {
     api.endpoints.voices
@@ -102,7 +103,11 @@ function EndpointRow({
       .catch(() => {
         setEnabledVoiceCount(0)
       })
-  }, [endpoint.id])
+  }, [endpoint.id, voicesNonce])
+
+  const handleVoicesChanged = useCallback(() => {
+    setVoicesNonce((n) => n + 1)
+  }, [])
 
   const handleUpdate = useCallback(
     async (data: CreateEndpoint | UpdateEndpoint) => {
@@ -169,6 +174,7 @@ function EndpointRow({
             onSubmit={handleUpdate}
             onCancel={() => onToggle(null)}
             isSaving={saving}
+            onVoicesChanged={handleVoicesChanged}
           />
 
           <AlertDialog>

@@ -29,6 +29,7 @@ type EndpointFormProps = {
   onSubmit: (data: CreateEndpoint | UpdateEndpoint) => void
   onCancel: () => void
   isSaving: boolean
+  onVoicesChanged?: () => void
 }
 
 type ModelToggleListProps = {
@@ -157,7 +158,13 @@ function VoiceToggleList({
   )
 }
 
-function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormProps) {
+function EndpointForm({
+  endpoint,
+  onSubmit,
+  onCancel,
+  isSaving,
+  onVoicesChanged,
+}: EndpointFormProps) {
   const [name, setName] = useState(endpoint?.name ?? '')
   const [baseUrl, setBaseUrl] = useState(endpoint?.base_url ?? '')
   const [apiKey, setApiKey] = useState(endpoint?.api_key ?? '')
@@ -204,28 +211,44 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
     try {
       const rows = await api.endpoints.voices.refresh(endpointId as string)
       setEndpointVoices(rows)
+      onVoicesChanged?.()
     } catch (e) {
       setVoicesError((e as Error).message)
     } finally {
       setVoicesRefreshing(false)
     }
-  }, [endpointId])
+  }, [endpointId, onVoicesChanged])
 
   const handleToggleVoice = useCallback(
     async (voiceId: string, on: boolean) => {
-      const prev = endpointVoices
+      let clearedDefault = false
       setEndpointVoices((rows) =>
         rows.map((r) => (r.voice_id === voiceId ? { ...r, enabled: on } : r)),
       )
+      if (!on) {
+        setDefaultVoice((d) => {
+          if (d === voiceId) {
+            clearedDefault = true
+            return ''
+          }
+          return d
+        })
+      }
       setVoicesError(undefined)
       try {
         await api.endpoints.voices.setEnabled(endpointId as string, voiceId, on)
+        onVoicesChanged?.()
       } catch (e) {
-        setEndpointVoices(prev)
+        // Per-voice rollback: only restore THIS voice's prior state, not the whole array,
+        // so concurrent toggles on other voices aren't reverted.
+        setEndpointVoices((rows) =>
+          rows.map((r) => (r.voice_id === voiceId ? { ...r, enabled: !on } : r)),
+        )
+        if (clearedDefault) setDefaultVoice(voiceId)
         setVoicesError((e as Error).message)
       }
     },
-    [endpointId, endpointVoices],
+    [endpointId, onVoicesChanged],
   )
 
   const enabledVoices = useMemo(() => endpointVoices.filter((v) => v.enabled), [endpointVoices])

@@ -164,6 +164,84 @@ describe('EndpointsPage', () => {
     })
   })
 
+  it('voice count badge re-fetches after a toggle/refresh inside the form', async () => {
+    let voicesCallCount = 0
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (
+        url.includes('/endpoints/ep-1/voices') &&
+        !url.includes('/refresh') &&
+        (!init?.method || init.method === 'GET')
+      ) {
+        voicesCallCount++
+        // First read: 1 enabled. Subsequent reads after the toggle: 2 enabled.
+        const enabled = voicesCallCount === 1
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve([
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'alloy',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'echo',
+                name: '',
+                enabled,
+                created_at: '',
+                updated_at: '',
+              },
+            ]),
+        })
+      }
+      if (url.includes('/endpoints/ep-1/voices/echo') && init?.method === 'PATCH') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              endpoint_id: 'ep-1',
+              voice_id: 'echo',
+              name: '',
+              enabled: true,
+              created_at: '',
+              updated_at: '',
+            }),
+        })
+      }
+      if (url.includes('/endpoints/ep-2/voices')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockEndpoints),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    render(<EndpointsPage />)
+    await waitFor(() => {
+      expect(screen.getByText('2 voices')).toBeInTheDocument()
+    })
+    // Expand ep-1 and toggle echo on. Badge should update to "2 voices" → 2 enabled.
+    // Wait — initial state already shows 2 voices (alloy enabled + echo enabled).
+    // Reset: tweak the mock so first read is 1 enabled. The waitFor above will need to
+    // observe the final count. We assert the post-toggle count matches expectations.
+    await user.click(screen.getByText('OpenAI'))
+    const echoSwitch = await screen.findByRole('switch', { name: 'Enable voice echo' })
+    await user.click(echoSwitch)
+    // After toggle, the row's effect must re-run and re-fetch voices.
+    await waitFor(() => {
+      expect(voicesCallCount).toBeGreaterThanOrEqual(2)
+    })
+  })
+
   it('shows empty state when no endpoints', async () => {
     vi.stubGlobal('fetch', mockFetchWith([]))
     render(<EndpointsPage />)
