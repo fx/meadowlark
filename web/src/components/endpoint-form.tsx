@@ -242,6 +242,9 @@ function EndpointForm({
   })
 
   const urlDirtyRef = useRef(false)
+  // Set whenever a URL edit or an explicit Models-Refresh click should propagate
+  // a voices.refresh on the next successful probe. Cleared after the refresh fires.
+  const pendingVoicesRefreshRef = useRef(false)
   const probe = useEndpointProbe(baseUrl, apiKey)
   const urlInvalid =
     urlDirtyRef.current &&
@@ -281,37 +284,21 @@ function EndpointForm({
     }
   }, [endpointId, onVoicesChanged])
 
-  // When the URL changes and the probe completes successfully, re-sync the
-  // server-side voice cache for SAVED endpoints. The probe itself only fetches
-  // the upstream list — it does NOT update the per-endpoint voices table — so
-  // we explicitly POST /voices/refresh here so the toggle list reflects the
-  // new upstream catalog. Only fires for `success`; ignored on idle/loading/error.
+  // Probe doesn't write the per-endpoint voices table; only an explicit
+  // /voices/refresh does. Propagate the refresh on probe-success ONLY when the
+  // user just edited the URL or clicked Models-Refresh — not on the auto-fire
+  // that runs on form open (the list effect already loaded that data).
   const probeStatus = probe.status
   useEffect(() => {
     if (!endpointId) return
     if (probeStatus !== 'success') return
-    setVoicesRefreshing(true)
-    setVoicesError(undefined)
-    api.endpoints.voices
-      .refresh(endpointId)
-      .then((rows) => {
-        setEndpointVoices(rows)
-        onVoicesChanged?.()
-      })
-      .catch((e) => {
-        setVoicesError((e as Error).message)
-      })
-      .finally(() => {
-        setVoicesRefreshing(false)
-      })
-  }, [probeStatus, endpointId, onVoicesChanged])
+    if (!pendingVoicesRefreshRef.current) return
+    pendingVoicesRefreshRef.current = false
+    void handleRefreshVoices()
+  }, [probeStatus, endpointId, handleRefreshVoices])
 
   const handleToggleVoice = useCallback(
     async (voiceId: string, on: boolean) => {
-      // Mirror handleToggleModel's state-machine: auto-select default on first
-      // enable, move default to the next enabled row on disable, clear when
-      // none remain. Use a functional setEndpointVoices wrapping setDefaultVoice
-      // so both updates see the same pre-update array (avoids stale closures).
       setEndpointVoices((prev) => {
         const next = prev.map((r) => (r.voice_id === voiceId ? { ...r, enabled: on } : r))
         setDefaultVoice((prevDefault) => {
@@ -329,12 +316,7 @@ function EndpointForm({
         await api.endpoints.voices.setEnabled(endpointId as string, voiceId, on)
         onVoicesChanged?.()
       } catch (e) {
-        // Per-voice rollback: only restore THIS voice's prior state, not the whole array,
-        // so concurrent toggles on other voices aren't reverted. We deliberately
-        // do NOT touch defaultVoice in the rollback path: any reassignment that
-        // happened in the optimistic step has already gone through the same
-        // state-machine, and the user may have picked a new default while the
-        // PATCH was in flight.
+        // Per-voice rollback only — sibling toggles in flight must not be reverted.
         setEndpointVoices((rows) =>
           rows.map((r) => (r.voice_id === voiceId ? { ...r, enabled: !on } : r)),
         )
@@ -356,6 +338,7 @@ function EndpointForm({
 
   const handleUrlChange = useCallback((e: Event) => {
     urlDirtyRef.current = true
+    pendingVoicesRefreshRef.current = true
     setBaseUrl((e.target as HTMLInputElement).value)
     setSelectedModels([])
     setDefaultModel('')
@@ -508,7 +491,10 @@ function EndpointForm({
             type="button"
             variant="outline"
             size="sm"
-            onClick={probe.refresh}
+            onClick={() => {
+              pendingVoicesRefreshRef.current = true
+              probe.refresh()
+            }}
             disabled={probe.status === 'loading' || urlInvalid || !baseUrl}
           >
             {probe.status === 'loading' ? 'Refreshing...' : 'Refresh'}

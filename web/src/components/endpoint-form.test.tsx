@@ -1123,7 +1123,31 @@ describe('EndpointForm', () => {
 
   // --- Probe-driven voice refresh + Models Refresh button ---
 
-  it('voices section: probe success triggers voices.refresh for saved endpoint', async () => {
+  it('voices section: URL edit followed by probe success triggers voices.refresh for saved endpoint', async () => {
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', false, 'Alloy')]
+    voicesState.refresh = [makeVoice('alloy', false, 'Alloy'), makeVoice('nova', false, 'Nova')]
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('switch', { name: 'Enable voice nova' })).not.toBeInTheDocument()
+    mockProbe.status = 'success'
+    await user.type(screen.getByLabelText('Base URL'), '/')
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice nova' })).toBeInTheDocument()
+    })
+  })
+
+  it('voices section: probe success on initial mount does NOT redundantly call voices.refresh', async () => {
     resetProbe()
     voicesState.list = [makeVoice('alloy', false, 'Alloy')]
     voicesState.refresh = [makeVoice('alloy', false, 'Alloy'), makeVoice('nova', false, 'Nova')]
@@ -1136,18 +1160,18 @@ describe('EndpointForm', () => {
         isSaving={false}
       />,
     )
-    // After probe success, the form should call api.endpoints.voices.refresh
-    // and surface the new rows.
     await waitFor(() => {
-      expect(screen.getByRole('switch', { name: 'Enable voice nova' })).toBeInTheDocument()
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
     })
+    expect(screen.queryByRole('switch', { name: 'Enable voice nova' })).not.toBeInTheDocument()
   })
 
-  it('voices section: probe success refresh failure surfaces error', async () => {
+  it('voices section: Models Refresh button click invokes probe.refresh', async () => {
     resetProbe()
     voicesState.list = [makeVoice('alloy', false, 'Alloy')]
-    voicesState.refreshError = 'upstream offline'
     mockProbe.status = 'success'
+    mockProbe.refresh.mockClear()
+    const user = userEvent.setup()
     render(
       <EndpointForm
         endpoint={mockEndpoint}
@@ -1156,6 +1180,31 @@ describe('EndpointForm', () => {
         isSaving={false}
       />,
     )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    expect(mockProbe.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('voices section: URL-edit-driven refresh failure surfaces error', async () => {
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', false, 'Alloy')]
+    voicesState.refreshError = 'upstream offline'
+    const user = userEvent.setup()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    mockProbe.status = 'success'
+    await user.type(screen.getByLabelText('Base URL'), '/')
     await waitFor(() => {
       expect(screen.getByText('upstream offline')).toBeInTheDocument()
     })

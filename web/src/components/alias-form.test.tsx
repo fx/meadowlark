@@ -61,7 +61,6 @@ const mockEndpoints: Endpoint[] = [
   },
 ]
 
-// Helper: emit the EndpointVoice payload shape returned by /voices.
 function makeEv(voiceId: string, name: string, enabled = true) {
   return {
     endpoint_id: 'ep-1',
@@ -457,7 +456,6 @@ describe('AliasForm', () => {
       expect(screen.getByText('Alloy')).toBeInTheDocument()
     })
     expect(screen.getByText('Nova')).toBeInTheDocument()
-    // Disabled voice MUST NOT appear in the dropdown.
     expect(screen.queryByText('Hidden')).not.toBeInTheDocument()
   })
 

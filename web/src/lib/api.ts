@@ -165,8 +165,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return body as T
 }
 
-function get<T>(url: string): Promise<T> {
-  return request<T>(url)
+function get<T>(url: string, init?: RequestInit): Promise<T> {
+  return request<T>(url, init)
 }
 
 function post<T>(url: string, data?: unknown): Promise<T> {
@@ -207,7 +207,8 @@ export const api = {
     probe: (url: string, apiKey: string) =>
       post<ProbeResult>('/api/v1/endpoints/probe', { url, api_key: apiKey }),
     voices: {
-      list: (id: string) => get<EndpointVoice[]>(`/api/v1/endpoints/${id}/voices`),
+      list: (id: string, signal?: AbortSignal) =>
+        get<EndpointVoice[]>(`/api/v1/endpoints/${id}/voices`, { signal }),
       refresh: (id: string) => post<EndpointVoice[]>(`/api/v1/endpoints/${id}/voices/refresh`),
       setEnabled: (id: string, voiceId: string, enabled: boolean) =>
         patch<EndpointVoice>(`/api/v1/endpoints/${id}/voices/${encodeURIComponent(voiceId)}`, {
