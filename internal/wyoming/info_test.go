@@ -30,6 +30,19 @@ func (m *mockAliasLister) ListVoiceAliases(_ context.Context) ([]model.VoiceAlia
 	return m.aliases, m.err
 }
 
+// mockEndpointVoiceLister implements EndpointVoiceLister for testing.
+type mockEndpointVoiceLister struct {
+	byEndpoint map[string][]model.EndpointVoice
+	err        error
+}
+
+func (m *mockEndpointVoiceLister) ListEndpointVoices(_ context.Context, endpointID string) ([]model.EndpointVoice, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.byEndpoint[endpointID], nil
+}
+
 func TestInfoBuilder_Build_EmptyState(t *testing.T) {
 	builder := NewInfoBuilder(&mockEndpointLister{}, &mockAliasLister{}, nil, "1.0.0")
 	info, err := builder.Build(context.Background())
@@ -79,7 +92,19 @@ func TestInfoBuilder_Build_WithEndpointsAndAliases(t *testing.T) {
 		},
 	}
 
-	builder := NewInfoBuilder(endpoints, aliases, nil, "0.2.0")
+	endpointVoices := &mockEndpointVoiceLister{
+		byEndpoint: map[string][]model.EndpointVoice{
+			"ep1": {
+				{EndpointID: "ep1", VoiceID: "alloy", Enabled: true},
+			},
+			// ep2 is disabled, but even if it had rows they should be ignored.
+			"ep2": {
+				{EndpointID: "ep2", VoiceID: "ignored", Enabled: true},
+			},
+		},
+	}
+
+	builder := NewInfoBuilder(endpoints, aliases, endpointVoices, "0.2.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
@@ -87,93 +112,79 @@ func TestInfoBuilder_Build_WithEndpointsAndAliases(t *testing.T) {
 	prog := info.Tts[0]
 	assert.Equal(t, "0.2.0", prog.Version)
 
-	// 2 canonical voices (ep1 has 2 models, ep2 is disabled) + 1 enabled alias
+	// 2 canonical voices (ep1 has 1 enabled voice x 2 models) + 1 enabled alias
 	require.Len(t, prog.Voices, 3)
 
-	// Canonical voices from ep1.
-	assert.Equal(t, "tts-1 (OpenAI, tts-1)", prog.Voices[0].Name)
+	assert.Equal(t, "alloy (OpenAI, tts-1)", prog.Voices[0].Name)
 	assert.True(t, prog.Voices[0].Installed)
 	assert.Equal(t, []string{"en"}, prog.Voices[0].Languages)
 
-	assert.Equal(t, "gpt-4o-mini-tts (OpenAI, gpt-4o-mini-tts)", prog.Voices[1].Name)
+	assert.Equal(t, "alloy (OpenAI, gpt-4o-mini-tts)", prog.Voices[1].Name)
 
-	// Alias voice.
 	assert.Equal(t, "my-voice", prog.Voices[2].Name)
 	assert.Equal(t, "my-voice", prog.Voices[2].Description)
 	assert.True(t, prog.Voices[2].Installed)
 	assert.Equal(t, []string{"en", "fr"}, prog.Voices[2].Languages)
 }
 
-// mockVoiceDiscoverer implements VoiceDiscoverer for testing.
-type mockVoiceDiscoverer struct {
-	// voicesByEndpoint maps endpoint ID to discovered voice names.
-	voicesByEndpoint map[string][]string
-}
-
-func (m *mockVoiceDiscoverer) DiscoverVoices(_ context.Context, ep *model.Endpoint) []string {
-	return m.voicesByEndpoint[ep.ID]
-}
-
-// Regression: InfoBuilder must expose actual discovered voices, not model names.
-// Without this, HA shows "Qwen/Qwen3-TTS-..." instead of "aiden", "serena", etc.
-func TestInfoBuilder_Build_WithVoiceDiscovery(t *testing.T) {
+// Disabled voices on an enabled endpoint MUST NOT appear in the canonical list.
+func TestInfoBuilder_Build_FiltersDisabledVoices(t *testing.T) {
 	endpoints := &mockEndpointLister{
 		endpoints: []model.Endpoint{
 			{
 				ID:      "ep1",
-				Name:    "my-endpoint",
-				Enabled: true,
-				Models:  model.StringSlice{"my-model"},
-			},
-		},
-	}
-
-	discoverer := &mockVoiceDiscoverer{
-		voicesByEndpoint: map[string][]string{
-			"ep1": {"aiden", "serena", "vivian"},
-		},
-	}
-
-	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, discoverer, "1.0.0")
-	info, err := builder.Build(context.Background())
-	require.NoError(t, err)
-
-	prog := info.Tts[0]
-	require.Len(t, prog.Voices, 3)
-
-	assert.Equal(t, "aiden (my-endpoint, my-model)", prog.Voices[0].Name)
-	assert.Equal(t, "serena (my-endpoint, my-model)", prog.Voices[1].Name)
-	assert.Equal(t, "vivian (my-endpoint, my-model)", prog.Voices[2].Name)
-}
-
-// When discovery returns nothing, fall back to model names.
-func TestInfoBuilder_Build_VoiceDiscoveryFallback(t *testing.T) {
-	endpoints := &mockEndpointLister{
-		endpoints: []model.Endpoint{
-			{
-				ID:      "ep1",
-				Name:    "my-endpoint",
+				Name:    "ep",
 				Enabled: true,
 				Models:  model.StringSlice{"tts-1"},
 			},
 		},
 	}
 
-	discoverer := &mockVoiceDiscoverer{
-		voicesByEndpoint: map[string][]string{}, // empty = discovery failed
+	endpointVoices := &mockEndpointVoiceLister{
+		byEndpoint: map[string][]model.EndpointVoice{
+			"ep1": {
+				{EndpointID: "ep1", VoiceID: "alloy", Enabled: true},
+				{EndpointID: "ep1", VoiceID: "echo", Enabled: false},
+			},
+		},
 	}
 
-	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, discoverer, "1.0.0")
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, endpointVoices, "1.0.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
 	prog := info.Tts[0]
 	require.Len(t, prog.Voices, 1)
-	assert.Equal(t, "tts-1 (my-endpoint, tts-1)", prog.Voices[0].Name)
+	assert.Equal(t, "alloy (ep, tts-1)", prog.Voices[0].Name)
 }
 
-// Discovery with multiple models creates voice x model combinations.
-func TestInfoBuilder_Build_VoiceDiscoveryMultipleModels(t *testing.T) {
+// An endpoint with no endpoint_voices rows MUST emit no canonical voices —
+// no live-probe fallback.
+func TestInfoBuilder_Build_NoVoicesNoFallback(t *testing.T) {
+	endpoints := &mockEndpointLister{
+		endpoints: []model.Endpoint{
+			{
+				ID:      "ep1",
+				Name:    "ep",
+				Enabled: true,
+				Models:  model.StringSlice{"tts-1"},
+			},
+		},
+	}
+
+	endpointVoices := &mockEndpointVoiceLister{
+		byEndpoint: map[string][]model.EndpointVoice{},
+	}
+
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, endpointVoices, "1.0.0")
+	info, err := builder.Build(context.Background())
+	require.NoError(t, err)
+
+	assert.Empty(t, info.Tts[0].Voices)
+}
+
+// Multiple models cross enabled voices to form the full Cartesian list.
+func TestInfoBuilder_Build_VoicesCrossModels(t *testing.T) {
 	endpoints := &mockEndpointLister{
 		endpoints: []model.Endpoint{
 			{
@@ -185,17 +196,19 @@ func TestInfoBuilder_Build_VoiceDiscoveryMultipleModels(t *testing.T) {
 		},
 	}
 
-	discoverer := &mockVoiceDiscoverer{
-		voicesByEndpoint: map[string][]string{
-			"ep1": {"alice", "bob"},
+	endpointVoices := &mockEndpointVoiceLister{
+		byEndpoint: map[string][]model.EndpointVoice{
+			"ep1": {
+				{EndpointID: "ep1", VoiceID: "alice", Enabled: true},
+				{EndpointID: "ep1", VoiceID: "bob", Enabled: true},
+			},
 		},
 	}
 
-	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, discoverer, "1.0.0")
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, endpointVoices, "1.0.0")
 	info, err := builder.Build(context.Background())
 	require.NoError(t, err)
 
-	// 2 models x 2 voices = 4 canonical voices.
 	prog := info.Tts[0]
 	require.Len(t, prog.Voices, 4)
 	assert.Equal(t, "alice (ep, model-a)", prog.Voices[0].Name)
@@ -238,6 +251,19 @@ func TestInfoBuilder_Build_AliasListError(t *testing.T) {
 
 	_, err := builder.Build(context.Background())
 	assert.ErrorContains(t, err, "alias error")
+}
+
+func TestInfoBuilder_Build_EndpointVoiceListError(t *testing.T) {
+	endpoints := &mockEndpointLister{
+		endpoints: []model.Endpoint{
+			{ID: "ep1", Name: "ep", Enabled: true, Models: model.StringSlice{"tts-1"}},
+		},
+	}
+	endpointVoices := &mockEndpointVoiceLister{err: errors.New("voice error")}
+	builder := NewInfoBuilder(endpoints, &mockAliasLister{}, endpointVoices, "1.0.0")
+
+	_, err := builder.Build(context.Background())
+	assert.ErrorContains(t, err, "voice error")
 }
 
 func TestInfoBuilder_Cached(t *testing.T) {

@@ -228,14 +228,13 @@ func TestIntegration_VoiceListRebuild(t *testing.T) {
 	var ep model.Endpoint
 	decodeJSON(t, resp, &ep)
 
-	// GET voices -- should contain canonical entries for the endpoint's models.
+	// With no endpoint_voices rows yet, the system voices list MUST be empty —
+	// the live-probe fallback was removed in change 0005.
 	resp = doJSON(t, http.MethodGet, baseURL+"/api/v1/voices", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	var voices []voiceEntry
 	decodeJSON(t, resp, &voices)
-	require.Len(t, voices, 2)
-	assert.False(t, voices[0].IsAlias)
-	assert.False(t, voices[1].IsAlias)
+	assert.Empty(t, voices)
 
 	// Create an alias.
 	resp = doJSON(t, http.MethodPost, baseURL+"/api/v1/aliases", map[string]any{
@@ -248,35 +247,23 @@ func TestIntegration_VoiceListRebuild(t *testing.T) {
 	var alias model.VoiceAlias
 	decodeJSON(t, resp, &alias)
 
-	// GET voices -- should now include the alias.
+	// Aliases bypass the endpoint_voices filter and MUST appear regardless.
 	resp = doJSON(t, http.MethodGet, baseURL+"/api/v1/voices", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	decodeJSON(t, resp, &voices)
-	require.Len(t, voices, 3)
-
-	// Find the alias entry.
-	var found bool
-	for _, v := range voices {
-		if v.Name == "my-narrator" && v.IsAlias {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "alias should appear in voices list")
+	require.Len(t, voices, 1)
+	assert.Equal(t, "my-narrator", voices[0].Name)
+	assert.True(t, voices[0].IsAlias)
 
 	// Delete the alias.
 	resp = doJSON(t, http.MethodDelete, baseURL+"/api/v1/aliases/"+alias.ID, nil)
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 	resp.Body.Close()
 
-	// GET voices -- alias should be gone.
 	resp = doJSON(t, http.MethodGet, baseURL+"/api/v1/voices", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	decodeJSON(t, resp, &voices)
-	require.Len(t, voices, 2)
-	for _, v := range voices {
-		assert.False(t, v.IsAlias, "no aliases should remain")
-	}
+	assert.Empty(t, voices)
 }
 
 func TestIntegration_ConcurrentEndpointCreation(t *testing.T) {

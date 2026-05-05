@@ -21,6 +21,17 @@ type Store interface {
 	UpdateVoiceAlias(ctx context.Context, a *model.VoiceAlias) error
 	DeleteVoiceAlias(ctx context.Context, id string) error
 
+	ListEndpointVoices(ctx context.Context, endpointID string) ([]model.EndpointVoice, error)
+	UpsertEndpointVoices(ctx context.Context, endpointID string, voices []model.EndpointVoice) error
+	SetEndpointVoiceEnabled(ctx context.Context, endpointID, voiceID string, enabled bool) (*model.EndpointVoice, error)
+
 	Migrate(ctx context.Context) error
 	Close() error
 }
+
+// ErrEndpointVoiceNotFound is returned when an endpoint voice row is not found.
+var ErrEndpointVoiceNotFound = endpointVoiceNotFoundError{}
+
+type endpointVoiceNotFoundError struct{}
+
+func (endpointVoiceNotFoundError) Error() string { return "store: endpoint voice not found" }

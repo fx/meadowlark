@@ -101,6 +101,37 @@ func TestResolve_AliasPriority(t *testing.T) {
 	assert.Equal(t, model.StringSlice{"en"}, resolved.Languages)
 }
 
+// TestResolve_AliasBypassesEndpointVoiceFilter is the alias-bypass invariant
+// from change 0005: an alias whose target voice is disabled in the endpoint_voices
+// table MUST still resolve. The resolver does not consult endpoint_voices at all,
+// so this is structurally enforced — this test makes that contract explicit.
+func TestResolve_AliasBypassesEndpointVoiceFilter(t *testing.T) {
+	// The resolver's only inputs are EndpointLister and AliasLister; it has no
+	// dependency on endpoint_voices. So the alias resolves regardless of any
+	// disabled voice state.
+	r := NewResolver(
+		&mockEndpointLister{endpoints: defaultEndpoints()},
+		&mockAliasLister{aliases: []model.VoiceAlias{
+			{
+				ID:         "alias-clone",
+				Name:       "crisp-clone",
+				EndpointID: "ep-1",
+				Model:      "gpt-4o-mini-tts",
+				Voice:      "clone:abc",
+				Languages:  model.StringSlice{"en"},
+				Enabled:    true,
+			},
+		}},
+	)
+
+	resolved, err := r.Resolve(context.Background(), "crisp-clone")
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	assert.True(t, resolved.IsAlias)
+	assert.Equal(t, "clone:abc", resolved.Voice, "alias must pass through its target voice as-is")
+	assert.Equal(t, "ep-1", resolved.EndpointID)
+}
+
 func TestResolve_DisabledAliasSkipped(t *testing.T) {
 	r := NewResolver(
 		&mockEndpointLister{endpoints: defaultEndpoints()},

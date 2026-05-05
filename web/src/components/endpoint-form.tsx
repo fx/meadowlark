@@ -21,13 +21,15 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useEndpointProbe } from '@/hooks/use-endpoint-probe'
-import type { CreateEndpoint, Endpoint, UpdateEndpoint } from '@/lib/api'
+import type { CreateEndpoint, Endpoint, EndpointVoice, UpdateEndpoint } from '@/lib/api'
+import { api } from '@/lib/api'
 
 type EndpointFormProps = {
   endpoint?: Endpoint
   onSubmit: (data: CreateEndpoint | UpdateEndpoint) => void
   onCancel: () => void
   isSaving: boolean
+  onVoicesChanged?: () => void
 }
 
 type ModelToggleListProps = {
@@ -96,7 +98,73 @@ function ModelToggleList({
   )
 }
 
-function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormProps) {
+type VoiceToggleListProps = {
+  voices: EndpointVoice[]
+  onToggle: (voiceId: string, on: boolean) => void
+  onRefresh: () => void
+  loading: boolean
+  refreshing: boolean
+  error?: string
+}
+
+function VoiceToggleList({
+  voices,
+  onToggle,
+  onRefresh,
+  loading,
+  refreshing,
+  error,
+}: VoiceToggleListProps) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={onRefresh} disabled={refreshing}>
+          {refreshing ? 'Refreshing...' : 'Refresh voices from endpoint'}
+        </Button>
+        {error && <span className="text-destructive text-xs">{error}</span>}
+      </div>
+      {voices.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          {loading ? 'Loading voices...' : 'No voices discovered yet — click Refresh'}
+        </p>
+      ) : (
+        <ul className="border-border divide-border divide-y border">
+          {voices.map((v) => {
+            const switchId = `voice-toggle-${v.voice_id}`
+            return (
+              <li
+                key={v.voice_id}
+                className="flex items-center gap-3 px-3 py-2"
+                data-voice-id={v.voice_id}
+              >
+                <Switch
+                  id={switchId}
+                  checked={v.enabled}
+                  onCheckedChange={(on) => onToggle(v.voice_id, on)}
+                  aria-label={`Enable voice ${v.voice_id}`}
+                />
+                <Label htmlFor={switchId} className="flex-1 font-mono text-sm">
+                  {v.voice_id}
+                </Label>
+                {v.name && v.name !== v.voice_id && (
+                  <span className="text-muted-foreground text-xs">{v.name}</span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </>
+  )
+}
+
+function EndpointForm({
+  endpoint,
+  onSubmit,
+  onCancel,
+  isSaving,
+  onVoicesChanged,
+}: EndpointFormProps) {
   const [name, setName] = useState(endpoint?.name ?? '')
   const [baseUrl, setBaseUrl] = useState(endpoint?.base_url ?? '')
   const [apiKey, setApiKey] = useState(endpoint?.api_key ?? '')
@@ -119,15 +187,97 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
     urlDirtyRef.current &&
     (!baseUrl || (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')))
 
-  // Auto-populate default voice (not models) when probe succeeds after a URL change.
-  // Models are intentionally NOT auto-enabled — operator opts each in via the toggle list.
+  const endpointId = endpoint?.id
+  const [endpointVoices, setEndpointVoices] = useState<EndpointVoice[]>([])
+  const [voicesLoading, setVoicesLoading] = useState(false)
+  const [voicesLoaded, setVoicesLoaded] = useState(false)
+  const [voicesRefreshing, setVoicesRefreshing] = useState(false)
+  const [voicesError, setVoicesError] = useState<string | undefined>()
+
   useEffect(() => {
-    if (urlDirtyRef.current && probe.status === 'success') {
-      if (probe.voices.length > 0 && !defaultVoice) {
-        setDefaultVoice(probe.voices[0].id)
-      }
+    if (!endpointId) return
+    setVoicesLoading(true)
+    api.endpoints.voices
+      .list(endpointId)
+      .then((rows) => {
+        setEndpointVoices(rows)
+        // voicesLoaded only flips on a successful sync — a transient list
+        // failure must NOT make enabledVoices look authoritative for the
+        // defaultVoice reconciliation effect, since that would silently
+        // drop a valid persisted default.
+        setVoicesLoaded(true)
+      })
+      .catch(() => {
+        // List failure is non-fatal; the user can hit Refresh.
+      })
+      .finally(() => setVoicesLoading(false))
+  }, [endpointId])
+
+  const handleRefreshVoices = useCallback(async () => {
+    setVoicesRefreshing(true)
+    setVoicesError(undefined)
+    try {
+      const rows = await api.endpoints.voices.refresh(endpointId as string)
+      setEndpointVoices(rows)
+      setVoicesLoaded(true)
+      onVoicesChanged?.()
+    } catch (e) {
+      setVoicesError((e as Error).message)
+    } finally {
+      setVoicesRefreshing(false)
     }
-  }, [probe.status, probe.voices, defaultVoice])
+  }, [endpointId, onVoicesChanged])
+
+  const handleToggleVoice = useCallback(
+    async (voiceId: string, on: boolean) => {
+      let clearedDefault = false
+      setEndpointVoices((rows) =>
+        rows.map((r) => (r.voice_id === voiceId ? { ...r, enabled: on } : r)),
+      )
+      if (!on) {
+        setDefaultVoice((d) => {
+          if (d === voiceId) {
+            clearedDefault = true
+            return ''
+          }
+          return d
+        })
+      }
+      setVoicesError(undefined)
+      try {
+        await api.endpoints.voices.setEnabled(endpointId as string, voiceId, on)
+        onVoicesChanged?.()
+      } catch (e) {
+        // Per-voice rollback: only restore THIS voice's prior state, not the whole array,
+        // so concurrent toggles on other voices aren't reverted.
+        setEndpointVoices((rows) =>
+          rows.map((r) => (r.voice_id === voiceId ? { ...r, enabled: !on } : r)),
+        )
+        // Restore the cleared default ONLY if we cleared it AND the user has
+        // not picked a new one while this PATCH was in flight.
+        if (clearedDefault) {
+          setDefaultVoice((d) => (d === '' ? voiceId : d))
+        }
+        setVoicesError((e as Error).message)
+      }
+    },
+    [endpointId, onVoicesChanged],
+  )
+
+  const enabledVoices = useMemo(() => endpointVoices.filter((v) => v.enabled), [endpointVoices])
+
+  // Reconcile defaultVoice against the current enabled set: if the persisted
+  // default voice is missing from enabled (e.g., disabled by the operator or
+  // disappeared after a refresh), clear it so the form cannot submit a stale value.
+  // Skip until the initial list has settled to avoid clearing a valid persisted
+  // default while endpointVoices is still empty pre-fetch.
+  useEffect(() => {
+    if (!voicesLoaded) return
+    if (defaultVoice === '') return
+    if (!enabledVoices.some((v) => v.voice_id === defaultVoice)) {
+      setDefaultVoice('')
+    }
+  }, [enabledVoices, defaultVoice, voicesLoaded])
 
   // The list of model ids surfaced to the user: discovered models from probe, plus
   // any persisted-but-no-longer-discovered models so the operator can disable them.
@@ -300,38 +450,43 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
 
       <section className="space-y-2" data-section="voices">
         <h3 className="text-sm font-semibold tracking-wide uppercase">Voices</h3>
-        <p className="text-muted-foreground text-sm">Voice toggle list — coming soon.</p>
+        {endpointId ? (
+          <VoiceToggleList
+            voices={endpointVoices}
+            onToggle={handleToggleVoice}
+            onRefresh={handleRefreshVoices}
+            loading={voicesLoading}
+            refreshing={voicesRefreshing}
+            error={voicesError}
+          />
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            Voices will be discoverable after the endpoint is saved.
+          </p>
+        )}
       </section>
 
       <section className="space-y-4" data-section="defaults">
         <h3 className="text-sm font-semibold tracking-wide uppercase">Defaults</h3>
-        {(probe.status !== 'idle' || endpoint?.default_voice) && (
+        {(enabledVoices.length > 0 || endpoint?.default_voice) && (
           <div className="space-y-2">
             <Label htmlFor="ep-default-voice">Default Voice</Label>
             <Select
               value={defaultVoice || '__none__'}
               onValueChange={(v) => setDefaultVoice(v === '__none__' ? '' : v)}
-              disabled={
-                probe.status === 'loading' ||
-                (probe.status === 'error' && probe.voices.length === 0)
-              }
             >
               <SelectTrigger id="ep-default-voice" className="w-full">
                 <SelectValue
                   placeholder={
-                    probe.status === 'loading'
-                      ? 'Loading voices...'
-                      : probe.voices.length === 0
-                        ? 'No voices available'
-                        : 'Select default voice'
+                    enabledVoices.length === 0 ? 'No enabled voices' : 'Select default voice'
                   }
                 />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">None</SelectItem>
-                {probe.voices.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.name || v.id}
+                {enabledVoices.map((v) => (
+                  <SelectItem key={v.voice_id} value={v.voice_id}>
+                    {v.name || v.voice_id}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -93,6 +93,17 @@ type VoiceAlias struct {
 	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
+// EndpointVoice represents a discovered voice on an endpoint with its enabled state.
+// Discovered voices default to enabled=false; the operator opts each in via the UI.
+type EndpointVoice struct {
+	EndpointID string    `json:"endpoint_id"`
+	VoiceID    string    `json:"voice_id"`
+	Name       string    `json:"name"`
+	Enabled    bool      `json:"enabled"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 // ResolvedVoice is the result of voice resolution, combining alias/canonical lookup
 // with all parameters needed to make a TTS API call.
 type ResolvedVoice struct {

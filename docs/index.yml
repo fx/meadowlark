@@ -70,5 +70,5 @@ changes:
     path: changes/0005-endpoint-voice-toggle.md
     description: Persist per-endpoint voice enable/disable state, default-disabled on discovery, filter system /voices and Wyoming describe; aliases bypass the filter
     spec: voice-resolution
-    status: draft
+    status: complete
     depends_on: ["0004"]

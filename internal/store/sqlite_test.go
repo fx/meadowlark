@@ -415,6 +415,139 @@ func TestUpdateEndpoint_DefaultModel(t *testing.T) {
 	assert.Equal(t, "tts-1", got2.DefaultModel)
 }
 
+// TestMigrate_EndpointVoicesIdempotent verifies the endpoint_voices table is
+// created when missing from a legacy schema, that re-running Migrate is a no-op,
+// and that the table can hold operator-toggled state across migrations.
+func TestMigrate_EndpointVoicesIdempotent(t *testing.T) {
+	s, err := NewSQLiteStore(":memory:")
+	require.NoError(t, err)
+	defer s.Close()
+	ctx := context.Background()
+	// Build a legacy schema without endpoint_voices.
+	_, err = s.db.ExecContext(ctx, `CREATE TABLE endpoints (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		base_url TEXT NOT NULL,
+		api_key TEXT DEFAULT '',
+		models TEXT NOT NULL DEFAULT '[]',
+		default_voice TEXT NOT NULL DEFAULT '',
+		default_speed REAL,
+		default_instructions TEXT,
+		default_response_format TEXT NOT NULL DEFAULT 'wav',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		streaming_enabled INTEGER NOT NULL DEFAULT 0,
+		stream_sample_rate INTEGER NOT NULL DEFAULT 24000,
+		default_model TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+		updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	)`)
+	require.NoError(t, err)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO endpoints (id, name, base_url, models) VALUES ('legacy-1', 'Legacy', 'https://x', '["tts-1"]')`)
+	require.NoError(t, err)
+	require.NoError(t, s.Migrate(ctx))
+	require.NoError(t, s.Migrate(ctx))
+	// endpoint_voices table now exists; insert a row to confirm.
+	require.NoError(t, s.UpsertEndpointVoices(ctx, "legacy-1", []model.EndpointVoice{{VoiceID: "alloy", Name: "Alloy"}}))
+	rows, err := s.ListEndpointVoices(ctx, "legacy-1")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "alloy", rows[0].VoiceID)
+}
+
+// TestEndpointVoices_UpsertPreservesEnabled verifies that a re-run of upsert with
+// the same voice id MUST NOT toggle enabled back to false.
+func TestEndpointVoices_UpsertPreservesEnabled(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("UpsertPreserve")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	// Initial upsert.
+	require.NoError(t, s.UpsertEndpointVoices(ctx, ep.ID, []model.EndpointVoice{{VoiceID: "alloy", Name: "Alloy"}}))
+	// Operator enables it.
+	updated, err := s.SetEndpointVoiceEnabled(ctx, ep.ID, "alloy", true)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.True(t, updated.Enabled)
+	// Re-run upsert with a new name; enabled MUST remain true.
+	require.NoError(t, s.UpsertEndpointVoices(ctx, ep.ID, []model.EndpointVoice{{VoiceID: "alloy", Name: "Alloy v2"}}))
+	rows, err := s.ListEndpointVoices(ctx, ep.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "Alloy v2", rows[0].Name)
+	assert.True(t, rows[0].Enabled, "enabled flag must be preserved across upsert")
+}
+
+func TestEndpointVoices_NewRowsDefaultDisabled(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("DefaultDisabled")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	require.NoError(t, s.UpsertEndpointVoices(ctx, ep.ID, []model.EndpointVoice{
+		{VoiceID: "alloy", Name: "Alloy"},
+		{VoiceID: "echo", Name: "Echo"},
+	}))
+	rows, err := s.ListEndpointVoices(ctx, ep.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	for _, r := range rows {
+		assert.False(t, r.Enabled, "newly upserted voice %q must default to disabled", r.VoiceID)
+	}
+	// Ordered by voice_id.
+	assert.Equal(t, "alloy", rows[0].VoiceID)
+	assert.Equal(t, "echo", rows[1].VoiceID)
+}
+
+func TestEndpointVoices_SetEnabledNotFound(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("ToggleNotFound")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	_, err := s.SetEndpointVoiceEnabled(ctx, ep.ID, "missing-voice", true)
+	assert.ErrorIs(t, err, ErrEndpointVoiceNotFound)
+}
+
+// TestEndpointVoices_CascadeDelete verifies that deleting an endpoint removes
+// its endpoint_voices rows automatically via the ON DELETE CASCADE FK.
+func TestEndpointVoices_CascadeDelete(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("CascadeDelete")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	require.NoError(t, s.UpsertEndpointVoices(ctx, ep.ID, []model.EndpointVoice{
+		{VoiceID: "a"}, {VoiceID: "b"}, {VoiceID: "c"},
+	}))
+	require.NoError(t, s.DeleteEndpoint(ctx, ep.ID))
+	rows, err := s.ListEndpointVoices(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "cascade delete should remove all endpoint_voices rows")
+}
+
+func TestEndpointVoices_UpsertEmptyNoop(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("EmptyUpsert")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	require.NoError(t, s.UpsertEndpointVoices(ctx, ep.ID, nil))
+	rows, err := s.ListEndpointVoices(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+}
+
+func TestEndpointVoices_VoiceIDWithColon(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("ColonVoice")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	require.NoError(t, s.UpsertEndpointVoices(ctx, ep.ID, []model.EndpointVoice{
+		{VoiceID: "clone:abc", Name: "Clone ABC"},
+	}))
+	updated, err := s.SetEndpointVoiceEnabled(ctx, ep.ID, "clone:abc", true)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.True(t, updated.Enabled)
+	assert.Equal(t, "clone:abc", updated.VoiceID)
+}
+
 // TestMigrate_DefaultModelColumnIdempotent verifies that running Migrate against
 // a pre-existing schema without the default_model column adds the column with an
 // empty default and that subsequent migrations are a no-op. This exercises the

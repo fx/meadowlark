@@ -1,5 +1,5 @@
 import { Trash } from '@phosphor-icons/react'
-import { useCallback, useState } from 'preact/hooks'
+import { useCallback, useEffect, useState } from 'preact/hooks'
 import { EndpointForm } from '@/components/endpoint-form'
 import { ExpandableRow } from '@/components/expandable-row'
 import {
@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useFetch } from '@/hooks/use-fetch'
 import { useMutation } from '@/hooks/use-mutation'
-import type { CreateEndpoint, Endpoint, UpdateEndpoint } from '@/lib/api'
+import type { CreateEndpoint, Endpoint, EndpointVoice, UpdateEndpoint } from '@/lib/api'
 import { api } from '@/lib/api'
 
 function EndpointsPage() {
@@ -91,6 +91,23 @@ function EndpointRow({
   onUpdate: () => void
 }) {
   const [saving, setSaving] = useState(false)
+  const [enabledVoiceCount, setEnabledVoiceCount] = useState<number | null>(null)
+  const [voicesNonce, setVoicesNonce] = useState(0)
+
+  useEffect(() => {
+    api.endpoints.voices
+      .list(endpoint.id)
+      .then((rows: EndpointVoice[]) => {
+        setEnabledVoiceCount(rows.filter((r) => r.enabled).length)
+      })
+      .catch(() => {
+        setEnabledVoiceCount(0)
+      })
+  }, [endpoint.id, voicesNonce])
+
+  const handleVoicesChanged = useCallback(() => {
+    setVoicesNonce((n) => n + 1)
+  }, [])
 
   const handleUpdate = useCallback(
     async (data: CreateEndpoint | UpdateEndpoint) => {
@@ -134,6 +151,11 @@ function EndpointRow({
           <Badge variant="secondary">
             {endpoint.models.length} {endpoint.models.length === 1 ? 'model' : 'models'}
           </Badge>
+          {enabledVoiceCount !== null && (
+            <Badge variant="secondary">
+              {enabledVoiceCount} {enabledVoiceCount === 1 ? 'voice' : 'voices'}
+            </Badge>
+          )}
           {!endpoint.enabled && <Badge variant="outline">Disabled</Badge>}
           {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: stopPropagation prevents row toggle when clicking switch */}
           <div className="ml-auto" onClick={(e) => e.stopPropagation()}>
@@ -152,6 +174,7 @@ function EndpointRow({
             onSubmit={handleUpdate}
             onCancel={() => onToggle(null)}
             isSaving={saving}
+            onVoicesChanged={handleVoicesChanged}
           />
 
           <AlertDialog>

@@ -40,10 +40,12 @@ const mockEndpoints: Endpoint[] = [
 ]
 
 function mockFetchWith(data: unknown) {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve(data),
+  // Route fetch by URL: list returns the provided data; voices/list returns []; everything else returns []
+  return vi.fn().mockImplementation((url: string) => {
+    if (typeof url === 'string' && url.includes('/voices')) {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) })
+    }
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) })
   })
 }
 
@@ -71,6 +73,174 @@ describe('EndpointsPage', () => {
       expect(screen.getByText('2 models')).toBeInTheDocument()
     })
     expect(screen.getByText('1 model')).toBeInTheDocument()
+  })
+
+  it('shows voice count badges from endpoint_voices', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/endpoints/ep-1/voices')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve([
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'alloy',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'echo',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'nova',
+                name: '',
+                enabled: false,
+                created_at: '',
+                updated_at: '',
+              },
+            ]),
+        })
+      }
+      if (url.includes('/endpoints/ep-2/voices')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve([
+              {
+                endpoint_id: 'ep-2',
+                voice_id: 'piper',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+            ]),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockEndpoints),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EndpointsPage />)
+    await waitFor(() => {
+      expect(screen.getByText('2 voices')).toBeInTheDocument()
+    })
+    expect(screen.getByText('1 voice')).toBeInTheDocument()
+  })
+
+  it('shows zero voice count when voices list call fails', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/voices')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: { code: 'x', message: 'fail' } }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockEndpoints),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EndpointsPage />)
+    // Both endpoints fall back to "0 voices".
+    await waitFor(() => {
+      expect(screen.getAllByText('0 voices').length).toBeGreaterThan(0)
+    })
+  })
+
+  it('voice count badge re-fetches after a toggle/refresh inside the form', async () => {
+    let voicesCallCount = 0
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (
+        url.includes('/endpoints/ep-1/voices') &&
+        !url.includes('/refresh') &&
+        (!init?.method || init.method === 'GET')
+      ) {
+        voicesCallCount++
+        // First read: 1 enabled (only alloy). Subsequent reads after the
+        // toggle: 2 enabled (alloy + echo) so the badge reflects the change.
+        const echoEnabled = voicesCallCount > 1
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve([
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'alloy',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'echo',
+                name: '',
+                enabled: echoEnabled,
+                created_at: '',
+                updated_at: '',
+              },
+            ]),
+        })
+      }
+      if (url.includes('/endpoints/ep-1/voices/echo') && init?.method === 'PATCH') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              endpoint_id: 'ep-1',
+              voice_id: 'echo',
+              name: '',
+              enabled: true,
+              created_at: '',
+              updated_at: '',
+            }),
+        })
+      }
+      if (url.includes('/endpoints/ep-2/voices')) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockEndpoints),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    render(<EndpointsPage />)
+    // Initial state: only alloy enabled.
+    await waitFor(() => {
+      expect(screen.getByText('1 voice')).toBeInTheDocument()
+    })
+    // Expand ep-1, toggle echo on. The post-toggle re-fetch must update the badge to "2 voices".
+    await user.click(screen.getByText('OpenAI'))
+    const echoSwitch = await screen.findByRole('switch', { name: 'Enable voice echo' })
+    await user.click(echoSwitch)
+    await waitFor(() => {
+      expect(voicesCallCount).toBeGreaterThanOrEqual(2)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('2 voices')).toBeInTheDocument()
+    })
   })
 
   it('shows empty state when no endpoints', async () => {

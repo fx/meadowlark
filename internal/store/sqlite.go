@@ -117,6 +117,17 @@ CREATE TABLE IF NOT EXISTS voice_aliases (
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
+CREATE TABLE IF NOT EXISTS endpoint_voices (
+    endpoint_id     TEXT NOT NULL,
+    voice_id        TEXT NOT NULL,
+    name            TEXT NOT NULL DEFAULT '',
+    enabled         INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (endpoint_id, voice_id),
+    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+);
+
 `
 
 // sqliteAlterMigration describes an idempotent ALTER TABLE ADD COLUMN migration.
@@ -304,6 +315,77 @@ func (s *SQLiteStore) DeleteVoiceAlias(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListEndpointVoices returns all endpoint_voices rows for the given endpoint, ordered by voice_id.
+func (s *SQLiteStore) ListEndpointVoices(ctx context.Context, endpointID string) ([]model.EndpointVoice, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT endpoint_id, voice_id, name, enabled, created_at, updated_at FROM endpoint_voices WHERE endpoint_id = ? ORDER BY voice_id`, endpointID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list endpoint voices: %w", err)
+	}
+	defer rows.Close()
+	var out []model.EndpointVoice
+	for rows.Next() {
+		v, err := scanEndpointVoice(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: scan endpoint voice: %w", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// UpsertEndpointVoices inserts new rows or updates the name and updated_at of existing rows.
+// The enabled flag is preserved on conflict — refresh MUST NOT toggle the operator's choices.
+func (s *SQLiteStore) UpsertEndpointVoices(ctx context.Context, endpointID string, voices []model.EndpointVoice) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(voices) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: upsert endpoint voices: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, v := range voices {
+		_, err := tx.ExecContext(ctx, `INSERT INTO endpoint_voices (endpoint_id, voice_id, name, enabled, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?) ON CONFLICT(endpoint_id, voice_id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`,
+			endpointID, v.VoiceID, v.Name, now, now)
+		if err != nil {
+			return fmt.Errorf("store: upsert endpoint voice %q: %w", v.VoiceID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: upsert endpoint voices: commit: %w", err)
+	}
+	return nil
+}
+
+// SetEndpointVoiceEnabled flips the enabled flag for an existing endpoint_voices row.
+// Returns ErrEndpointVoiceNotFound when no row matches.
+func (s *SQLiteStore) SetEndpointVoiceEnabled(ctx context.Context, endpointID, voiceID string, enabled bool) (*model.EndpointVoice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `UPDATE endpoint_voices SET enabled = ?, updated_at = ? WHERE endpoint_id = ? AND voice_id = ?`,
+		enabled, now, endpointID, voiceID)
+	if err != nil {
+		return nil, fmt.Errorf("store: set endpoint voice enabled: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("store: set endpoint voice enabled rows affected: %w", err)
+	}
+	if n == 0 {
+		return nil, ErrEndpointVoiceNotFound
+	}
+	row := s.db.QueryRowContext(ctx, `SELECT endpoint_id, voice_id, name, enabled, created_at, updated_at FROM endpoint_voices WHERE endpoint_id = ? AND voice_id = ?`, endpointID, voiceID)
+	v, err := scanEndpointVoiceRow(row)
+	if err != nil {
+		return nil, fmt.Errorf("store: re-fetch endpoint voice: %w", err)
+	}
+	return &v, nil
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -355,3 +437,25 @@ func scanAliasFromScanner(sc scanner) (model.VoiceAlias, error) {
 
 func scanAlias(rows *sql.Rows) (model.VoiceAlias, error)  { return scanAliasFromScanner(rows) }
 func scanAliasRow(row *sql.Row) (model.VoiceAlias, error)  { return scanAliasFromScanner(row) }
+
+func scanEndpointVoiceFromScanner(sc scanner) (model.EndpointVoice, error) {
+	var v model.EndpointVoice
+	var createdAt, updatedAt string
+	err := sc.Scan(&v.EndpointID, &v.VoiceID, &v.Name, &v.Enabled, &createdAt, &updatedAt)
+	if err != nil {
+		return v, fmt.Errorf("store: scan endpoint voice: %w", err)
+	}
+	var parseErr error
+	v.CreatedAt, parseErr = time.Parse(time.RFC3339, createdAt)
+	if parseErr != nil {
+		return v, fmt.Errorf("store: parse endpoint voice created_at %q: %w", createdAt, parseErr)
+	}
+	v.UpdatedAt, parseErr = time.Parse(time.RFC3339, updatedAt)
+	if parseErr != nil {
+		return v, fmt.Errorf("store: parse endpoint voice updated_at %q: %w", updatedAt, parseErr)
+	}
+	return v, nil
+}
+
+func scanEndpointVoice(rows *sql.Rows) (model.EndpointVoice, error)  { return scanEndpointVoiceFromScanner(rows) }
+func scanEndpointVoiceRow(row *sql.Row) (model.EndpointVoice, error)  { return scanEndpointVoiceFromScanner(row) }

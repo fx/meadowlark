@@ -8,23 +8,27 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/fx/meadowlark/internal/model"
+	"github.com/fx/meadowlark/internal/store"
 	"github.com/fx/meadowlark/internal/tts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type endpointMockStore struct {
-	endpoints []model.Endpoint
-	aliases   []model.VoiceAlias
-	createErr error
-	updateErr error
-	deleteErr error
+	endpoints      []model.Endpoint
+	aliases        []model.VoiceAlias
+	endpointVoices map[string][]model.EndpointVoice
+	createErr      error
+	updateErr      error
+	deleteErr      error
+	upsertErr      error
 }
 
 func (m *endpointMockStore) ListEndpoints(_ context.Context) ([]model.Endpoint, error) {
@@ -65,6 +69,51 @@ func (m *endpointMockStore) GetVoiceAlias(_ context.Context, id string) (*model.
 func (m *endpointMockStore) CreateVoiceAlias(_ context.Context, _ *model.VoiceAlias) error { return nil }
 func (m *endpointMockStore) UpdateVoiceAlias(_ context.Context, _ *model.VoiceAlias) error { return nil }
 func (m *endpointMockStore) DeleteVoiceAlias(_ context.Context, _ string) error { return nil }
+func (m *endpointMockStore) ListEndpointVoices(_ context.Context, endpointID string) ([]model.EndpointVoice, error) {
+	if m.endpointVoices == nil {
+		return nil, nil
+	}
+	return m.endpointVoices[endpointID], nil
+}
+func (m *endpointMockStore) UpsertEndpointVoices(_ context.Context, endpointID string, voices []model.EndpointVoice) error {
+	if m.upsertErr != nil {
+		return m.upsertErr
+	}
+	if m.endpointVoices == nil {
+		m.endpointVoices = make(map[string][]model.EndpointVoice)
+	}
+	existing := m.endpointVoices[endpointID]
+	for _, v := range voices {
+		found := false
+		for i := range existing {
+			if existing[i].VoiceID == v.VoiceID {
+				existing[i].Name = v.Name
+				found = true
+				break
+			}
+		}
+		if !found {
+			existing = append(existing, model.EndpointVoice{EndpointID: endpointID, VoiceID: v.VoiceID, Name: v.Name})
+		}
+	}
+	m.endpointVoices[endpointID] = existing
+	return nil
+}
+func (m *endpointMockStore) SetEndpointVoiceEnabled(_ context.Context, endpointID, voiceID string, enabled bool) (*model.EndpointVoice, error) {
+	if m.endpointVoices == nil {
+		return nil, store.ErrEndpointVoiceNotFound
+	}
+	rows := m.endpointVoices[endpointID]
+	for i := range rows {
+		if rows[i].VoiceID == voiceID {
+			rows[i].Enabled = enabled
+			m.endpointVoices[endpointID] = rows
+			out := rows[i]
+			return &out, nil
+		}
+	}
+	return nil, store.ErrEndpointVoiceNotFound
+}
 func (m *endpointMockStore) Migrate(_ context.Context) error { return nil }
 func (m *endpointMockStore) Close() error { return nil }
 
@@ -603,4 +652,182 @@ func TestDiscoverRemoteVoices_NotFound(t *testing.T) {
 	resp, err := http.Get(ts.URL + "/api/v1/endpoints/nonexistent/remote-voices")
 	require.NoError(t, err); defer resp.Body.Close()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// --- Endpoint voices handlers ---
+
+func TestListEndpointVoices_Empty(t *testing.T) {
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: "https://api.example.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/ep1/voices")
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body []model.EndpointVoice
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Empty(t, body)
+}
+
+func TestListEndpointVoices_WithRows(t *testing.T) {
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: "https://api.example.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}},
+		endpointVoices: map[string][]model.EndpointVoice{
+			"ep1": {
+				{EndpointID: "ep1", VoiceID: "alloy", Name: "Alloy", Enabled: true},
+				{EndpointID: "ep1", VoiceID: "echo", Name: "Echo", Enabled: false},
+			},
+		},
+	}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/ep1/voices")
+	require.NoError(t, err); defer resp.Body.Close()
+	var body []model.EndpointVoice
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body, 2)
+	assert.Equal(t, "alloy", body[0].VoiceID)
+	assert.True(t, body[0].Enabled)
+	assert.False(t, body[1].Enabled)
+}
+
+func TestListEndpointVoices_NotFound(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Get(ts.URL + "/api/v1/endpoints/missing/voices")
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestRefreshEndpointVoices_Success(t *testing.T) {
+	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/audio/voices" {
+			w.Write([]byte(`{"data":[{"id":"alloy","name":"Alloy"},{"id":"clone:abc","name":"Clone ABC"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockTTS.Close()
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: mockTTS.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints/ep1/voices/refresh", "application/json", nil)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body []model.EndpointVoice
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body, 2)
+	for _, v := range body {
+		assert.False(t, v.Enabled, "newly upserted voices default disabled")
+	}
+}
+
+func TestRefreshEndpointVoices_PreservesEnabled(t *testing.T) {
+	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/audio/voices" {
+			w.Write([]byte(`{"data":[{"id":"alloy","name":"Alloy"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer mockTTS.Close()
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: mockTTS.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}},
+		endpointVoices: map[string][]model.EndpointVoice{
+			"ep1": {{EndpointID: "ep1", VoiceID: "alloy", Name: "Old", Enabled: true}},
+		},
+	}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints/ep1/voices/refresh", "application/json", nil)
+	require.NoError(t, err); defer resp.Body.Close()
+	var body []model.EndpointVoice
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body, 1)
+	assert.True(t, body[0].Enabled, "refresh must preserve enabled flag")
+	assert.Equal(t, "Alloy", body[0].Name, "name should be updated")
+}
+
+func TestRefreshEndpointVoices_NotFound(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints/missing/voices/refresh", "application/json", nil)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestSetEndpointVoiceEnabled_Success(t *testing.T) {
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: "https://api.example.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}},
+		endpointVoices: map[string][]model.EndpointVoice{
+			"ep1": {{EndpointID: "ep1", VoiceID: "alloy"}},
+		},
+	}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/endpoints/ep1/voices/alloy", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body model.EndpointVoice
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.True(t, body.Enabled)
+}
+
+func TestSetEndpointVoiceEnabled_VoiceNotFound(t *testing.T) {
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: "https://api.example.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}},
+	}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/endpoints/ep1/voices/missing", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestSetEndpointVoiceEnabled_EndpointNotFound(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/endpoints/missing/voices/alloy", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+func TestSetEndpointVoiceEnabled_MissingEnabled(t *testing.T) {
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: "https://api.example.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/endpoints/ep1/voices/alloy", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestSetEndpointVoiceEnabled_InvalidJSON(t *testing.T) {
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: "https://api.example.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/endpoints/ep1/voices/alloy", strings.NewReader(`{invalid`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestSetEndpointVoiceEnabled_VoiceIDWithColon(t *testing.T) {
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "EP", BaseURL: "https://api.example.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}},
+		endpointVoices: map[string][]model.EndpointVoice{
+			"ep1": {{EndpointID: "ep1", VoiceID: "clone:abc"}},
+		},
+	}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	// chi accepts the colon in path segments without escaping but encode for safety.
+	target := ts.URL + "/api/v1/endpoints/ep1/voices/" + url.PathEscape("clone:abc")
+	req, _ := http.NewRequest(http.MethodPatch, target, strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body model.EndpointVoice
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "clone:abc", body.VoiceID)
+	assert.True(t, body.Enabled)
 }

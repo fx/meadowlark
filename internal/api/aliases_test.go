@@ -92,6 +92,16 @@ func (m *aliasStore) DeleteVoiceAlias(_ context.Context, id string) error {
 	return fmt.Errorf("alias %q not found", id)
 }
 
+func (m *aliasStore) ListEndpointVoices(_ context.Context, _ string) ([]model.EndpointVoice, error) {
+	return nil, nil
+}
+func (m *aliasStore) UpsertEndpointVoices(_ context.Context, _ string, _ []model.EndpointVoice) error {
+	return nil
+}
+func (m *aliasStore) SetEndpointVoiceEnabled(_ context.Context, _, _ string, _ bool) (*model.EndpointVoice, error) {
+	return nil, nil
+}
+
 func (m *aliasStore) Migrate(_ context.Context) error { return nil }
 func (m *aliasStore) Close() error                    { return nil }
 

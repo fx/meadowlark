@@ -5,7 +5,7 @@
 Persist a per-endpoint voice enable/disable set (`endpoint_voices` table). Discovery via `/remote-voices` upserts new voices with `enabled = false`. The Endpoints UI gains a Voices toggle list section. The system voice list (`GET /api/v1/voices`) and the Wyoming canonical voice list filter to enabled voices only. Voice aliases bypass the filter.
 
 **Spec:** [voice-resolution](../specs/voice-resolution/), [frontend](../specs/frontend/), [data-persistence](../specs/data-persistence/), [http-api](../specs/http-api/)
-**Status:** draft
+**Status:** complete
 **Depends On:** 0004
 
 ## Motivation
@@ -183,45 +183,45 @@ Change 0003 keeps the alias form's Voice select sourced from live `/remote-voice
 
 ## Tasks
 
-- [ ] Backend: schema + model
-  - [ ] Add `EndpointVoice` struct to `internal/model/model.go`
-  - [ ] SQLite: add `CREATE TABLE IF NOT EXISTS endpoint_voices` + idempotent migration
-  - [ ] Postgres: same with `BOOLEAN`, `TIMESTAMPTZ`, `ON DELETE CASCADE`
-  - [ ] Add store tests covering migration on a pre-existing schema
-- [ ] Backend: store methods
-  - [ ] `ListEndpointVoices(ctx, endpointID) ([]EndpointVoice, error)` — both SQLite and Postgres
-  - [ ] `UpsertEndpointVoices(ctx, endpointID, voices)` — INSERT ... ON CONFLICT DO UPDATE that updates only `name` and `updated_at`, never `enabled`
-  - [ ] `SetEndpointVoiceEnabled(ctx, endpointID, voiceID, enabled)`
-  - [ ] Tests for all three including the "preserve enabled on upsert" invariant
-- [ ] Backend: API handlers
-  - [ ] `ListEndpointVoices` handler in `internal/api/endpoints.go`
-  - [ ] `RefreshEndpointVoices` handler — calls `client.ListVoices`, then `UpsertEndpointVoices`, returns the post-upsert list
-  - [ ] `SetEndpointVoiceEnabled` handler with body validation `{"enabled": bool}`
-  - [ ] Wire routes into `internal/api/server.go` (or wherever chi routes are registered)
-  - [ ] API tests covering all three handlers + error paths (404 endpoint, 404 voice on toggle, upstream failure on refresh)
-- [ ] Backend: filter the canonical voice list
-  - [ ] Update `internal/api/system.go` `ListVoices` to source from `endpoint_voices` instead of live-probing
-  - [ ] Update `internal/wyoming/info_builder.go` to use the same path
-  - [ ] Tests: enabled endpoint with mixed voice states emits only enabled rows; disabled endpoint emits nothing
-  - [ ] Tests: alias resolution for a disabled voice still succeeds (alias-bypass invariant)
-- [ ] Frontend: types + API client
-  - [ ] Add `EndpointVoice` type to `web/src/lib/api.ts`
-  - [ ] Add `api.endpoints.voices.list(id)`, `api.endpoints.voices.refresh(id)`, `api.endpoints.voices.setEnabled(id, voiceId, enabled)`
-- [ ] Frontend: Voices section in endpoint form
-  - [ ] Add a `<VoiceToggleList>` component (separate file or inline) that mirrors the Models toggle list from 0004
-  - [ ] Wire it between Models and Defaults
-  - [ ] Add the "Refresh voices from endpoint" button
-  - [ ] Optimistic toggle: flip Switch immediately, fire `setEnabled`, roll back on error
-  - [ ] Empty state copy: "No voices discovered yet — click Refresh"
-  - [ ] Default Voice Select in the Defaults section sources from enabled voices
-- [ ] Frontend: collapsed row badge
-  - [ ] Add an enabled-voice count badge to the row in `web/src/pages/endpoints.tsx`
-- [ ] Frontend: tests
-  - [ ] `web/src/components/endpoint-form.test.tsx` — cover R6 scenarios
-  - [ ] `web/src/pages/endpoints.test.tsx` — cover collapsed-row badge
-  - [ ] Optimistic update happy path + rollback on failure
-- [ ] Spec living-doc updates
-  - [ ] Confirm spec amendments shipped with this change still match implementation; update changelog entries if shape drifted during implementation
+- [x] Backend: schema + model
+  - [x] Add `EndpointVoice` struct to `internal/model/model.go`
+  - [x] SQLite: add `CREATE TABLE IF NOT EXISTS endpoint_voices` + idempotent migration
+  - [x] Postgres: same with `BOOLEAN`, `TIMESTAMPTZ`, `ON DELETE CASCADE`
+  - [x] Add store tests covering migration on a pre-existing schema
+- [x] Backend: store methods
+  - [x] `ListEndpointVoices(ctx, endpointID) ([]EndpointVoice, error)` — both SQLite and Postgres
+  - [x] `UpsertEndpointVoices(ctx, endpointID, voices)` — INSERT ... ON CONFLICT DO UPDATE that updates only `name` and `updated_at`, never `enabled`
+  - [x] `SetEndpointVoiceEnabled(ctx, endpointID, voiceID, enabled)`
+  - [x] Tests for all three including the "preserve enabled on upsert" invariant
+- [x] Backend: API handlers
+  - [x] `ListEndpointVoices` handler in `internal/api/endpoints.go`
+  - [x] `RefreshEndpointVoices` handler — calls `client.ListVoices`, then `UpsertEndpointVoices`, returns the post-upsert list
+  - [x] `SetEndpointVoiceEnabled` handler with body validation `{"enabled": bool}`
+  - [x] Wire routes into `internal/api/server.go` (or wherever chi routes are registered)
+  - [x] API tests covering all three handlers + error paths (404 endpoint, 404 voice on toggle, upstream failure on refresh)
+- [x] Backend: filter the canonical voice list
+  - [x] Update `internal/api/system.go` `ListVoices` to source from `endpoint_voices` instead of live-probing
+  - [x] Update `internal/wyoming/info.go` to use the same path
+  - [x] Tests: enabled endpoint with mixed voice states emits only enabled rows; disabled endpoint emits nothing
+  - [x] Tests: alias resolution for a disabled voice still succeeds (alias-bypass invariant)
+- [x] Frontend: types + API client
+  - [x] Add `EndpointVoice` type to `web/src/lib/api.ts`
+  - [x] Add `api.endpoints.voices.list(id)`, `api.endpoints.voices.refresh(id)`, `api.endpoints.voices.setEnabled(id, voiceId, enabled)`
+- [x] Frontend: Voices section in endpoint form
+  - [x] Add a `<VoiceToggleList>` component (separate file or inline) that mirrors the Models toggle list from 0004
+  - [x] Wire it between Models and Defaults
+  - [x] Add the "Refresh voices from endpoint" button
+  - [x] Optimistic toggle: flip Switch immediately, fire `setEnabled`, roll back on error
+  - [x] Empty state copy: "No voices discovered yet — click Refresh"
+  - [x] Default Voice Select in the Defaults section sources from enabled voices
+- [x] Frontend: collapsed row badge
+  - [x] Add an enabled-voice count badge to the row in `web/src/pages/endpoints.tsx`
+- [x] Frontend: tests
+  - [x] `web/src/components/endpoint-form.test.tsx` — cover R6 scenarios
+  - [x] `web/src/pages/endpoints.test.tsx` — cover collapsed-row badge
+  - [x] Optimistic update happy path + rollback on failure
+- [x] Spec living-doc updates
+  - [x] Confirm spec amendments shipped with this change still match implementation; update changelog entries if shape drifted during implementation
 
 ## Open Questions
 

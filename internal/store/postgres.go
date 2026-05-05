@@ -62,6 +62,17 @@ CREATE TABLE IF NOT EXISTS voice_aliases (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS endpoint_voices (
+    endpoint_id     TEXT NOT NULL,
+    voice_id        TEXT NOT NULL,
+    name            TEXT NOT NULL DEFAULT '',
+    enabled         BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (endpoint_id, voice_id),
+    FOREIGN KEY (endpoint_id) REFERENCES endpoints(id) ON DELETE CASCADE
+);
 `
 
 func (s *PostgresStore) Migrate(ctx context.Context) error {
@@ -246,6 +257,68 @@ func (s *PostgresStore) DeleteVoiceAlias(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListEndpointVoices returns all endpoint_voices rows for the given endpoint, ordered by voice_id.
+func (s *PostgresStore) ListEndpointVoices(ctx context.Context, endpointID string) ([]model.EndpointVoice, error) {
+	rows, err := s.pool.Query(ctx, `SELECT endpoint_id, voice_id, name, enabled, created_at, updated_at FROM endpoint_voices WHERE endpoint_id = $1 ORDER BY voice_id`, endpointID)
+	if err != nil {
+		return nil, fmt.Errorf("store: list endpoint voices: %w", err)
+	}
+	defer rows.Close()
+	var out []model.EndpointVoice
+	for rows.Next() {
+		v, err := scanPgEndpointVoice(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: scan endpoint voice: %w", err)
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// UpsertEndpointVoices inserts new rows or updates name and updated_at on conflict.
+// Preserves the enabled flag.
+func (s *PostgresStore) UpsertEndpointVoices(ctx context.Context, endpointID string, voices []model.EndpointVoice) error {
+	if len(voices) == 0 {
+		return nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("store: upsert endpoint voices: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	now := time.Now().UTC()
+	for _, v := range voices {
+		_, err := tx.Exec(ctx, `INSERT INTO endpoint_voices (endpoint_id, voice_id, name, enabled, created_at, updated_at) VALUES ($1, $2, $3, FALSE, $4, $4) ON CONFLICT (endpoint_id, voice_id) DO UPDATE SET name = EXCLUDED.name, updated_at = EXCLUDED.updated_at`,
+			endpointID, v.VoiceID, v.Name, now)
+		if err != nil {
+			return fmt.Errorf("store: upsert endpoint voice %q: %w", v.VoiceID, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("store: upsert endpoint voices: commit: %w", err)
+	}
+	return nil
+}
+
+// SetEndpointVoiceEnabled flips the enabled flag for an existing endpoint_voices row.
+func (s *PostgresStore) SetEndpointVoiceEnabled(ctx context.Context, endpointID, voiceID string, enabled bool) (*model.EndpointVoice, error) {
+	now := time.Now().UTC()
+	ct, err := s.pool.Exec(ctx, `UPDATE endpoint_voices SET enabled = $1, updated_at = $2 WHERE endpoint_id = $3 AND voice_id = $4`,
+		enabled, now, endpointID, voiceID)
+	if err != nil {
+		return nil, fmt.Errorf("store: set endpoint voice enabled: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return nil, ErrEndpointVoiceNotFound
+	}
+	row := s.pool.QueryRow(ctx, `SELECT endpoint_id, voice_id, name, enabled, created_at, updated_at FROM endpoint_voices WHERE endpoint_id = $1 AND voice_id = $2`, endpointID, voiceID)
+	v, err := scanPgEndpointVoiceRow(row)
+	if err != nil {
+		return nil, fmt.Errorf("store: re-fetch endpoint voice: %w", err)
+	}
+	return &v, nil
+}
+
 // pgScanner abstracts pgx row scanning.
 type pgScanner interface {
 	Scan(dest ...any) error
@@ -286,3 +359,12 @@ func scanPgAliasFromScanner(sc pgScanner) (model.VoiceAlias, error) {
 
 func scanPgAlias(rows pgx.Rows) (model.VoiceAlias, error)  { return scanPgAliasFromScanner(rows) }
 func scanPgAliasRow(row pgx.Row) (model.VoiceAlias, error)  { return scanPgAliasFromScanner(row) }
+
+func scanPgEndpointVoiceFromScanner(sc pgScanner) (model.EndpointVoice, error) {
+	var v model.EndpointVoice
+	err := sc.Scan(&v.EndpointID, &v.VoiceID, &v.Name, &v.Enabled, &v.CreatedAt, &v.UpdatedAt)
+	return v, err
+}
+
+func scanPgEndpointVoice(rows pgx.Rows) (model.EndpointVoice, error)  { return scanPgEndpointVoiceFromScanner(rows) }
+func scanPgEndpointVoiceRow(row pgx.Row) (model.EndpointVoice, error)  { return scanPgEndpointVoiceFromScanner(row) }
