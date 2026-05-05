@@ -27,9 +27,9 @@ type Resolver struct {
 
 **Trigger:** `name == ""` or `name == "default"`
 
-Scans all endpoints (ordered by DB query) for the first enabled endpoint with a non-empty `DefaultVoice`. Returns a `ResolvedVoice` with that endpoint's ID, first model, and default voice. Includes the endpoint's `DefaultSpeed` and `DefaultInstructions`.
+Scans all endpoints (ordered by DB query) for the first enabled endpoint that has a non-empty `DefaultVoice` **and** at least one enabled model. Endpoints with empty `Models` MUST be skipped (per [Default Model](#default-model)). Returns a `ResolvedVoice` with that endpoint's ID, the endpoint's **default model**, and the endpoint's `DefaultVoice`. Includes the endpoint's `DefaultSpeed` and `DefaultInstructions`.
 
-**Error:** If no enabled endpoint has a `DefaultVoice` configured, returns `"voice: no voice specified and no default voice configured"`.
+**Error:** If no eligible endpoint exists, returns `"voice: no voice specified and no default voice configured"`.
 
 #### Stage 1: Alias Lookup
 
@@ -55,9 +55,9 @@ Parsing uses `strings.LastIndex(name, " (")` to find the separator, then splits 
 
 **Trigger:** Always attempted if Stage 2 didn't match.
 
-Uses the first enabled endpoint's first model. The voice name is passed as-is to the TTS endpoint (no transformation). Returns `IsAlias: false`.
+Uses the first enabled endpoint that has at least one enabled model and applies that endpoint's **default model** (see [Default Model](#default-model)). Endpoints with empty `Models` MUST be skipped. The voice name is passed as-is to the TTS endpoint (no transformation). Returns `IsAlias: false`.
 
-**Error:** If no enabled endpoints exist, returns an error.
+**Error:** If no enabled endpoint with at least one enabled model exists, returns an error.
 
 ### ResolvedVoice
 
@@ -100,6 +100,64 @@ type ResolvedVoice struct {
 **WHEN** the resolver runs,
 **THEN** it MUST fall back to the first enabled endpoint and pass `"custom-voice-xyz"` as the voice.
 
+## Default Model
+
+Each endpoint MAY designate one of its enabled models as the **default model**, persisted in `Endpoint.DefaultModel`. The default model is used by:
+
+- **Stage 0 (Default Voice)** — combined with `DefaultVoice` to form the resolved voice.
+- **Stage 3 (Fallback)** — combined with the raw voice name when no other stage matches.
+- **Wyoming `synthesize`** — when input parsing produces no `model` override and no alias is matched.
+
+### Requirements
+
+- `Endpoint.DefaultModel`, when non-empty, MUST be a member of `Endpoint.Models` (the enabled set).
+- If `Endpoint.DefaultModel` is empty, the resolver MUST treat the first entry of `Endpoint.Models` as the default. This preserves behavior for endpoints created before the field existed.
+- If `Endpoint.Models` is empty, the endpoint MUST NOT be eligible for Stage 0 or Stage 3 selection.
+- Persisting an endpoint with a `DefaultModel` that is not in `Models` MUST be rejected by the API (HTTP 400).
+
+### Scenarios
+
+**GIVEN** an endpoint with `Models: ["tts-1", "gpt-4o-mini-tts"]` and `DefaultModel: "gpt-4o-mini-tts"`,
+**WHEN** Stage 0 resolves a `"default"` voice request against this endpoint,
+**THEN** the result MUST use `Model: "gpt-4o-mini-tts"`.
+
+**GIVEN** an endpoint with `Models: ["tts-1"]` and `DefaultModel: ""` (legacy data),
+**WHEN** Stage 3 fallback runs,
+**THEN** the result MUST use `Model: "tts-1"` (first model used as implicit default).
+
+**GIVEN** a request to update an endpoint with `Models: ["tts-1"]` and `DefaultModel: "tts-2"`,
+**WHEN** the API processes the request,
+**THEN** the API MUST respond `400 Bad Request` with code `invalid_default_model`.
+
+## Enabled Models and Voices
+
+Endpoints maintain two distinct sets:
+
+1. **Enabled models** (`Endpoint.Models`) — the subset of models the operator has explicitly opted in to. The full list of models reachable from the upstream TTS API is **not** persisted; it is rediscovered on demand via `GET /api/v1/endpoints/{id}/models` (live probe — see [http-api spec](../http-api/index.md#endpoints-management)).
+2. **Enabled voices** (per-endpoint, persisted in `endpoint_voices`) — the subset of voices the operator has explicitly opted in to. Discovery via `GET /api/v1/endpoints/{id}/remote-voices` returns the live upstream list; the persisted enabled set filters which voices the rest of the system surfaces.
+
+### Requirements
+
+- Newly discovered models MUST default to **disabled** (i.e. NOT added to `Endpoint.Models`). The operator opts each one in explicitly through the management UI.
+- Newly discovered voices MUST default to **disabled** (i.e. inserted into `endpoint_voices` with `enabled = false`). The operator opts each one in explicitly.
+- `Resolve` MUST only consider enabled models. A canonical name (Stage 2) referencing a model that is not in `Endpoint.Models` MUST fail to match and fall through to Stage 3.
+- The Wyoming `describe` voice list and the system `GET /api/v1/voices` view MUST only include voices that are enabled for an enabled endpoint that also has at least one enabled model. Endpoints with empty `Models` MUST contribute no voices to either view.
+- Voice aliases (Stage 1) bypass the enabled-voices filter — an alias MAY reference any voice the upstream provider accepts, even if it is disabled in the management UI. This is intentional: aliases are an explicit opt-in by name.
+
+### Scenarios
+
+**GIVEN** an endpoint card whose voice list is empty (no `endpoint_voices` rows persisted yet),
+**WHEN** the operator clicks "Refresh voices" and the upstream returns `["clone:abc", "qwen-female-1"]`,
+**THEN** both voices MUST be inserted into `endpoint_voices` with `enabled = false` and rendered in the toggle list with the Switch off.
+
+**GIVEN** the operator enables `"clone:abc"` and disables `"qwen-female-1"`,
+**WHEN** a Wyoming client calls `describe` against an enabled endpoint with `DefaultModel: "qwen3-tts"`,
+**THEN** the response MUST include the canonical name `"clone:abc (<endpoint>, qwen3-tts)"` and MUST NOT include any name for `"qwen-female-1"`.
+
+**GIVEN** an alias `"crisp-clone"` exists targeting voice `"qwen-female-1"` (which is currently disabled),
+**WHEN** a Wyoming client requests `voice: "crisp-clone"`,
+**THEN** Stage 1 alias resolution MUST succeed and the request MUST be sent to the upstream with `voice: "qwen-female-1"`.
+
 ## Canonical Voice Naming
 
 ### Format
@@ -115,7 +173,7 @@ Examples:
 
 `voice.CanonicalName(voiceID, endpointName, modelName) → string`
 
-Used by the Wyoming `InfoBuilder` when building the voice list for `describe` responses. For each enabled endpoint, each `voice x model` combination gets a canonical name.
+Used by the Wyoming `InfoBuilder` when building the voice list for `describe` responses. For each enabled endpoint, each combination of `enabled voice × enabled model` (per [Enabled Models and Voices](#enabled-models-and-voices)) gets a canonical name. Disabled models, disabled voices, and disabled endpoints MUST be excluded from the canonical voice list.
 
 ### Parsing
 
@@ -214,7 +272,8 @@ type Endpoint struct {
     Name                  string      // Unique display name
     BaseURL               string      // OpenAI-compatible API base URL
     APIKey                string      // Optional Bearer token
-    Models                StringSlice // Available model IDs
+    Models                StringSlice // Enabled model IDs (subset of upstream-available models)
+    DefaultModel          string      // Selected default model; MUST be in Models when non-empty
     DefaultVoice          string      // Voice for empty/"default" requests
     DefaultSpeed          *float64    // Optional speed override
     DefaultInstructions   *string     // Optional instructions
@@ -222,6 +281,17 @@ type Endpoint struct {
     Enabled               bool        // Active/inactive toggle
     CreatedAt             time.Time
     UpdatedAt             time.Time
+}
+
+// EndpointVoice tracks per-endpoint voice enablement.
+// One row per (EndpointID, VoiceID). Inserted with Enabled=false on discovery.
+type EndpointVoice struct {
+    EndpointID string
+    VoiceID    string  // Voice ID as returned by the upstream provider
+    Name       string  // Human-readable label as returned by the upstream provider
+    Enabled    bool    // false by default; operator opts in via the UI
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
 }
 ```
 
@@ -261,3 +331,4 @@ Custom type implementing `sql.Scanner` and `driver.Valuer` for JSON array serial
 | Date | Description | Document |
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
+| 2026-05-04 | Added `DefaultModel` field, `EndpointVoice` model, and explicit enabled-models / enabled-voices semantics; clarified Stage 0 and Stage 3 use the default model | [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |

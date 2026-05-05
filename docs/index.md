@@ -17,3 +17,6 @@
 |---|--------|------|--------|------------|
 | 0001 | [streaming-tts-client](changes/0001-streaming-tts-client.md) | [tts-synthesis](specs/tts-synthesis/) | draft | — |
 | 0002 | [streaming-proxy-integration](changes/0002-streaming-proxy-integration.md) | [tts-synthesis](specs/tts-synthesis/) | draft | 0001 |
+| 0003 | [alias-form-voice-fix](changes/0003-alias-form-voice-fix.md) | [frontend](specs/frontend/) | draft | — |
+| 0004 | [endpoint-models-toggle](changes/0004-endpoint-models-toggle.md) | [voice-resolution](specs/voice-resolution/) | draft | — |
+| 0005 | [endpoint-voice-toggle](changes/0005-endpoint-voice-toggle.md) | [voice-resolution](specs/voice-resolution/) | draft | 0004 |

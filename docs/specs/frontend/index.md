@@ -69,20 +69,21 @@ Sticky top navigation bar with:
 
 CRUD list with expandable inline forms.
 
-**Collapsed row:** Name, base URL (truncated), model count badge, enabled switch (immediate API call on toggle).
+**Collapsed row:** Name, base URL (truncated), enabled-model count badge, enabled-voice count badge, enabled switch (immediate API call on toggle).
 
 **Expanded form (EndpointForm):**
-- Base URL with validation + auto-probe button
-- API key with show/hide toggle
-- Models (Combobox + Badge management)
-- Default voice selection
-- Default speed slider
-- Default instructions textarea
-- Enabled switch
 
-**Actions:** Test connectivity (measures latency), discover voices, delete with AlertDialog confirmation.
+The form is organized into clearly delimited sections (Card-grouped `<fieldset>` blocks), not a single flat grid:
 
-**Create:** "+ Add Endpoint" button expands a blank form at the top of the list.
+1. **Connection** — Base URL with validation + auto-probe button; API key with show/hide toggle; Enabled switch (lives at the top of this section, not in a grid alongside numeric inputs).
+2. **Models** — Toggle list of upstream-discovered models. One row per discovered model with a `Switch`, the model ID, and a `RadioGroup` marker that designates the **default model**. All discovered models MUST default to disabled. The default-model radio MUST only be selectable for enabled rows. If the user enables a model and no default has been chosen, the form MUST auto-select that model as the default. If the user disables the current default, the form MUST move the default to the next enabled model (or clear it when none remain).
+3. **Voices** — Toggle list of upstream-discovered voices. One row per discovered voice with a `Switch`, the voice ID, and the human-readable name. All discovered voices MUST default to disabled. A "Refresh from endpoint" button MUST re-probe and merge new voices into the list (preserving enabled state of voices already present).
+4. **Defaults** — Default voice selection (Select populated from the voices the user has enabled in section 3); default speed (Input with `step=0.05`, `min=0.25`, `max=4.0`); default instructions (Textarea). These three fields are stacked vertically; they MUST NOT be co-located in a grid with the Enabled switch.
+5. **Streaming** (existing) — Streaming toggle and stream sample rate (unchanged from change 0002).
+
+**Actions:** Test connectivity (measures latency), refresh voices, delete with AlertDialog confirmation.
+
+**Create:** "+ Add Endpoint" button expands a blank form at the top of the list. The Models and Voices sections render an empty state ("Probe the endpoint to discover models and voices") until the first probe succeeds.
 
 ### Voices Page (`/voices`)
 
@@ -101,12 +102,14 @@ CRUD list with expandable inline forms.
 **Expanded form (AliasForm):**
 - Alias name
 - Endpoint selection (dropdown, loads from API)
-- Model selection (scoped to selected endpoint's models)
-- Voice selection (fetched from endpoint remote voices)
+- Model selection — Select populated from the endpoint's enabled `models` list (`Endpoint.Models`).
+- Voice selection — Select populated by fetching `GET /api/v1/endpoints/{id}/remote-voices`, which returns `[]tts.Voice` (`{id, name}`). The dropdown MUST display the voice's `name` (with the `id` as a secondary label when they differ) and submit the `id`. If the live probe fails or returns an empty list, the form MUST fall back to a free-text Input so operators can still configure aliases that target voices the upstream did not enumerate (e.g. cloned voices created out-of-band). The Voice select MUST NOT be populated from `/configured-models` — that endpoint returns model IDs, not voice IDs, and using it conflates the two fields.
 - Speed (optional)
 - Instructions (optional)
 - Languages (comma-separated)
 - Enabled switch
+
+The Voice list is **not** filtered by the per-endpoint enabled-voices set. Aliases are an explicit opt-in by name and may target any voice the upstream provider exposes, including disabled or dynamic voices (e.g. `clone:*` from qwen3-tts).
 
 **Actions:** Test TTS (play button), delete with AlertDialog confirmation.
 
@@ -308,3 +311,4 @@ Build order: `bun run build` produces `web/dist/` → `go build` embeds it.
 | Date | Description | Document |
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
+| 2026-05-04 | Documented endpoint form section restructure (toggle lists for models/voices, default-model radio, Enabled out of the speed grid); fixed alias form voice selection to fetch `/remote-voices` instead of `/configured-models` | [0003-alias-form-voice-fix](../../changes/0003-alias-form-voice-fix.md), [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |
