@@ -149,22 +149,20 @@ function EndpointForm({ endpoint, onSubmit, onCancel, isSaving }: EndpointFormPr
 
   const handleToggleModel = useCallback(
     (id: string, on: boolean) => {
-      if (on) {
-        setSelectedModels([...selectedModels, id])
-        if (defaultModel === '') {
-          setDefaultModel(id)
-        }
-      } else {
-        const next = selectedModels.filter((m) => m !== id)
-        setSelectedModels(next)
-        if (defaultModel === id) {
+      setSelectedModels((prev) => {
+        const next = on ? [...prev, id] : prev.filter((m) => m !== id)
+        setDefaultModel((prevDefault) => {
+          if (on) {
+            return prevDefault === '' ? id : prevDefault
+          }
+          if (prevDefault !== id) return prevDefault
           // Move default to the next still-enabled model in display order, or clear.
-          const nextDefault = modelIds.find((m) => m !== id && next.includes(m)) ?? ''
-          setDefaultModel(nextDefault)
-        }
-      }
+          return modelIds.find((m) => m !== id && next.includes(m)) ?? ''
+        })
+        return next
+      })
     },
-    [selectedModels, defaultModel, modelIds],
+    [modelIds],
   )
 
   const handleDefaultChange = useCallback((id: string) => {
