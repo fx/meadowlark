@@ -290,15 +290,23 @@ function EndpointForm({
 
   const handleToggleVoice = useCallback(
     async (voiceId: string, on: boolean) => {
+      let priorDefault = ''
+      let optimisticDefault = ''
       setEndpointVoices((prev) => {
         const next = prev.map((r) => (r.voice_id === voiceId ? { ...r, enabled: on } : r))
         setDefaultVoice((prevDefault) => {
+          priorDefault = prevDefault
+          let computed: string
           if (on) {
-            return prevDefault === '' ? voiceId : prevDefault
+            computed = prevDefault === '' ? voiceId : prevDefault
+          } else if (prevDefault !== voiceId) {
+            computed = prevDefault
+          } else {
+            // Move default to the next still-enabled voice in display order, or clear.
+            computed = next.find((r) => r.enabled && r.voice_id !== voiceId)?.voice_id ?? ''
           }
-          if (prevDefault !== voiceId) return prevDefault
-          // Move default to the next still-enabled voice in display order, or clear.
-          return next.find((r) => r.enabled && r.voice_id !== voiceId)?.voice_id ?? ''
+          optimisticDefault = computed
+          return computed
         })
         return next
       })
@@ -311,6 +319,11 @@ function EndpointForm({
         setEndpointVoices((rows) =>
           rows.map((r) => (r.voice_id === voiceId ? { ...r, enabled: !on } : r)),
         )
+        // Restore defaultVoice to its pre-optimistic value, but only if the user
+        // hasn't picked a different default while the PATCH was in flight.
+        if (priorDefault !== optimisticDefault) {
+          setDefaultVoice((d) => (d === optimisticDefault ? priorDefault : d))
+        }
         setVoicesError((e as Error).message)
       }
     },

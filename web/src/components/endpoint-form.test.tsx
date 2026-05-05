@@ -27,6 +27,12 @@ const voicesState = {
   setEnabledShouldFail: false,
   refreshError: undefined as string | undefined,
   setEnabledCalls: [] as Array<{ id: string; voiceId: string; enabled: boolean }>,
+  setEnabledDeferred: undefined as
+    | {
+        promise: Promise<void>
+        resolve: () => void
+      }
+    | undefined,
 }
 
 vi.mock('@/lib/api', async () => {
@@ -48,6 +54,9 @@ vi.mock('@/lib/api', async () => {
           }),
           setEnabled: vi.fn(async (id: string, voiceId: string, enabled: boolean) => {
             voicesState.setEnabledCalls.push({ id, voiceId, enabled })
+            if (voicesState.setEnabledDeferred) {
+              await voicesState.setEnabledDeferred.promise
+            }
             if (voicesState.setEnabledShouldFail) throw new Error('toggle failed')
             return {
               endpoint_id: id,
@@ -84,6 +93,7 @@ beforeEach(() => {
   voicesState.setEnabledShouldFail = false
   voicesState.refreshError = undefined
   voicesState.setEnabledCalls = []
+  voicesState.setEnabledDeferred = undefined
 })
 
 const mockEndpoint: Endpoint = {
@@ -1032,6 +1042,128 @@ describe('EndpointForm', () => {
       'data-state',
       'checked',
     )
+  })
+
+  it('voices section: rollback restores defaultVoice when auto-selected on enable failure', async () => {
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', false, 'Alloy')]
+    voicesState.setEnabledShouldFail = true
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <EndpointForm
+        endpoint={{ ...mockEndpoint, default_voice: '' }}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('switch', { name: 'Enable voice alloy' }))
+    await waitFor(() => {
+      expect(screen.getByText('toggle failed')).toBeInTheDocument()
+    })
+    // Submit and confirm default_voice was rolled back to '' (it was auto-selected
+    // optimistically, then must be cleared by the rollback).
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ default_voice: '' }))
+  })
+
+  it('voices section: rollback restores defaultVoice when current default is disabled and toggle fails', async () => {
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', true, 'Alloy'), makeVoice('echo', true, 'Echo')]
+    voicesState.setEnabledShouldFail = true
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    // Disable alloy (the current default). Optimistically default moves to echo.
+    await user.click(screen.getByRole('switch', { name: 'Enable voice alloy' }))
+    await waitFor(() => {
+      expect(screen.getByText('toggle failed')).toBeInTheDocument()
+    })
+    // After rollback default_voice should be back to 'alloy', not 'echo'.
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ default_voice: 'alloy' }))
+  })
+
+  it('voices section: rollback skips defaultVoice restore when toggle did not move it', async () => {
+    // priorDefault === optimisticDefault (we toggled a non-default voice). The
+    // rollback's outer `if` must short-circuit so we don't even call setDefaultVoice.
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', true, 'Alloy'), makeVoice('echo', true, 'Echo')]
+    voicesState.setEnabledShouldFail = true
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('switch', { name: 'Enable voice echo' }))
+    await waitFor(() => {
+      expect(screen.getByText('toggle failed')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ default_voice: 'alloy' }))
+  })
+
+  it('voices section: rollback does NOT overwrite a new default the user picked while the PATCH was in flight', async () => {
+    resetProbe()
+    voicesState.list = [
+      makeVoice('alloy', true, 'Alloy'),
+      makeVoice('echo', true, 'Echo'),
+      makeVoice('nova', true, 'Nova'),
+    ]
+    voicesState.setEnabledShouldFail = true
+    let resolve: () => void = () => {}
+    voicesState.setEnabledDeferred = {
+      promise: new Promise<void>((res) => {
+        resolve = res
+      }),
+      resolve: () => resolve(),
+    }
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
+    })
+    // Disable alloy (current default). Optimistic default moves to echo (next enabled).
+    await user.click(screen.getByRole('switch', { name: 'Enable voice alloy' }))
+    // While the PATCH is pending, the user picks nova as the default — neither
+    // the prior default (alloy) nor the optimistic default (echo).
+    await user.click(screen.getByLabelText('Set nova as default voice'))
+    voicesState.setEnabledDeferred.resolve()
+    await waitFor(() => {
+      expect(screen.getByText('toggle failed')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ default_voice: 'nova' }))
   })
 
   it('voices section: list failure is non-fatal — empty state still renders', async () => {
