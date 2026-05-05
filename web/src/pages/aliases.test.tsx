@@ -93,14 +93,35 @@ function mockFetch(url: string) {
       json: () => Promise.resolve(mockEndpoints),
     })
   }
-  if (url.match(/\/api\/v1\/endpoints\/[^/]+\/remote-voices/)) {
+  if (url.match(/\/api\/v1\/endpoints\/[^/]+\/voices$/)) {
     return Promise.resolve({
       ok: true,
       json: () =>
         Promise.resolve([
-          { id: 'alloy', name: 'Alloy' },
-          { id: 'nova', name: 'Nova' },
-          { id: 'shimmer', name: 'Shimmer' },
+          {
+            endpoint_id: 'ep-1',
+            voice_id: 'alloy',
+            name: 'Alloy',
+            enabled: true,
+            created_at: '',
+            updated_at: '',
+          },
+          {
+            endpoint_id: 'ep-1',
+            voice_id: 'nova',
+            name: 'Nova',
+            enabled: true,
+            created_at: '',
+            updated_at: '',
+          },
+          {
+            endpoint_id: 'ep-1',
+            voice_id: 'shimmer',
+            name: 'Shimmer',
+            enabled: true,
+            created_at: '',
+            updated_at: '',
+          },
         ]),
     })
   }
