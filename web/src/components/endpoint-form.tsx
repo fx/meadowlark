@@ -199,14 +199,18 @@ function EndpointForm({
     setVoicesLoading(true)
     api.endpoints.voices
       .list(endpointId)
-      .then(setEndpointVoices)
+      .then((rows) => {
+        setEndpointVoices(rows)
+        // voicesLoaded only flips on a successful sync — a transient list
+        // failure must NOT make enabledVoices look authoritative for the
+        // defaultVoice reconciliation effect, since that would silently
+        // drop a valid persisted default.
+        setVoicesLoaded(true)
+      })
       .catch(() => {
         // List failure is non-fatal; the user can hit Refresh.
       })
-      .finally(() => {
-        setVoicesLoading(false)
-        setVoicesLoaded(true)
-      })
+      .finally(() => setVoicesLoading(false))
   }, [endpointId])
 
   const handleRefreshVoices = useCallback(async () => {
@@ -215,6 +219,7 @@ function EndpointForm({
     try {
       const rows = await api.endpoints.voices.refresh(endpointId as string)
       setEndpointVoices(rows)
+      setVoicesLoaded(true)
       onVoicesChanged?.()
     } catch (e) {
       setVoicesError((e as Error).message)
@@ -248,7 +253,11 @@ function EndpointForm({
         setEndpointVoices((rows) =>
           rows.map((r) => (r.voice_id === voiceId ? { ...r, enabled: !on } : r)),
         )
-        if (clearedDefault) setDefaultVoice(voiceId)
+        // Restore the cleared default ONLY if we cleared it AND the user has
+        // not picked a new one while this PATCH was in flight.
+        if (clearedDefault) {
+          setDefaultVoice((d) => (d === '' ? voiceId : d))
+        }
         setVoicesError((e as Error).message)
       }
     },
