@@ -350,6 +350,52 @@ func TestPostgresEndpoint_ModelsRoundTrip(t *testing.T) {
 	assert.Equal(t, model.StringSlice{"tts-1", "gpt-4o-mini-tts", "kokoro-v1"}, got.Models)
 }
 
+func TestPostgresCreateEndpoint_RoundTripDefaultModel(t *testing.T) {
+	s := newPgTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("PgWithDefaultModel")
+	ep.DefaultModel = "gpt-4o-mini-tts"
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "gpt-4o-mini-tts", got.DefaultModel)
+}
+
+func TestPostgresUpdateEndpoint_DefaultModel(t *testing.T) {
+	s := newPgTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("PgDefaultModelUpdate")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.DefaultModel)
+	got.DefaultModel = "tts-1"
+	require.NoError(t, s.UpdateEndpoint(ctx, got))
+	got2, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "tts-1", got2.DefaultModel)
+}
+
+// TestPostgresMigrate_DefaultModelColumnIdempotent confirms ADD COLUMN IF NOT
+// EXISTS handles a pre-existing schema without default_model and is a no-op
+// on subsequent invocations.
+func TestPostgresMigrate_DefaultModelColumnIdempotent(t *testing.T) {
+	s := newPgTestStore(t)
+	ctx := context.Background()
+	// Drop the default_model column to simulate a legacy schema, then re-run Migrate.
+	_, err := s.pool.Exec(ctx, `ALTER TABLE endpoints DROP COLUMN default_model`)
+	require.NoError(t, err)
+	require.NoError(t, s.Migrate(ctx))
+	require.NoError(t, s.Migrate(ctx))
+	// Now create + read back to verify the re-added column has the right default.
+	ep := makeEndpoint("PgAfterMigrate")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.DefaultModel)
+}
+
 func TestPostgresVoiceAlias_LanguagesRoundTrip(t *testing.T) {
 	s := newPgTestStore(t)
 	ctx := context.Background()

@@ -7,6 +7,7 @@ export interface Endpoint {
   base_url: string
   api_key?: string
   models: string[]
+  default_model: string
   default_voice: string
   default_speed?: number
   default_instructions?: string
@@ -23,6 +24,7 @@ export interface CreateEndpoint {
   base_url: string
   api_key?: string
   models: string[]
+  default_model?: string
   default_voice?: string
   default_speed?: number
   default_instructions?: string
@@ -37,6 +39,7 @@ export interface UpdateEndpoint {
   base_url?: string
   api_key?: string
   models?: string[]
+  default_model?: string
   default_voice?: string
   default_speed?: number
   default_instructions?: string

@@ -50,6 +50,7 @@ type createEndpointRequest struct {
 	BaseURL               string            `json:"base_url"`
 	APIKey                string            `json:"api_key"`
 	Models                model.StringSlice `json:"models"`
+	DefaultModel          string            `json:"default_model"`
 	DefaultVoice          string            `json:"default_voice"`
 	DefaultSpeed          *float64          `json:"default_speed"`
 	DefaultInstructions   *string           `json:"default_instructions"`
@@ -84,6 +85,10 @@ func (s *Server) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "bad_request", "models is required and must be non-empty")
 		return
 	}
+	if req.DefaultModel != "" && !containsString(req.Models, req.DefaultModel) {
+		respondError(w, http.StatusBadRequest, "invalid_default_model", "default_model must be one of the configured models")
+		return
+	}
 	if req.DefaultSpeed != nil && (*req.DefaultSpeed < 0.25 || *req.DefaultSpeed > 4.0) {
 		respondError(w, http.StatusBadRequest, "bad_request", "default_speed must be between 0.25 and 4.0")
 		return
@@ -115,7 +120,7 @@ func (s *Server) CreateEndpoint(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	ep := &model.Endpoint{
 		ID: uuid.New().String(), Name: req.Name, BaseURL: req.BaseURL, APIKey: req.APIKey,
-		Models: req.Models, DefaultVoice: req.DefaultVoice, DefaultSpeed: req.DefaultSpeed, DefaultInstructions: req.DefaultInstructions,
+		Models: req.Models, DefaultModel: req.DefaultModel, DefaultVoice: req.DefaultVoice, DefaultSpeed: req.DefaultSpeed, DefaultInstructions: req.DefaultInstructions,
 		DefaultResponseFormat: responseFormat, Enabled: enabled, CreatedAt: now, UpdatedAt: now,
 	}
 	if req.StreamingEnabled != nil {
@@ -138,6 +143,7 @@ type updateEndpointRequest struct {
 	BaseURL               *string            `json:"base_url"`
 	APIKey                *string            `json:"api_key"`
 	Models                *model.StringSlice `json:"models"`
+	DefaultModel          *string            `json:"default_model"`
 	DefaultVoice          *string            `json:"default_voice"`
 	DefaultSpeed          *float64           `json:"default_speed"`
 	DefaultInstructions   *string            `json:"default_instructions"`
@@ -206,6 +212,13 @@ func (s *Server) UpdateEndpoint(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ep.Models = *req.Models
+	}
+	if req.DefaultModel != nil {
+		ep.DefaultModel = *req.DefaultModel
+	}
+	if ep.DefaultModel != "" && !containsString(ep.Models, ep.DefaultModel) {
+		respondError(w, http.StatusBadRequest, "invalid_default_model", "default_model must be one of the configured models")
+		return
 	}
 	if req.DefaultVoice != nil {
 		ep.DefaultVoice = *req.DefaultVoice
@@ -289,7 +302,7 @@ func (s *Server) TestEndpoint(w http.ResponseWriter, r *http.Request) {
 	client := s.clientFactory(ep)
 	start := time.Now()
 	body, synthErr := client.Synthesize(r.Context(), &tts.SynthesizeRequest{
-		Model: ep.Models[0], Voice: "test", Input: "test", ResponseFormat: "wav",
+		Model: ep.EffectiveDefaultModel(), Voice: "test", Input: "test", ResponseFormat: "wav",
 	})
 	latency := time.Since(start).Milliseconds()
 	if synthErr != nil {
@@ -360,6 +373,16 @@ type probeRequest struct {
 type probeResponse struct {
 	Models []tts.Model `json:"models"`
 	Voices []tts.Voice `json:"voices"`
+}
+
+// containsString reports whether ss contains s.
+func containsString(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // ProbeEndpoint probes a remote endpoint for models and voices without saving it.

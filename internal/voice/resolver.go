@@ -33,10 +33,10 @@ func NewResolver(endpoints EndpointLister, aliases AliasLister) *Resolver {
 //
 // Resolution priority:
 //  0. If name is empty or "default", resolve from the first enabled endpoint's DefaultVoice
-//     using that endpoint's own ID and first model for consistency
+//     using that endpoint's own ID and EffectiveDefaultModel() for consistency
 //  1. Voice alias (by name, must be enabled)
 //  2. Canonical name ("voice (endpoint, model)" format)
-//  3. Fallback to first enabled endpoint's first model and the voice name as-is
+//  3. Fallback to first enabled endpoint's EffectiveDefaultModel() and the voice name as-is
 func (r *Resolver) Resolve(ctx context.Context, name string) (*model.ResolvedVoice, error) {
 	// 0. If voice is empty or "default", resolve to the configured default voice.
 	if name == "" || name == "default" {
@@ -78,14 +78,10 @@ func (r *Resolver) resolveDefaultVoice(ctx context.Context) (*model.ResolvedVoic
 		if !ep.Enabled || ep.DefaultVoice == "" {
 			continue
 		}
-		m := ""
-		if len(ep.Models) > 0 {
-			m = ep.Models[0]
-		}
 		return &model.ResolvedVoice{
 			Name:         ep.DefaultVoice,
 			EndpointID:   ep.ID,
-			Model:        m,
+			Model:        ep.EffectiveDefaultModel(),
 			Voice:        ep.DefaultVoice,
 			Speed:        ep.DefaultSpeed,
 			Instructions: ep.DefaultInstructions,
@@ -205,7 +201,7 @@ func (r *Resolver) resolveFallback(ctx context.Context, voiceName string) (*mode
 		return &model.ResolvedVoice{
 			Name:         voiceName,
 			EndpointID:   ep.ID,
-			Model:        ep.Models[0],
+			Model:        ep.EffectiveDefaultModel(),
 			Voice:        voiceName,
 			Speed:        ep.DefaultSpeed,
 			Instructions: ep.DefaultInstructions,

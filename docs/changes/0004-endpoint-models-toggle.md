@@ -5,7 +5,7 @@
 Replace the current chip-and-combobox model picker on the Endpoints page with a toggle list of upstream-discovered models. All discovered models start disabled; the operator opts each in. Add a `default_model` concept (column + radio in the toggle list). Restructure the endpoint form so the Enabled switch lives in the Connection section, not in a grid alongside Default Speed.
 
 **Spec:** [voice-resolution](../specs/voice-resolution/), [frontend](../specs/frontend/), [data-persistence](../specs/data-persistence/), [http-api](../specs/http-api/)
-**Status:** draft
+**Status:** complete
 **Depends On:** —
 
 ## Motivation
@@ -180,38 +180,38 @@ The collapsed endpoint row MUST display a badge with the count of enabled models
 
 ## Tasks
 
-- [ ] Backend: schema + model
-  - [ ] Add `DefaultModel` field to `model.Endpoint` with `json:"default_model"` tag (`internal/model/model.go`)
-  - [ ] Add `default_model` column to SQLite schema and add an idempotent `ALTER TABLE` migration in `internal/store/sqlite.go`
-  - [ ] Add `default_model` column to Postgres schema with `ADD COLUMN IF NOT EXISTS` migration in `internal/store/postgres.go`
-  - [ ] Update SQLite `CreateEndpoint`, `UpdateEndpoint`, `GetEndpoint`, `ListEndpoints` to read/write `default_model`
-  - [ ] Update Postgres equivalents
-  - [ ] Add store tests: round-trip create/read with `default_model`; migration idempotency on a pre-existing schema (`internal/store/sqlite_test.go`, `postgres_test.go`)
-- [ ] Backend: API validation
-  - [ ] Add `DefaultModel *string` (or required `string`) to `createEndpointRequest` and `updateEndpointRequest` in `internal/api/endpoints.go`
-  - [ ] Validate: when present and non-empty, MUST be a member of `models`; otherwise return `400` with code `invalid_default_model`
-  - [ ] Add API tests in `internal/api/endpoints_test.go`: valid default, empty default, invalid default (rejected)
-- [ ] Backend: resolver
-  - [ ] Add `(*Endpoint).EffectiveDefaultModel() string` helper in `internal/model/model.go` returning `DefaultModel` or `Models[0]`
-  - [ ] Update `internal/voice/resolver.go` Stage 0 and Stage 3 to call the helper
-  - [ ] Update `internal/wyoming/info_builder.go` (or equivalent voice-list builder) — verify it does NOT need to change because it iterates `Models`; if it special-cases `Models[0]`, switch to the helper
-  - [ ] Add resolver tests covering both default scenarios from R3
-- [ ] Frontend: types
-  - [ ] Add `default_model: string` to `Endpoint`, `CreateEndpoint`, `UpdateEndpoint` types (`web/src/lib/api.ts`)
-- [ ] Frontend: form refactor
-  - [ ] Create `<ModelToggleList>` component (could be inline in `endpoint-form.tsx` or extracted to a sibling file)
-  - [ ] Replace lines ~202–238 (Combobox + Badge block) with the toggle list
-  - [ ] Wire up Switch + RadioGroup state management per R4 (auto-select default, move default on disable, clear when no enabled rows remain)
-  - [ ] Move Enabled switch into the Connection section, above or beside API key (own row, no `pt-6` grid hack)
-  - [ ] Restructure Defaults section: Default voice → Default speed → Default instructions, stacked (no `grid-cols-2` pairing with Enabled)
-  - [ ] Submit button MUST stay disabled when `selectedModels.length === 0` or when `default_model` is empty
-- [ ] Frontend: tests
-  - [ ] Replace existing combobox tests in `web/src/components/endpoint-form.test.tsx` with toggle-list tests
-  - [ ] Cover R4 scenarios: empty form (probe → all off), enable first → auto-default, disable current default → move default
-  - [ ] Cover R5 layout: assert Enabled switch is sibling of API key, not Default Speed
-  - [ ] Update `web/src/pages/endpoints.test.tsx` page-level tests if they still assume the old form shape
+- [x] Backend: schema + model
+  - [x] Add `DefaultModel` field to `model.Endpoint` with `json:"default_model"` tag (`internal/model/model.go`)
+  - [x] Add `default_model` column to SQLite schema and add an idempotent `ALTER TABLE` migration in `internal/store/sqlite.go`
+  - [x] Add `default_model` column to Postgres schema with `ADD COLUMN IF NOT EXISTS` migration in `internal/store/postgres.go`
+  - [x] Update SQLite `CreateEndpoint`, `UpdateEndpoint`, `GetEndpoint`, `ListEndpoints` to read/write `default_model`
+  - [x] Update Postgres equivalents
+  - [x] Add store tests: round-trip create/read with `default_model`; migration idempotency on a pre-existing schema (`internal/store/sqlite_test.go`, `postgres_test.go`)
+- [x] Backend: API validation
+  - [x] Add `DefaultModel *string` (or required `string`) to `createEndpointRequest` and `updateEndpointRequest` in `internal/api/endpoints.go`
+  - [x] Validate: when present and non-empty, MUST be a member of `models`; otherwise return `400` with code `invalid_default_model`
+  - [x] Add API tests in `internal/api/endpoints_test.go`: valid default, empty default, invalid default (rejected)
+- [x] Backend: resolver
+  - [x] Add `(*Endpoint).EffectiveDefaultModel() string` helper in `internal/model/model.go` returning `DefaultModel` or `Models[0]`
+  - [x] Update `internal/voice/resolver.go` Stage 0 and Stage 3 to call the helper
+  - [x] `internal/wyoming/info.go` already iterates `Models` only — no change needed
+  - [x] Add resolver tests covering both default scenarios from R3
+- [x] Frontend: types
+  - [x] Add `default_model: string` to `Endpoint`, `CreateEndpoint`, `UpdateEndpoint` types (`web/src/lib/api.ts`)
+- [x] Frontend: form refactor
+  - [x] Create `<ModelToggleList>` component (inline in `endpoint-form.tsx`)
+  - [x] Replace the Combobox + Badge block with the toggle list
+  - [x] Wire up Switch + radio state management per R4 (auto-select default, move default on disable, clear when no enabled rows remain)
+  - [x] Move Enabled switch into the Connection section beside API key (no `pt-6` grid hack)
+  - [x] Restructure Defaults section: Default voice → Default speed → Default instructions, stacked (no `grid-cols-2` pairing with Enabled)
+  - [x] Submit button stays disabled when `selectedModels.length === 0` or when `default_model` is empty
+- [x] Frontend: tests
+  - [x] Replace existing combobox tests in `web/src/components/endpoint-form.test.tsx` with toggle-list tests
+  - [x] Cover R4 scenarios: empty form (probe → all off), enable first → auto-default, disable current default → move default
+  - [x] Cover R5 layout: assert Enabled switch is sibling of API key, not Default Speed
+  - [x] Update `web/src/pages/endpoints.test.tsx` page-level tests for the new form shape
 - [ ] Spec living-doc updates
-  - [ ] Confirm the [voice-resolution](../specs/voice-resolution/) and [frontend](../specs/frontend/) spec amendments shipped with this change still match the implementation; add changelog entry once merged
+  - [ ] Confirm the [voice-resolution](../specs/voice-resolution/) and [frontend](../specs/frontend/) spec amendments shipped with this change still match the implementation; add changelog entry once merged (deferred until 0005 lands so the Voices section is final)
 
 ## Open Questions
 

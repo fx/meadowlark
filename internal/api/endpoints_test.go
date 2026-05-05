@@ -307,6 +307,79 @@ func TestUpdateEndpoint_EmptyName(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+func TestCreateEndpoint_ValidDefaultModel(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	payload := `{"name":"OpenAI","base_url":"https://api.openai.com/v1","models":["tts-1","tts-1-hd"],"default_model":"tts-1-hd"}`
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints", "application/json", strings.NewReader(payload))
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	var body model.Endpoint
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "tts-1-hd", body.DefaultModel)
+}
+
+func TestCreateEndpoint_EmptyDefaultModelAccepted(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	payload := `{"name":"OpenAI","base_url":"https://api.openai.com/v1","models":["tts-1"],"default_model":""}`
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints", "application/json", strings.NewReader(payload))
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	var body model.Endpoint
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Empty(t, body.DefaultModel)
+}
+
+func TestCreateEndpoint_InvalidDefaultModel(t *testing.T) {
+	ms := &endpointMockStore{}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	payload := `{"name":"OpenAI","base_url":"https://api.openai.com/v1","models":["tts-1"],"default_model":"tts-2"}`
+	resp, err := http.Post(ts.URL+"/api/v1/endpoints", "application/json", strings.NewReader(payload))
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_default_model")
+}
+
+func TestUpdateEndpoint_ValidDefaultModel(t *testing.T) {
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "OpenAI", BaseURL: "https://api.openai.com/v1", Models: model.StringSlice{"tts-1", "tts-1-hd"}, Enabled: true, DefaultResponseFormat: "wav"}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/endpoints/ep1", strings.NewReader(`{"default_model":"tts-1-hd"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body model.Endpoint
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "tts-1-hd", body.DefaultModel)
+}
+
+func TestUpdateEndpoint_InvalidDefaultModel(t *testing.T) {
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "OpenAI", BaseURL: "https://api.openai.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/endpoints/ep1", strings.NewReader(`{"default_model":"tts-2"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(body), "invalid_default_model")
+}
+
+func TestUpdateEndpoint_DefaultModelClearedToEmpty(t *testing.T) {
+	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "OpenAI", BaseURL: "https://api.openai.com/v1", Models: model.StringSlice{"tts-1"}, DefaultModel: "tts-1", Enabled: true, DefaultResponseFormat: "wav"}}}
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/endpoints/ep1", strings.NewReader(`{"default_model":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var body model.Endpoint
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Empty(t, body.DefaultModel)
+}
+
 func TestUpdateEndpoint_EmptyModels(t *testing.T) {
 	ms := &endpointMockStore{endpoints: []model.Endpoint{{ID: "ep1", Name: "OpenAI", BaseURL: "https://api.openai.com/v1", Models: model.StringSlice{"tts-1"}, Enabled: true}}}
 	_, ts := newEndpointTestServer(ms); defer ts.Close()

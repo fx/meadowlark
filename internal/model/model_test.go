@@ -130,6 +130,23 @@ func TestResolvedVoice_JSON(t *testing.T) {
 	assert.Equal(t, rv.IsAlias, got.IsAlias)
 }
 
+func TestEndpoint_EffectiveDefaultModel(t *testing.T) {
+	tests := []struct {
+		name string
+		ep   Endpoint
+		want string
+	}{
+		{"explicit default", Endpoint{Models: StringSlice{"tts-1", "gpt-4o-mini-tts"}, DefaultModel: "gpt-4o-mini-tts"}, "gpt-4o-mini-tts"},
+		{"empty default falls back to first", Endpoint{Models: StringSlice{"tts-1", "tts-1-hd"}}, "tts-1"},
+		{"no models", Endpoint{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.ep.EffectiveDefaultModel())
+		})
+	}
+}
+
 func TestStringSlice_ScanAndValue_RoundTrip(t *testing.T) {
 	original := StringSlice{"tts-1", "gpt-4o-mini-tts", "kokoro-v1"}
 	val, err := original.Value()

@@ -386,3 +386,86 @@ func TestUpdateEndpoint_StreamingFields(t *testing.T) {
 func TestSQLiteStore_ImplementsStore(t *testing.T) {
 	var _ Store = (*SQLiteStore)(nil)
 }
+
+func TestCreateEndpoint_RoundTripDefaultModel(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("WithDefaultModel")
+	ep.DefaultModel = "gpt-4o-mini-tts"
+	ep.Models = model.StringSlice{"tts-1", "gpt-4o-mini-tts"}
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "gpt-4o-mini-tts", got.DefaultModel)
+}
+
+func TestUpdateEndpoint_DefaultModel(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	ep := makeEndpoint("DefaultModelUpdate")
+	require.NoError(t, s.CreateEndpoint(ctx, ep))
+	got, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.Empty(t, got.DefaultModel)
+	got.DefaultModel = "tts-1"
+	require.NoError(t, s.UpdateEndpoint(ctx, got))
+	got2, err := s.GetEndpoint(ctx, ep.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "tts-1", got2.DefaultModel)
+}
+
+// TestMigrate_DefaultModelColumnIdempotent verifies that running Migrate against
+// a pre-existing schema without the default_model column adds the column with an
+// empty default and that subsequent migrations are a no-op. This exercises the
+// alter-if-not-exists path used when upgrading from an older binary.
+func TestMigrate_DefaultModelColumnIdempotent(t *testing.T) {
+	s, err := NewSQLiteStore(":memory:")
+	require.NoError(t, err)
+	defer s.Close()
+	ctx := context.Background()
+	// Create the legacy schema (no default_model column) directly.
+	_, err = s.db.ExecContext(ctx, `CREATE TABLE endpoints (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		base_url TEXT NOT NULL,
+		api_key TEXT DEFAULT '',
+		models TEXT NOT NULL DEFAULT '[]',
+		default_voice TEXT NOT NULL DEFAULT '',
+		default_speed REAL,
+		default_instructions TEXT,
+		default_response_format TEXT NOT NULL DEFAULT 'wav',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		streaming_enabled INTEGER NOT NULL DEFAULT 0,
+		stream_sample_rate INTEGER NOT NULL DEFAULT 24000,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+		updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	)`)
+	require.NoError(t, err)
+	_, err = s.db.ExecContext(ctx, `CREATE TABLE voice_aliases (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL UNIQUE,
+		endpoint_id TEXT NOT NULL REFERENCES endpoints(id),
+		model TEXT NOT NULL,
+		voice TEXT NOT NULL,
+		speed REAL,
+		instructions TEXT,
+		languages TEXT NOT NULL DEFAULT '["en"]',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+		updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+	)`)
+	require.NoError(t, err)
+	// Insert a legacy row with a populated models array.
+	_, err = s.db.ExecContext(ctx, `INSERT INTO endpoints (id, name, base_url, models) VALUES ('legacy-1', 'Legacy', 'https://x', '["tts-1","tts-1-hd"]')`)
+	require.NoError(t, err)
+	// Run migrate twice to confirm idempotency.
+	require.NoError(t, s.Migrate(ctx))
+	require.NoError(t, s.Migrate(ctx))
+	got, err := s.GetEndpoint(ctx, "legacy-1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "", got.DefaultModel)
+	// The first model still acts as the effective default for legacy rows.
+	assert.Equal(t, "tts-1", got.EffectiveDefaultModel())
+}
