@@ -12,6 +12,8 @@ const mockEndpoints: Endpoint[] = [
     base_url: 'https://api.openai.com/v1',
     api_key: 'sk-123',
     models: ['tts-1', 'tts-1-hd'],
+    default_model: 'tts-1',
+    default_voice: '',
     default_speed: 1.0,
     default_instructions: '',
     default_response_format: 'wav',
@@ -26,6 +28,8 @@ const mockEndpoints: Endpoint[] = [
     name: 'Local TTS',
     base_url: 'http://localhost:8080',
     models: ['piper'],
+    default_model: 'piper',
+    default_voice: '',
     default_response_format: 'wav',
     streaming_enabled: false,
     stream_sample_rate: 24000,
@@ -90,7 +94,22 @@ describe('EndpointsPage', () => {
 
   it('creates an endpoint', async () => {
     const user = userEvent.setup()
-    const fetchMock = mockFetchWith(mockEndpoints)
+    // Route fetch by URL: list returns endpoints, probe returns a model so the
+    // toggle list has a row to enable, POST is the actual create.
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/probe')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ models: [{ id: 'model-1' }], voices: [] }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockEndpoints),
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
     render(<EndpointsPage />)
     await waitFor(() => {
@@ -99,7 +118,9 @@ describe('EndpointsPage', () => {
     await user.click(screen.getByText('+ Add Endpoint'))
     await user.type(screen.getByLabelText('Name'), 'New EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://new.api.com')
-    await user.type(screen.getByLabelText('Models'), 'model-1')
+    // Wait for probe to surface model-1 then enable it.
+    const modelSwitch = await screen.findByRole('switch', { name: 'Enable model-1' })
+    await user.click(modelSwitch)
     await user.click(screen.getByText('Create'))
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(

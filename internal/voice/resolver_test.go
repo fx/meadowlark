@@ -491,6 +491,68 @@ func TestResolve_EmptyVoice_NoEndpoints(t *testing.T) {
 	assert.Contains(t, err.Error(), "no voice specified and no default voice configured")
 }
 
+func TestResolve_EmptyVoice_UsesEffectiveDefaultModel(t *testing.T) {
+	eps := []model.Endpoint{
+		{
+			ID:           "ep-1",
+			Name:         "OpenAI",
+			Models:       model.StringSlice{"tts-1", "gpt-4o-mini-tts"},
+			DefaultModel: "gpt-4o-mini-tts",
+			DefaultVoice: "alloy",
+			Enabled:      true,
+		},
+	}
+	r := NewResolver(
+		&mockEndpointLister{endpoints: eps},
+		&mockAliasLister{aliases: nil},
+	)
+	resolved, err := r.Resolve(context.Background(), "")
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	assert.Equal(t, "gpt-4o-mini-tts", resolved.Model)
+	assert.Equal(t, "ep-1", resolved.EndpointID)
+}
+
+func TestResolve_EmptyVoice_FallsBackToFirstModelWhenNoDefault(t *testing.T) {
+	eps := []model.Endpoint{
+		{
+			ID:           "ep-1",
+			Name:         "OpenAI",
+			Models:       model.StringSlice{"tts-1", "tts-1-hd"},
+			DefaultVoice: "alloy",
+			Enabled:      true,
+		},
+	}
+	r := NewResolver(
+		&mockEndpointLister{endpoints: eps},
+		&mockAliasLister{aliases: nil},
+	)
+	resolved, err := r.Resolve(context.Background(), "")
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	assert.Equal(t, "tts-1", resolved.Model)
+}
+
+func TestResolve_Fallback_UsesEffectiveDefaultModel(t *testing.T) {
+	eps := []model.Endpoint{
+		{
+			ID:           "ep-1",
+			Name:         "OpenAI",
+			Models:       model.StringSlice{"tts-1", "gpt-4o-mini-tts"},
+			DefaultModel: "gpt-4o-mini-tts",
+			Enabled:      true,
+		},
+	}
+	r := NewResolver(
+		&mockEndpointLister{endpoints: eps},
+		&mockAliasLister{aliases: nil},
+	)
+	resolved, err := r.Resolve(context.Background(), "some-voice")
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	assert.Equal(t, "gpt-4o-mini-tts", resolved.Model)
+}
+
 func TestResolve_EmptyVoice_EndpointListError(t *testing.T) {
 	r := NewResolver(
 		&mockEndpointLister{err: errors.New("db down")},

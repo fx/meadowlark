@@ -62,7 +62,7 @@ changes:
     path: changes/0004-endpoint-models-toggle.md
     description: Replace endpoint-form chips with a model toggle list, default-disabled discovered models, add default_model column and picker, restructure form layout
     spec: voice-resolution
-    status: draft
+    status: complete
     depends_on: []
 
   - id: "0005"

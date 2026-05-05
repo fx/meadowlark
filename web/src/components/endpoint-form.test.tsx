@@ -25,6 +25,7 @@ const mockEndpoint: Endpoint = {
   base_url: 'https://api.example.com',
   api_key: 'sk-123',
   models: ['tts-1', 'tts-1-hd'],
+  default_model: 'tts-1',
   default_voice: 'alloy',
   default_speed: 1.5,
   default_instructions: 'Speak clearly',
@@ -36,13 +37,16 @@ const mockEndpoint: Endpoint = {
   updated_at: '2024-01-01T00:00:00Z',
 }
 
-/** Open the models combobox dropdown via the toggle button. */
-async function openModelsDropdown(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Toggle options' }))
+function resetProbe() {
+  mockProbe.models = []
+  mockProbe.voices = []
+  mockProbe.status = 'idle'
+  mockProbe.error = undefined
 }
 
 describe('EndpointForm', () => {
   it('renders empty form for create mode', () => {
+    resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByLabelText('Name')).toHaveValue('')
     expect(screen.getByLabelText('Base URL')).toHaveValue('')
@@ -50,6 +54,7 @@ describe('EndpointForm', () => {
   })
 
   it('renders populated form for edit mode', () => {
+    resetProbe()
     render(
       <EndpointForm
         endpoint={mockEndpoint}
@@ -63,7 +68,8 @@ describe('EndpointForm', () => {
     expect(screen.getByText('Update')).toBeInTheDocument()
   })
 
-  it('renders model badges for existing endpoint', () => {
+  it('renders model rows for existing endpoint', () => {
+    resetProbe()
     render(
       <EndpointForm
         endpoint={mockEndpoint}
@@ -74,14 +80,17 @@ describe('EndpointForm', () => {
     )
     expect(screen.getByText('tts-1')).toBeInTheDocument()
     expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
+    expect(screen.getByLabelText('Set tts-1 as default')).toBeChecked()
   })
 
   it('shows Saving... when isSaving is true', () => {
+    resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={true} />)
     expect(screen.getByText('Saving...')).toBeInTheDocument()
   })
 
   it('calls onCancel when Cancel is clicked', async () => {
+    resetProbe()
     const user = userEvent.setup()
     const onCancel = vi.fn()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={onCancel} isSaving={false} />)
@@ -90,6 +99,7 @@ describe('EndpointForm', () => {
   })
 
   it('toggles API key visibility', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     const keyInput = screen.getByLabelText('API Key')
@@ -100,32 +110,145 @@ describe('EndpointForm', () => {
     expect(keyInput).toHaveAttribute('type', 'password')
   })
 
-  it('submits form data for create with models added via combobox', async () => {
-    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-2' }]
+  it('empty form: probe surfaces models all toggled off, no default selected, submit disabled', () => {
+    resetProbe()
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }, { id: 'gpt-4o-mini-tts' }]
+    mockProbe.status = 'success'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    // All switches are off (data-state=unchecked)
+    expect(screen.getByRole('switch', { name: 'Enable tts-1' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
+    expect(screen.getByRole('switch', { name: 'Enable tts-1-hd' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
+    // No default selected
+    expect(screen.getByLabelText('Set tts-1 as default')).not.toBeChecked()
+    // All radios are disabled (since all switches are off)
+    expect(screen.getByLabelText('Set tts-1 as default')).toBeDisabled()
+    // Submit disabled
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
+  })
+
+  it('enabling first model auto-selects it as default', async () => {
+    resetProbe()
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    mockProbe.status = 'success'
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByLabelText('Set tts-1-hd as default')).not.toBeChecked()
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1-hd' }))
+    expect(screen.getByLabelText('Set tts-1-hd as default')).toBeChecked()
+    expect(screen.getByLabelText('Set tts-1-hd as default')).not.toBeDisabled()
+  })
+
+  it('disabling current default moves default to next enabled in display order', async () => {
+    resetProbe()
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    mockProbe.status = 'success'
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    // Enable both, in order
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1-hd' }))
+    // Default is tts-1 (auto-selected on first enable)
+    expect(screen.getByLabelText('Set tts-1 as default')).toBeChecked()
+    // Disable tts-1
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
+    // Default should shift to tts-1-hd
+    expect(screen.getByLabelText('Set tts-1-hd as default')).toBeChecked()
+    expect(screen.getByLabelText('Set tts-1 as default')).not.toBeChecked()
+  })
+
+  it('disabling a non-default model leaves the default unchanged', async () => {
+    resetProbe()
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    mockProbe.status = 'success'
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1-hd' }))
+    expect(screen.getByLabelText('Set tts-1 as default')).toBeChecked()
+    // Disable the non-default model.
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1-hd' }))
+    // Default stays on tts-1.
+    expect(screen.getByLabelText('Set tts-1 as default')).toBeChecked()
+  })
+
+  it('disabling the last enabled model clears the default', async () => {
+    resetProbe()
+    mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
+    const user = userEvent.setup()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
+    expect(screen.getByLabelText('Set tts-1 as default')).toBeChecked()
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
+    expect(screen.getByLabelText('Set tts-1 as default')).not.toBeChecked()
+    // Submit disabled (no enabled models)
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled()
+  })
+
+  it('operator can switch the default to another enabled model via radio', async () => {
+    resetProbe()
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
-    await user.type(screen.getByLabelText('Name'), 'New EP')
-    await user.type(screen.getByLabelText('Base URL'), 'https://api.test.com')
-    // Open combobox and select a model from dropdown
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
-    // Open again to add second model
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-2'))
+    // Name and URL first; typing into URL clears selectedModels.
+    await user.type(screen.getByLabelText('Name'), 'EP')
+    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1-hd' }))
+    await user.click(screen.getByLabelText('Set tts-1-hd as default'))
+    expect(screen.getByLabelText('Set tts-1-hd as default')).toBeChecked()
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'New EP',
-        base_url: 'https://api.test.com',
-        models: ['tts-1', 'tts-2'],
-        enabled: true,
+        models: ['tts-1', 'tts-1-hd'],
+        default_model: 'tts-1-hd',
       }),
     )
-    mockProbe.models = []
+  })
+
+  it('Enabled switch is sibling of API key, not Default Speed', () => {
+    resetProbe()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    const enabledSwitch = screen.getByRole('switch', { name: 'Enabled' })
+    const connection = enabledSwitch.closest('[data-section="connection"]')
+    expect(connection).not.toBeNull()
+    // API key input should also be inside the connection section
+    expect(connection?.contains(screen.getByLabelText('API Key'))).toBe(true)
+    // Default Speed input should NOT be inside the connection section
+    expect(connection?.contains(screen.getByLabelText('Default Speed'))).toBe(false)
+  })
+
+  it('persisted-but-undiscovered models still appear so the operator can disable them', () => {
+    // Probe returns nothing, but the endpoint already has persisted models.
+    resetProbe()
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    expect(screen.getByRole('switch', { name: 'Enable tts-1' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
+    expect(screen.getByRole('switch', { name: 'Enable tts-1-hd' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
   })
 
   it('submits form data for update', async () => {
+    resetProbe()
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(
@@ -143,11 +266,13 @@ describe('EndpointForm', () => {
       expect.objectContaining({
         name: 'Updated EP',
         base_url: 'https://api.example.com',
+        default_model: 'tts-1',
       }),
     )
   })
 
   it('populates speed and instructions from endpoint', () => {
+    resetProbe()
     render(
       <EndpointForm
         endpoint={mockEndpoint}
@@ -161,15 +286,15 @@ describe('EndpointForm', () => {
   })
 
   it('submits api key, speed, and instructions when filled', async () => {
+    resetProbe()
     mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Full EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    // Add model via combobox dropdown
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
     await user.type(screen.getByLabelText('API Key'), 'sk-test')
     await user.type(screen.getByLabelText('Default Speed'), '1.5')
     await user.type(screen.getByLabelText('Default Instructions'), 'Speak slowly')
@@ -181,18 +306,18 @@ describe('EndpointForm', () => {
         default_instructions: 'Speak slowly',
       }),
     )
-    mockProbe.models = []
   })
 
   it('treats NaN speed as undefined', async () => {
+    resetProbe()
     mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'NaN EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
     await user.type(screen.getByLabelText('Default Speed'), 'abc')
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
@@ -200,18 +325,18 @@ describe('EndpointForm', () => {
         default_speed: undefined,
       }),
     )
-    mockProbe.models = []
   })
 
   it('sends undefined for empty optional fields', async () => {
+    resetProbe()
     mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Minimal')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -220,54 +345,17 @@ describe('EndpointForm', () => {
         default_instructions: undefined,
       }),
     )
-    mockProbe.models = []
-  })
-
-  it('removes model badge when X is clicked', async () => {
-    const user = userEvent.setup()
-    render(
-      <EndpointForm
-        endpoint={mockEndpoint}
-        onSubmit={vi.fn()}
-        onCancel={vi.fn()}
-        isSaving={false}
-      />,
-    )
-    expect(screen.getByText('tts-1')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Remove tts-1' }))
-    expect(screen.queryByText('tts-1')).not.toBeInTheDocument()
-    // tts-1-hd should still be there
-    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
-  })
-
-  it('does not add duplicate model', async () => {
-    mockProbe.models = [{ id: 'tts-1' }]
-    const user = userEvent.setup()
-    render(
-      <EndpointForm
-        endpoint={mockEndpoint}
-        onSubmit={vi.fn()}
-        onCancel={vi.fn()}
-        isSaving={false}
-      />,
-    )
-    // tts-1 is already in selectedModels so it won't appear in dropdown options
-    // (filtered out by modelOptions). Type it manually to try adding.
-    await user.type(screen.getByLabelText('Models'), 'tts-1')
-    // Still only one badge with tts-1 text
-    const badges = screen.getAllByText('tts-1')
-    expect(badges).toHaveLength(1)
-    mockProbe.models = []
   })
 
   it('shows probe error when present', () => {
+    resetProbe()
     mockProbe.error = 'connection refused'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByText('connection refused')).toBeInTheDocument()
-    mockProbe.error = undefined
   })
 
   it('shows default voice select when probe returns voices', () => {
+    resetProbe()
     mockProbe.status = 'success'
     mockProbe.models = [{ id: 'tts-1' }]
     mockProbe.voices = [
@@ -276,26 +364,18 @@ describe('EndpointForm', () => {
     ]
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByText('Default Voice')).toBeInTheDocument()
-    mockProbe.models = []
-    mockProbe.voices = []
-    mockProbe.status = 'idle'
   })
 
-  it('does not show default voice section when no voices available', () => {
-    mockProbe.voices = []
+  it('does not show default voice section when probe is idle and no voice persisted', () => {
+    resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.queryByText('Default Voice')).not.toBeInTheDocument()
-    mockProbe.voices = []
   })
 
   it('shows voice id in default voice select when voice name is empty', () => {
+    resetProbe()
     mockProbe.voices = [{ id: 'alloy', name: '' }]
-    // Render with an endpoint that already has default_voice set to 'alloy'.
-    // This makes the Select display the selected item text (v.name || v.id).
-    const epWithVoice: Endpoint = {
-      ...mockEndpoint,
-      default_voice: 'alloy',
-    }
+    const epWithVoice: Endpoint = { ...mockEndpoint, default_voice: 'alloy' }
     render(
       <EndpointForm
         endpoint={epWithVoice}
@@ -305,14 +385,11 @@ describe('EndpointForm', () => {
       />,
     )
     expect(screen.getByText('Default Voice')).toBeInTheDocument()
-    // The voice id should be displayed as fallback when name is empty.
-    // The Select trigger and the hidden SelectItem both render the text,
-    // so use getAllByText to allow multiple matches.
     expect(screen.getAllByText('alloy').length).toBeGreaterThan(0)
-    mockProbe.voices = []
   })
 
   it('submits selected voice as default_voice', async () => {
+    resetProbe()
     mockProbe.status = 'success'
     mockProbe.voices = [
       { id: 'alloy', name: 'Alloy' },
@@ -328,31 +405,19 @@ describe('EndpointForm', () => {
         isSaving={false}
       />,
     )
-    // Open the select and choose "Nova"
     await user.click(screen.getByRole('combobox', { name: 'Default Voice' }))
     await user.click(screen.getByRole('option', { name: 'Nova' }))
     await user.click(screen.getByText('Update'))
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        default_voice: 'nova',
-      }),
-    )
-    mockProbe.voices = []
-    mockProbe.status = 'idle'
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ default_voice: 'nova' }))
   })
 
   it('submits empty default_voice when None is selected', async () => {
+    resetProbe()
     mockProbe.status = 'success'
-    mockProbe.voices = [
-      { id: 'alloy', name: 'Alloy' },
-      { id: 'nova', name: 'Nova' },
-    ]
+    mockProbe.voices = [{ id: 'alloy', name: 'Alloy' }]
     const user = userEvent.setup()
     const onSubmit = vi.fn()
-    const epWithVoice: Endpoint = {
-      ...mockEndpoint,
-      default_voice: 'alloy',
-    }
+    const epWithVoice: Endpoint = { ...mockEndpoint, default_voice: 'alloy' }
     render(
       <EndpointForm
         endpoint={epWithVoice}
@@ -361,124 +426,44 @@ describe('EndpointForm', () => {
         isSaving={false}
       />,
     )
-    // Open the select and choose "None" to clear the default voice
     await user.click(screen.getByRole('combobox', { name: 'Default Voice' }))
     await user.click(screen.getByRole('option', { name: 'None' }))
     await user.click(screen.getByText('Update'))
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        default_voice: '',
-      }),
-    )
-    mockProbe.voices = []
-    mockProbe.status = 'idle'
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ default_voice: '' }))
   })
 
-  it('shows loading placeholder in combobox when loading', () => {
+  it('shows model toggle list rows when probe returns models', () => {
+    resetProbe()
+    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
+    mockProbe.status = 'success'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(screen.getByRole('switch', { name: 'Enable tts-1' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Enable tts-1-hd' })).toBeInTheDocument()
+  })
+
+  it('shows discovering placeholder while loading and no models surfaced', () => {
+    resetProbe()
     mockProbe.status = 'loading'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByPlaceholderText('Loading...')).toBeInTheDocument()
-    mockProbe.status = 'idle'
+    expect(screen.getByText('Discovering models...')).toBeInTheDocument()
   })
 
-  it('shows normal placeholder when not loading', () => {
-    mockProbe.status = 'idle'
+  it('shows empty placeholder when no models discovered and not loading', () => {
+    resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    expect(screen.getByPlaceholderText('Search or type a model name')).toBeInTheDocument()
-  })
-
-  it('shows "Add another model" placeholder when models are selected', () => {
-    render(
-      <EndpointForm
-        endpoint={mockEndpoint}
-        onSubmit={vi.fn()}
-        onCancel={vi.fn()}
-        isSaving={false}
-      />,
-    )
-    expect(screen.getByPlaceholderText('Add another model...')).toBeInTheDocument()
-  })
-
-  it('shows combobox dropdown when probe returns models', async () => {
-    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
-    const user = userEvent.setup()
-    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    await openModelsDropdown(user)
-    expect(screen.getByText('tts-1')).toBeInTheDocument()
-    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
-    mockProbe.models = []
-  })
-
-  it('adds model from combobox selection', async () => {
-    mockProbe.models = [{ id: 'tts-1' }, { id: 'tts-1-hd' }]
-    const user = userEvent.setup()
-    const onSubmit = vi.fn()
-    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
-    await user.type(screen.getByLabelText('Name'), 'EP')
-    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
-    // Badge should appear
-    expect(screen.getByText('tts-1')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Remove tts-1' })).toBeInTheDocument()
-    mockProbe.models = []
-  })
-
-  it('requires models field for create when no models selected', () => {
-    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    const modelsInput = screen.getByLabelText('Models')
-    expect(modelsInput).toBeRequired()
-  })
-
-  it('does not require models field for edit', () => {
-    render(
-      <EndpointForm
-        endpoint={mockEndpoint}
-        onSubmit={vi.fn()}
-        onCancel={vi.fn()}
-        isSaving={false}
-      />,
-    )
-    const modelsInput = screen.getByLabelText('Models')
-    expect(modelsInput).not.toBeRequired()
-  })
-
-  it('allows free-text model entry via combobox', async () => {
-    const user = userEvent.setup()
-    const onSubmit = vi.fn()
-    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
-    await user.type(screen.getByLabelText('Name'), 'FT EP')
-    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    // Type a free-text model name (no dropdown options available)
-    await user.type(screen.getByLabelText('Models'), 'custom-model')
-    await user.click(screen.getByText('Create'))
-    // The free-text value should be passed as models input value
-    expect(onSubmit).toHaveBeenCalled()
-  })
-
-  it('ignores whitespace-only model from probe', async () => {
-    // Probe returns a whitespace-only model id; selecting it should be rejected
-    mockProbe.models = [{ id: ' ' }]
-    const user = userEvent.setup()
-    const onSubmit = vi.fn()
-    render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
-    await user.type(screen.getByLabelText('Name'), 'WS EP')
-    await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    // Select the whitespace model from dropdown
-    const wsOption = screen.getByRole('button', { name: '' })
-    await user.click(wsOption)
-    // No badge should appear for whitespace-only model
-    expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument()
-    mockProbe.models = []
+    expect(
+      screen.getByText('No models discovered yet. Probe the base URL above.'),
+    ).toBeInTheDocument()
   })
 
   it('renders refresh button next to URL field', () => {
+    resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeInTheDocument()
   })
 
   it('refresh button calls probe.refresh on click', async () => {
+    resetProbe()
     const user = userEvent.setup()
     mockProbe.refresh.mockClear()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
@@ -487,33 +472,34 @@ describe('EndpointForm', () => {
   })
 
   it('refresh button is disabled when status is loading', () => {
+    resetProbe()
     mockProbe.status = 'loading'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeDisabled()
-    mockProbe.status = 'idle'
   })
 
   it('refresh button is enabled when status is idle', () => {
-    mockProbe.status = 'idle'
+    resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeEnabled()
   })
 
   it('refresh button is enabled when status is success', () => {
+    resetProbe()
     mockProbe.status = 'success'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeEnabled()
-    mockProbe.status = 'idle'
   })
 
   it('refresh button is enabled when status is error', () => {
+    resetProbe()
     mockProbe.status = 'error'
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.getByRole('button', { name: 'Refresh endpoint' })).toBeEnabled()
-    mockProbe.status = 'idle'
   })
 
-  it('clears selected models when URL changes', async () => {
+  it('clears selected models, default_model, and default_voice when URL changes', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(
       <EndpointForm
@@ -523,59 +509,37 @@ describe('EndpointForm', () => {
         isSaving={false}
       />,
     )
-    // Models should be present initially
-    expect(screen.getByText('tts-1')).toBeInTheDocument()
-    expect(screen.getByText('tts-1-hd')).toBeInTheDocument()
-    // Change the URL
+    expect(screen.getByRole('switch', { name: 'Enable tts-1' })).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
     const urlInput = screen.getByLabelText('Base URL')
     await user.clear(urlInput)
     await user.type(urlInput, 'https://other.api.com')
-    // Model badges should be cleared
-    expect(screen.queryByText('tts-1')).not.toBeInTheDocument()
-    expect(screen.queryByText('tts-1-hd')).not.toBeInTheDocument()
+    // Persisted rows are gone since selectedModels was cleared and probe returned nothing.
+    expect(screen.queryByRole('switch', { name: 'Enable tts-1' })).not.toBeInTheDocument()
   })
 
-  it('clears selected models when URL is emptied', async () => {
-    const user = userEvent.setup()
-    render(
-      <EndpointForm
-        endpoint={mockEndpoint}
-        onSubmit={vi.fn()}
-        onCancel={vi.fn()}
-        isSaving={false}
-      />,
-    )
-    expect(screen.getByText('tts-1')).toBeInTheDocument()
-    const urlInput = screen.getByLabelText('Base URL')
-    await user.clear(urlInput)
-    expect(screen.queryByText('tts-1')).not.toBeInTheDocument()
-    expect(screen.queryByText('tts-1-hd')).not.toBeInTheDocument()
-  })
-
-  it('auto-populates models when probe succeeds after URL change', async () => {
+  it('auto-populates default voice when probe succeeds after URL change', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    // Type URL to mark dirty (useEffect sees status=idle, no auto-populate)
     await user.type(screen.getByLabelText('Base URL'), 'https://api.com')
-    expect(screen.queryByText('discovered-model')).not.toBeInTheDocument()
-    // Simulate probe completing: change mock then trigger re-render
+    expect(screen.queryByText('Default Voice')).not.toBeInTheDocument()
     mockProbe.status = 'success'
     mockProbe.models = [{ id: 'discovered-model' }]
     mockProbe.voices = [
       { id: 'alloy', name: 'Alloy' },
       { id: 'nova', name: 'Nova' },
     ]
-    // Type one more char to trigger re-render; useEffect sees status changed to 'success'
     await user.type(screen.getByLabelText('Base URL'), '/')
-    expect(screen.getByText('discovered-model')).toBeInTheDocument()
-    // Default voice should be auto-populated with first voice
     expect(screen.getByText('Default Voice')).toBeInTheDocument()
-    mockProbe.models = []
-    mockProbe.voices = []
-    mockProbe.status = 'idle'
+    // Discovered model is rendered as a (disabled) row in the toggle list.
+    expect(screen.getByRole('switch', { name: 'Enable discovered-model' })).toBeInTheDocument()
   })
 
   it('shows warning icon when URL is emptied after editing', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(
       <EndpointForm
@@ -592,6 +556,7 @@ describe('EndpointForm', () => {
   })
 
   it('shows warning icon and message for invalid URL scheme', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Base URL'), 'ftp://bad.url')
@@ -600,20 +565,21 @@ describe('EndpointForm', () => {
   })
 
   it('does not show warning for untouched empty URL in create mode', () => {
+    resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(screen.queryByTestId('icon-warning')).not.toBeInTheDocument()
   })
 
   it('streaming toggle renders and submits correct value', async () => {
+    resetProbe()
     mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Stream EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
-    // Enable streaming
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
     await user.click(screen.getByRole('switch', { name: 'Streaming' }))
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
@@ -622,29 +588,24 @@ describe('EndpointForm', () => {
         stream_sample_rate: 24000,
       }),
     )
-    mockProbe.models = []
   })
 
   it('sample rate input shown/hidden based on streaming toggle', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    // Sample rate should not be visible by default
     expect(screen.queryByLabelText('Sample Rate')).not.toBeInTheDocument()
-    // Enable streaming
     await user.click(screen.getByRole('switch', { name: 'Streaming' }))
-    // Sample rate should now be visible
     expect(screen.getByLabelText('Sample Rate')).toBeInTheDocument()
     expect(screen.getByLabelText('Sample Rate')).toHaveValue(24000)
-    // Disable streaming
     await user.click(screen.getByRole('switch', { name: 'Streaming' }))
-    // Sample rate should be hidden again
     expect(screen.queryByLabelText('Sample Rate')).not.toBeInTheDocument()
   })
 
   it('sample rate validation (min/max/step)', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
-    // Enable streaming to show sample rate
     await user.click(screen.getByRole('switch', { name: 'Streaming' }))
     const sampleRateInput = screen.getByLabelText('Sample Rate')
     expect(sampleRateInput).toHaveAttribute('min', '8000')
@@ -653,43 +614,39 @@ describe('EndpointForm', () => {
   })
 
   it('clamps sample rate on blur', async () => {
+    resetProbe()
     const user = userEvent.setup()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     await user.click(screen.getByRole('switch', { name: 'Streaming' }))
     const sampleRateInput = screen.getByLabelText('Sample Rate')
-    // Type a value below min
     await user.clear(sampleRateInput)
     await user.type(sampleRateInput, '100')
-    await user.tab() // trigger blur
+    await user.tab()
     expect(sampleRateInput).toHaveValue(8000)
-    // Type a value above max
     await user.clear(sampleRateInput)
     await user.type(sampleRateInput, '99999')
     await user.tab()
     expect(sampleRateInput).toHaveValue(48000)
-    // Type a fractional value
     await user.clear(sampleRateInput)
     await user.type(sampleRateInput, '22050.7')
     await user.tab()
     expect(sampleRateInput).toHaveValue(22051)
-    // Empty value on blur should not change
     await user.clear(sampleRateInput)
     await user.tab()
     expect(sampleRateInput).toHaveValue(null)
   })
 
   it('submits custom sample rate when streaming is enabled', async () => {
+    resetProbe()
     mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Stream EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
-    // Enable streaming
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
     await user.click(screen.getByRole('switch', { name: 'Streaming' }))
-    // Change sample rate
     const sampleRateInput = screen.getByLabelText('Sample Rate')
     await user.clear(sampleRateInput)
     await user.type(sampleRateInput, '44100')
@@ -700,10 +657,10 @@ describe('EndpointForm', () => {
         stream_sample_rate: 44100,
       }),
     )
-    mockProbe.models = []
   })
 
   it('edit mode populates streaming fields from existing endpoint', () => {
+    resetProbe()
     const streamingEndpoint: Endpoint = {
       ...mockEndpoint,
       streaming_enabled: true,
@@ -717,16 +674,15 @@ describe('EndpointForm', () => {
         isSaving={false}
       />,
     )
-    // Streaming toggle should be checked
     expect(screen.getByRole('switch', { name: 'Streaming' })).toHaveAttribute(
       'data-state',
       'checked',
     )
-    // Sample rate should be visible and populated
     expect(screen.getByLabelText('Sample Rate')).toHaveValue(16000)
   })
 
   it('treats zero sample rate as unset and defaults to 24000', () => {
+    resetProbe()
     const zeroRateEndpoint: Endpoint = {
       ...mockEndpoint,
       streaming_enabled: true,
@@ -744,16 +700,16 @@ describe('EndpointForm', () => {
   })
 
   it('defaults sample rate to 24000 when input is cleared', async () => {
+    resetProbe()
     mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'Fallback EP')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
     await user.click(screen.getByRole('switch', { name: 'Streaming' }))
-    // Clear the sample rate to trigger the || 24000 fallback
     await user.clear(screen.getByLabelText('Sample Rate'))
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
@@ -762,18 +718,18 @@ describe('EndpointForm', () => {
         stream_sample_rate: 24000,
       }),
     )
-    mockProbe.models = []
   })
 
   it('does not submit stream_sample_rate when streaming is disabled', async () => {
+    resetProbe()
     mockProbe.models = [{ id: 'tts-1' }]
+    mockProbe.status = 'success'
     const user = userEvent.setup()
     const onSubmit = vi.fn()
     render(<EndpointForm onSubmit={onSubmit} onCancel={vi.fn()} isSaving={false} />)
     await user.type(screen.getByLabelText('Name'), 'No Stream')
     await user.type(screen.getByLabelText('Base URL'), 'https://a.com')
-    await openModelsDropdown(user)
-    await user.click(screen.getByText('tts-1'))
+    await user.click(screen.getByRole('switch', { name: 'Enable tts-1' }))
     await user.click(screen.getByText('Create'))
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -781,6 +737,5 @@ describe('EndpointForm', () => {
         stream_sample_rate: undefined,
       }),
     )
-    mockProbe.models = []
   })
 })

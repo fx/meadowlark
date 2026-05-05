@@ -5,7 +5,7 @@
 Replace the current chip-and-combobox model picker on the Endpoints page with a toggle list of upstream-discovered models. All discovered models start disabled; the operator opts each in. Add a `default_model` concept (column + radio in the toggle list). Restructure the endpoint form so the Enabled switch lives in the Connection section, not in a grid alongside Default Speed.
 
 **Spec:** [voice-resolution](../specs/voice-resolution/), [frontend](../specs/frontend/), [data-persistence](../specs/data-persistence/), [http-api](../specs/http-api/)
-**Status:** draft
+**Status:** complete
 **Depends On:** —
 
 ## Motivation

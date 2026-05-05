@@ -53,6 +53,7 @@ type Endpoint struct {
 	BaseURL               string      `json:"base_url"`
 	APIKey                string      `json:"api_key,omitempty"`
 	Models                StringSlice `json:"models"`
+	DefaultModel          string      `json:"default_model"`
 	DefaultVoice          string      `json:"default_voice"`
 	DefaultSpeed          *float64    `json:"default_speed,omitempty"`
 	DefaultInstructions   *string     `json:"default_instructions,omitempty"`
@@ -62,6 +63,19 @@ type Endpoint struct {
 	StreamSampleRate      int         `json:"stream_sample_rate"`
 	CreatedAt             time.Time   `json:"created_at"`
 	UpdatedAt             time.Time   `json:"updated_at"`
+}
+
+// EffectiveDefaultModel returns the model to use as the default for this
+// endpoint: DefaultModel when set, otherwise the first entry in Models, or
+// "" when neither is available.
+func (e *Endpoint) EffectiveDefaultModel() string {
+	if e.DefaultModel != "" {
+		return e.DefaultModel
+	}
+	if len(e.Models) > 0 {
+		return e.Models[0]
+	}
+	return ""
 }
 
 // VoiceAlias represents a friendly name mapping to a specific endpoint/model/voice combination.
