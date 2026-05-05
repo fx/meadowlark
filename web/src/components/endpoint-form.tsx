@@ -98,9 +98,7 @@ type VoiceToggleListProps = {
   defaultVoice: string
   onToggle: (voiceId: string, on: boolean) => void
   onDefaultChange: (voiceId: string) => void
-  onRefresh: () => void
   loading: boolean
-  refreshing: boolean
   error?: string
 }
 
@@ -109,19 +107,12 @@ function VoiceToggleList({
   defaultVoice,
   onToggle,
   onDefaultChange,
-  onRefresh,
   loading,
-  refreshing,
   error,
 }: VoiceToggleListProps) {
   return (
     <>
-      <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={onRefresh} disabled={refreshing}>
-          {refreshing ? 'Refreshing...' : 'Refresh voices from endpoint'}
-        </Button>
-        {error && <span className="text-destructive text-xs">{error}</span>}
-      </div>
+      {error && <p className="text-destructive text-xs">{error}</p>}
       {voices.length === 0 ? (
         <p className="text-muted-foreground text-sm">
           {loading ? 'Loading voices...' : 'No voices discovered yet — click Refresh'}
@@ -491,6 +482,7 @@ function EndpointForm({
             type="button"
             variant="outline"
             size="sm"
+            aria-label="Refresh models"
             onClick={() => {
               pendingVoicesRefreshRef.current = true
               probe.refresh()
@@ -511,16 +503,28 @@ function EndpointForm({
       </section>
 
       <section className="space-y-2" data-section="voices">
-        <h3 className="text-sm font-semibold tracking-wide uppercase">Voices</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold tracking-wide uppercase">Voices</h3>
+          {endpointId && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Refresh voices"
+              onClick={handleRefreshVoices}
+              disabled={voicesRefreshing}
+            >
+              {voicesRefreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
+          )}
+        </div>
         {endpointId ? (
           <VoiceToggleList
             voices={endpointVoices}
             defaultVoice={defaultVoice}
             onToggle={handleToggleVoice}
             onDefaultChange={setDefaultVoice}
-            onRefresh={handleRefreshVoices}
             loading={voicesLoading}
-            refreshing={voicesRefreshing}
             error={voicesError}
           />
         ) : (

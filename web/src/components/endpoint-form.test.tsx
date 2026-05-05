@@ -893,11 +893,9 @@ describe('EndpointForm', () => {
       />,
     )
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'Refresh voices from endpoint' }),
-      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Refresh voices' })).toBeInTheDocument()
     })
-    await user.click(screen.getByRole('button', { name: 'Refresh voices from endpoint' }))
+    await user.click(screen.getByRole('button', { name: 'Refresh voices' }))
     await waitFor(() => {
       expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
     })
@@ -917,11 +915,9 @@ describe('EndpointForm', () => {
       />,
     )
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'Refresh voices from endpoint' }),
-      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Refresh voices' })).toBeInTheDocument()
     })
-    await user.click(screen.getByRole('button', { name: 'Refresh voices from endpoint' }))
+    await user.click(screen.getByRole('button', { name: 'Refresh voices' }))
     await waitFor(() => {
       expect(screen.getByText('upstream offline')).toBeInTheDocument()
     })
@@ -1183,7 +1179,7 @@ describe('EndpointForm', () => {
     await waitFor(() => {
       expect(screen.getByRole('switch', { name: 'Enable voice alloy' })).toBeInTheDocument()
     })
-    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await user.click(screen.getByRole('button', { name: 'Refresh models' }))
     expect(mockProbe.refresh).toHaveBeenCalledTimes(1)
   })
 
