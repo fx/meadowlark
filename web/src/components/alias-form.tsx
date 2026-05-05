@@ -45,12 +45,22 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
     const controller = new AbortController()
     setVoices([])
     setVoicesLoading(true)
-    fetch(`/api/v1/endpoints/${endpointId}/remote-voices`, { signal: controller.signal })
+    fetch(`/api/v1/endpoints/${endpointId}/voices`, { signal: controller.signal })
       .then(async (res) => {
         if (controller.signal.aborted) return
         if (res.ok) {
-          const data = (await res.json()) as { id: string; name: string }[]
-          setVoices(data)
+          const data = (await res.json()) as Array<{
+            voice_id: string
+            name: string
+            enabled: boolean
+          }>
+          // Only enabled voices are alias-pickable; disabled voices were
+          // explicitly turned off by the operator and should not be exposed
+          // here. Falling back to the free-text input handles the empty case.
+          const filtered = data
+            .filter((ev) => ev.enabled === true)
+            .map((ev) => ({ id: ev.voice_id, name: ev.name }))
+          setVoices(filtered)
         } else {
           setVoices([])
         }
