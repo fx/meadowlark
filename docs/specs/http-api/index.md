@@ -197,6 +197,7 @@ All API errors MUST use this envelope:
 | Code | HTTP Status | Usage |
 |------|-------------|-------|
 | `bad_request` | 400 | Validation errors |
+| `invalid_default_model` | 400 | `default_model` is non-empty but is not a member of `models` (Create/Update Endpoint) |
 | `not_found` | 404 | Resource not found |
 | `conflict` | 409 | Duplicate name |
 | `internal_error` | 500 | Database/server errors |

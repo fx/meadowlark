@@ -27,9 +27,9 @@ type Resolver struct {
 
 **Trigger:** `name == ""` or `name == "default"`
 
-Scans all endpoints (ordered by DB query) for the first enabled endpoint with a non-empty `DefaultVoice`. Returns a `ResolvedVoice` with that endpoint's ID, the endpoint's **default model** (see [Default Model](#default-model)), and the endpoint's `DefaultVoice`. Includes the endpoint's `DefaultSpeed` and `DefaultInstructions`.
+Scans all endpoints (ordered by DB query) for the first enabled endpoint that has a non-empty `DefaultVoice` **and** at least one enabled model. Endpoints with empty `Models` MUST be skipped (per [Default Model](#default-model)). Returns a `ResolvedVoice` with that endpoint's ID, the endpoint's **default model**, and the endpoint's `DefaultVoice`. Includes the endpoint's `DefaultSpeed` and `DefaultInstructions`.
 
-**Error:** If no enabled endpoint has a `DefaultVoice` configured, returns `"voice: no voice specified and no default voice configured"`.
+**Error:** If no eligible endpoint exists, returns `"voice: no voice specified and no default voice configured"`.
 
 #### Stage 1: Alias Lookup
 
@@ -55,9 +55,9 @@ Parsing uses `strings.LastIndex(name, " (")` to find the separator, then splits 
 
 **Trigger:** Always attempted if Stage 2 didn't match.
 
-Uses the first enabled endpoint's **default model** (see [Default Model](#default-model)). The voice name is passed as-is to the TTS endpoint (no transformation). Returns `IsAlias: false`.
+Uses the first enabled endpoint that has at least one enabled model and applies that endpoint's **default model** (see [Default Model](#default-model)). Endpoints with empty `Models` MUST be skipped. The voice name is passed as-is to the TTS endpoint (no transformation). Returns `IsAlias: false`.
 
-**Error:** If no enabled endpoints exist, returns an error.
+**Error:** If no enabled endpoint with at least one enabled model exists, returns an error.
 
 ### ResolvedVoice
 
@@ -133,7 +133,7 @@ Each endpoint MAY designate one of its enabled models as the **default model**, 
 
 Endpoints maintain two distinct sets:
 
-1. **Enabled models** (`Endpoint.Models`) — the subset of models the operator has explicitly opted in to. The full list of models reachable from the upstream TTS API is **not** persisted; it is rediscovered on demand via `GET /api/v1/endpoints/{id}/remote-models` (live probe).
+1. **Enabled models** (`Endpoint.Models`) — the subset of models the operator has explicitly opted in to. The full list of models reachable from the upstream TTS API is **not** persisted; it is rediscovered on demand via `GET /api/v1/endpoints/{id}/models` (live probe — see [http-api spec](../http-api/index.md#endpoints-management)).
 2. **Enabled voices** (per-endpoint, persisted in `endpoint_voices`) — the subset of voices the operator has explicitly opted in to. Discovery via `GET /api/v1/endpoints/{id}/remote-voices` returns the live upstream list; the persisted enabled set filters which voices the rest of the system surfaces.
 
 ### Requirements
@@ -146,9 +146,9 @@ Endpoints maintain two distinct sets:
 
 ### Scenarios
 
-**GIVEN** an endpoint probe discovers `["clone:abc", "qwen-female-1"]`,
-**WHEN** the operator first views the endpoint card,
-**THEN** both voices MUST appear in the toggle list with `enabled = false`.
+**GIVEN** an endpoint card whose voice list is empty (no `endpoint_voices` rows persisted yet),
+**WHEN** the operator clicks "Refresh voices" and the upstream returns `["clone:abc", "qwen-female-1"]`,
+**THEN** both voices MUST be inserted into `endpoint_voices` with `enabled = false` and rendered in the toggle list with the Switch off.
 
 **GIVEN** the operator enables `"clone:abc"` and disables `"qwen-female-1"`,
 **WHEN** a Wyoming client calls `describe` against an enabled endpoint with `DefaultModel: "qwen3-tts"`,
