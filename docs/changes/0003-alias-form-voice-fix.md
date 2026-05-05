@@ -5,7 +5,7 @@
 Fix the voice alias form so the Voice dropdown populates from the endpoint's live remote voices (`/remote-voices`), not from the endpoint's configured model list (`/configured-models`). The current code shows model IDs in the Voice dropdown, which both duplicates the Model dropdown and hides upstream-discovered voices such as `clone:*` from qwen3-tts.
 
 **Spec:** [voice-resolution](../specs/voice-resolution/), [frontend](../specs/frontend/), [http-api](../specs/http-api/)
-**Status:** draft
+**Status:** complete
 **Depends On:** —
 
 ## Motivation

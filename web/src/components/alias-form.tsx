@@ -30,7 +30,7 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
   const [instructions, setInstructions] = useState(alias?.instructions ?? '')
   const [languages, setLanguages] = useState(alias?.languages?.join(', ') ?? 'en')
   const [enabled, setEnabled] = useState(alias?.enabled ?? true)
-  const [voices, setVoices] = useState<string[]>([])
+  const [voices, setVoices] = useState<{ id: string; name: string }[]>([])
   const [voicesLoading, setVoicesLoading] = useState(false)
 
   const selectedEndpoint = endpoints.find((ep) => ep.id === endpointId)
@@ -44,12 +44,11 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
     }
     const controller = new AbortController()
     setVoicesLoading(true)
-    // Fetch configured models for the selected endpoint (used as voice options).
-    fetch(`/api/v1/endpoints/${endpointId}/configured-models`, { signal: controller.signal })
+    fetch(`/api/v1/endpoints/${endpointId}/remote-voices`, { signal: controller.signal })
       .then(async (res) => {
         if (res.ok) {
-          const data = await res.json()
-          setVoices(data as string[])
+          const data = (await res.json()) as { id: string; name: string }[]
+          setVoices(data)
         } else {
           setVoices([])
         }
@@ -143,8 +142,11 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
             </SelectTrigger>
             <SelectContent>
               {voices.map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v}
+                <SelectItem key={v.id} value={v.id}>
+                  {v.name || v.id}
+                  {v.name && v.name !== v.id ? (
+                    <span className="ml-2 text-xs text-muted-foreground">{v.id}</span>
+                  ) : null}
                 </SelectItem>
               ))}
             </SelectContent>
