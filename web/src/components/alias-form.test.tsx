@@ -523,6 +523,108 @@ describe('AliasForm', () => {
     })
   })
 
+  it('ignores fulfilled response from a fetch that was already aborted', async () => {
+    // This mock does NOT reject on abort — it lets us simulate the race where
+    // fetch had already produced a Response by the time abort fired, so .then
+    // runs and must see signal.aborted === true.
+    const resolvers: Array<(res: { ok: boolean; json: () => Promise<unknown> }) => void> = []
+    const signals: AbortSignal[] = []
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined
+      if (signal) signals.push(signal)
+      if (url.includes('ep-1')) {
+        return new Promise((resolve) => {
+          resolvers.push(resolve)
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([{ id: 'piper-en', name: 'Piper English' }]),
+      })
+    })
+    render(
+      <AliasForm
+        alias={mockAlias}
+        endpoints={mockEndpoints}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/endpoints/ep-1/remote-voices',
+        expect.any(Object),
+      )
+    })
+    // Switch endpoint -> aborts the ep-1 request and starts the ep-2 fetch
+    act(() => {
+      selectCallbacks['alias-endpoint']('ep-2')
+    })
+    await waitFor(() => {
+      expect(signals[0].aborted).toBe(true)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Piper English')).toBeInTheDocument()
+    })
+    // Now race-fulfil the ORIGINAL ep-1 request with stale data
+    act(() => {
+      resolvers[0]({
+        ok: true,
+        json: () => Promise.resolve([{ id: 'stale', name: 'Stale Voice' }]),
+      })
+    })
+    // Allow microtasks to flush; the guard MUST prevent the stale write
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByText('Stale Voice')).not.toBeInTheDocument()
+    expect(screen.getByText('Piper English')).toBeInTheDocument()
+  })
+
+  it('ignores non-ok response from a fetch that was already aborted', async () => {
+    const resolvers: Array<(res: { ok: boolean; json: () => Promise<unknown> }) => void> = []
+    const signals: AbortSignal[] = []
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal | undefined
+      if (signal) signals.push(signal)
+      if (url.includes('ep-1')) {
+        return new Promise((resolve) => {
+          resolvers.push(resolve)
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([{ id: 'piper-en', name: 'Piper English' }]),
+      })
+    })
+    render(
+      <AliasForm
+        alias={mockAlias}
+        endpoints={mockEndpoints}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/endpoints/ep-1/remote-voices',
+        expect.any(Object),
+      )
+    })
+    act(() => {
+      selectCallbacks['alias-endpoint']('ep-2')
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Piper English')).toBeInTheDocument()
+    })
+    // Race-fulfil with non-ok; the guard must prevent setVoices([]) from clobbering ep-2's voices
+    act(() => {
+      resolvers[0]({ ok: false, json: () => Promise.resolve(null) })
+    })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.getByText('Piper English')).toBeInTheDocument()
+  })
+
   it('clears voices when endpoint has no id', () => {
     render(
       <AliasForm

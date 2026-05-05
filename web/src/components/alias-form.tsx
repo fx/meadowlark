@@ -47,6 +47,7 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
     setVoicesLoading(true)
     fetch(`/api/v1/endpoints/${endpointId}/remote-voices`, { signal: controller.signal })
       .then(async (res) => {
+        if (controller.signal.aborted) return
         if (res.ok) {
           const data = (await res.json()) as { id: string; name: string }[]
           setVoices(data)
