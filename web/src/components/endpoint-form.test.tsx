@@ -808,7 +808,7 @@ describe('EndpointForm', () => {
     resetProbe()
     render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
     expect(
-      screen.getByText('Voices will be discoverable after the endpoint is saved.'),
+      screen.getByText('Voices become enable-able after saving the endpoint.'),
     ).toBeInTheDocument()
   })
 
@@ -1133,6 +1133,74 @@ describe('EndpointForm', () => {
       expect(screen.getByText('alloy')).toBeInTheDocument()
     })
     expect(screen.getByText('Alloy')).toBeInTheDocument()
+  })
+
+  // --- Probe-driven voice refresh + Models Refresh button ---
+
+  it('voices section: probe success triggers voices.refresh for saved endpoint', async () => {
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', false, 'Alloy')]
+    voicesState.refresh = [makeVoice('alloy', false, 'Alloy'), makeVoice('nova', false, 'Nova')]
+    mockProbe.status = 'success'
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    // After probe success, the form should call api.endpoints.voices.refresh
+    // and surface the new rows.
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: 'Enable voice nova' })).toBeInTheDocument()
+    })
+  })
+
+  it('voices section: probe success refresh failure surfaces error', async () => {
+    resetProbe()
+    voicesState.list = [makeVoice('alloy', false, 'Alloy')]
+    voicesState.refreshError = 'upstream offline'
+    mockProbe.status = 'success'
+    render(
+      <EndpointForm
+        endpoint={mockEndpoint}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.getByText('upstream offline')).toBeInTheDocument()
+    })
+  })
+
+  it('voices section: unsaved endpoint surfaces probe.voices as disabled preview rows', async () => {
+    resetProbe()
+    mockProbe.voices = [{ id: 'alloy', name: 'Alloy' }]
+    mockProbe.status = 'success'
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    expect(
+      screen.getByText('Voices become enable-able after saving the endpoint.'),
+    ).toBeInTheDocument()
+    const sw = screen.getByRole('switch', { name: 'Enable voice alloy' })
+    expect(sw).toBeInTheDocument()
+    expect(sw).toBeDisabled()
+  })
+
+  it('models section: Refresh button calls probe.refresh', async () => {
+    resetProbe()
+    const user = userEvent.setup()
+    mockProbe.refresh.mockClear()
+    render(<EndpointForm onSubmit={vi.fn()} onCancel={vi.fn()} isSaving={false} />)
+    await user.type(screen.getByLabelText('Base URL'), 'https://api.example.com')
+    const modelsSection = screen.getByText('Models').closest('section') as HTMLElement
+    const btn = modelsSection.querySelector('button')
+    expect(btn).not.toBeNull()
+    expect(btn).toHaveTextContent('Refresh')
+    mockProbe.refresh.mockClear()
+    await user.click(btn as HTMLButtonElement)
+    expect(mockProbe.refresh).toHaveBeenCalled()
   })
 
   it('does not submit stream_sample_rate when streaming is disabled', async () => {

@@ -41,6 +41,8 @@ type ModelToggleListProps = {
   loading: boolean
 }
 
+type ProbeVoicePreview = { id: string; name: string }
+
 function ModelToggleList({
   modelIds,
   enabled,
@@ -158,6 +160,48 @@ function VoiceToggleList({
   )
 }
 
+type VoicePreviewListProps = {
+  voices: ProbeVoicePreview[]
+  loading: boolean
+}
+
+function VoicePreviewList({ voices, loading }: VoicePreviewListProps) {
+  return (
+    <>
+      <p className="text-muted-foreground text-sm">
+        Voices become enable-able after saving the endpoint.
+      </p>
+      {voices.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          {loading ? 'Loading voices...' : 'No voices discovered yet.'}
+        </p>
+      ) : (
+        <ul className="border-border divide-border divide-y border">
+          {voices.map((v) => {
+            const switchId = `voice-preview-${v.id}`
+            return (
+              <li key={v.id} className="flex items-center gap-3 px-3 py-2" data-voice-id={v.id}>
+                <Switch
+                  id={switchId}
+                  checked={false}
+                  disabled
+                  aria-label={`Enable voice ${v.id}`}
+                />
+                <Label htmlFor={switchId} className="flex-1 font-mono text-sm">
+                  {v.id}
+                </Label>
+                {v.name && v.name !== v.id && (
+                  <span className="text-muted-foreground text-xs">{v.name}</span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </>
+  )
+}
+
 function EndpointForm({
   endpoint,
   onSubmit,
@@ -227,6 +271,32 @@ function EndpointForm({
       setVoicesRefreshing(false)
     }
   }, [endpointId, onVoicesChanged])
+
+  // When the URL changes and the probe completes successfully, re-sync the
+  // server-side voice cache for SAVED endpoints. The probe itself only fetches
+  // the upstream list — it does NOT update the per-endpoint voices table — so
+  // we explicitly POST /voices/refresh here so the toggle list reflects the
+  // new upstream catalog. Only fires for `success`; ignored on idle/loading/error.
+  const probeStatus = probe.status
+  useEffect(() => {
+    if (!endpointId) return
+    if (probeStatus !== 'success') return
+    setVoicesRefreshing(true)
+    setVoicesError(undefined)
+    api.endpoints.voices
+      .refresh(endpointId)
+      .then((rows) => {
+        setEndpointVoices(rows)
+        setVoicesLoaded(true)
+        onVoicesChanged?.()
+      })
+      .catch((e) => {
+        setVoicesError((e as Error).message)
+      })
+      .finally(() => {
+        setVoicesRefreshing(false)
+      })
+  }, [probeStatus, endpointId, onVoicesChanged])
 
   const handleToggleVoice = useCallback(
     async (voiceId: string, on: boolean) => {
@@ -437,7 +507,18 @@ function EndpointForm({
       </section>
 
       <section className="space-y-2" data-section="models">
-        <h3 className="text-sm font-semibold tracking-wide uppercase">Models</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold tracking-wide uppercase">Models</h3>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={probe.refresh}
+            disabled={probe.status === 'loading' || urlInvalid || !baseUrl}
+          >
+            {probe.status === 'loading' ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </div>
         <ModelToggleList
           modelIds={modelIds}
           enabled={selectedModels}
@@ -460,9 +541,7 @@ function EndpointForm({
             error={voicesError}
           />
         ) : (
-          <p className="text-muted-foreground text-sm">
-            Voices will be discoverable after the endpoint is saved.
-          </p>
+          <VoicePreviewList voices={probe.voices} loading={probe.status === 'loading'} />
         )}
       </section>
 
