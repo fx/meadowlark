@@ -43,6 +43,7 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
       return
     }
     const controller = new AbortController()
+    setVoices([])
     setVoicesLoading(true)
     fetch(`/api/v1/endpoints/${endpointId}/remote-voices`, { signal: controller.signal })
       .then(async (res) => {
@@ -53,8 +54,12 @@ function AliasForm({ alias, endpoints, onSubmit, onCancel, isSaving }: AliasForm
           setVoices([])
         }
       })
-      .catch(() => setVoices([]))
-      .finally(() => setVoicesLoading(false))
+      .catch(() => {
+        if (!controller.signal.aborted) setVoices([])
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setVoicesLoading(false)
+      })
     return () => controller.abort()
   }, [endpointId])
 
