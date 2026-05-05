@@ -42,12 +42,25 @@ func (s *Server) GetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Count voices: sum of models across enabled endpoints, plus enabled aliases.
+	// Count canonical voices the same way ListVoices does: enabled endpoint_voices
+	// cross-joined with each enabled model on each enabled endpoint, plus enabled aliases.
 	voiceCount := 0
 	for _, ep := range endpoints {
-		if ep.Enabled {
-			voiceCount += len(ep.Models)
+		if !ep.Enabled {
+			continue
 		}
+		epVoices, err := s.store.ListEndpointVoices(ctx, ep.ID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal_error", "failed to list endpoint voices")
+			return
+		}
+		enabledVoices := 0
+		for _, v := range epVoices {
+			if v.Enabled {
+				enabledVoices++
+			}
+		}
+		voiceCount += enabledVoices * len(ep.Models)
 	}
 	for _, a := range aliases {
 		if a.Enabled {

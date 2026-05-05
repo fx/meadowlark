@@ -173,8 +173,9 @@ describe('EndpointsPage', () => {
         (!init?.method || init.method === 'GET')
       ) {
         voicesCallCount++
-        // First read: 1 enabled. Subsequent reads after the toggle: 2 enabled.
-        const enabled = voicesCallCount === 1
+        // First read: 1 enabled (only alloy). Subsequent reads after the
+        // toggle: 2 enabled (alloy + echo) so the badge reflects the change.
+        const echoEnabled = voicesCallCount > 1
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -192,7 +193,7 @@ describe('EndpointsPage', () => {
                 endpoint_id: 'ep-1',
                 voice_id: 'echo',
                 name: '',
-                enabled,
+                enabled: echoEnabled,
                 created_at: '',
                 updated_at: '',
               },
@@ -226,19 +227,19 @@ describe('EndpointsPage', () => {
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
     render(<EndpointsPage />)
+    // Initial state: only alloy enabled.
     await waitFor(() => {
-      expect(screen.getByText('2 voices')).toBeInTheDocument()
+      expect(screen.getByText('1 voice')).toBeInTheDocument()
     })
-    // Expand ep-1 and toggle echo on. Badge should update to "2 voices" → 2 enabled.
-    // Wait — initial state already shows 2 voices (alloy enabled + echo enabled).
-    // Reset: tweak the mock so first read is 1 enabled. The waitFor above will need to
-    // observe the final count. We assert the post-toggle count matches expectations.
+    // Expand ep-1, toggle echo on. The post-toggle re-fetch must update the badge to "2 voices".
     await user.click(screen.getByText('OpenAI'))
     const echoSwitch = await screen.findByRole('switch', { name: 'Enable voice echo' })
     await user.click(echoSwitch)
-    // After toggle, the row's effect must re-run and re-fetch voices.
     await waitFor(() => {
       expect(voicesCallCount).toBeGreaterThanOrEqual(2)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('2 voices')).toBeInTheDocument()
     })
   })
 

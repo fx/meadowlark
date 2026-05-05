@@ -190,6 +190,7 @@ function EndpointForm({
   const endpointId = endpoint?.id
   const [endpointVoices, setEndpointVoices] = useState<EndpointVoice[]>([])
   const [voicesLoading, setVoicesLoading] = useState(false)
+  const [voicesLoaded, setVoicesLoaded] = useState(false)
   const [voicesRefreshing, setVoicesRefreshing] = useState(false)
   const [voicesError, setVoicesError] = useState<string | undefined>()
 
@@ -202,7 +203,10 @@ function EndpointForm({
       .catch(() => {
         // List failure is non-fatal; the user can hit Refresh.
       })
-      .finally(() => setVoicesLoading(false))
+      .finally(() => {
+        setVoicesLoading(false)
+        setVoicesLoaded(true)
+      })
   }, [endpointId])
 
   const handleRefreshVoices = useCallback(async () => {
@@ -253,8 +257,18 @@ function EndpointForm({
 
   const enabledVoices = useMemo(() => endpointVoices.filter((v) => v.enabled), [endpointVoices])
 
-  // Default voice is no longer auto-populated from probe; the operator chooses
-  // it from the persisted enabled-voices set after Refresh + per-row toggle.
+  // Reconcile defaultVoice against the current enabled set: if the persisted
+  // default voice is missing from enabled (e.g., disabled by the operator or
+  // disappeared after a refresh), clear it so the form cannot submit a stale value.
+  // Skip until the initial list has settled to avoid clearing a valid persisted
+  // default while endpointVoices is still empty pre-fetch.
+  useEffect(() => {
+    if (!voicesLoaded) return
+    if (defaultVoice === '') return
+    if (!enabledVoices.some((v) => v.voice_id === defaultVoice)) {
+      setDefaultVoice('')
+    }
+  }, [enabledVoices, defaultVoice, voicesLoaded])
 
   // The list of model ids surfaced to the user: discovered models from probe, plus
   // any persisted-but-no-longer-discovered models so the operator can disable them.

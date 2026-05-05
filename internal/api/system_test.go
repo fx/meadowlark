@@ -133,6 +133,12 @@ func TestGetStatus_ReturnsCorrectFormat(t *testing.T) {
 			{ID: "a1", Name: "narrator", EndpointID: "ep1", Model: "tts-1", Voice: "nova", Enabled: true},
 			{ID: "a2", Name: "disabled-alias", EndpointID: "ep1", Model: "tts-1", Voice: "alloy", Enabled: false},
 		},
+		endpointVoices: map[string][]model.EndpointVoice{
+			"ep1": {
+				{EndpointID: "ep1", VoiceID: "alloy", Enabled: true},
+				{EndpointID: "ep1", VoiceID: "echo", Enabled: false}, // disabled — must not count
+			},
+		},
 	}
 	srv := newSystemTestServer(ms)
 	router := srv.setupRoutes()
@@ -154,7 +160,8 @@ func TestGetStatus_ReturnsCorrectFormat(t *testing.T) {
 	assert.Equal(t, "sqlite", body.DBDriver)
 	assert.Equal(t, 2, body.EndpointCount)
 	assert.Equal(t, 2, body.AliasCount)
-	// voice_count = 2 models from enabled ep1 + 1 enabled alias = 3
+	// voice_count = (1 enabled endpoint voice on ep1 × 2 models on ep1) + 1 enabled alias = 3.
+	// ep2 is disabled so its voices/models contribute nothing; "echo" is disabled so it doesn't count.
 	assert.Equal(t, 3, body.VoiceCount)
 }
 
