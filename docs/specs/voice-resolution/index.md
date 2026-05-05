@@ -141,7 +141,7 @@ Endpoints maintain two distinct sets:
 - Newly discovered models MUST default to **disabled** (i.e. NOT added to `Endpoint.Models`). The operator opts each one in explicitly through the management UI.
 - Newly discovered voices MUST default to **disabled** (i.e. inserted into `endpoint_voices` with `enabled = false`). The operator opts each one in explicitly.
 - `Resolve` MUST only consider enabled models. A canonical name (Stage 2) referencing a model that is not in `Endpoint.Models` MUST fail to match and fall through to Stage 3.
-- The Wyoming `describe` voice list and the system `GET /api/v1/voices` view MUST only include voices that are enabled for an enabled endpoint.
+- The Wyoming `describe` voice list and the system `GET /api/v1/voices` view MUST only include voices that are enabled for an enabled endpoint that also has at least one enabled model. Endpoints with empty `Models` MUST contribute no voices to either view.
 - Voice aliases (Stage 1) bypass the enabled-voices filter — an alias MAY reference any voice the upstream provider accepts, even if it is disabled in the management UI. This is intentional: aliases are an explicit opt-in by name.
 
 ### Scenarios
