@@ -125,8 +125,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// 3. Create voice resolver and TTS proxy.
 	resolver := voice.NewResolver(db, db)
-	discoverer := &ttsVoiceDiscoverer{factory: defaultClientFactory}
-	infoBuilder := wyoming.NewInfoBuilder(db, db, discoverer, version)
+	infoBuilder := wyoming.NewInfoBuilder(db, db, db, version)
 	proxy := tts.NewProxy(resolver, db, defaultClientFactory, logger)
 
 	// 4. Build Wyoming handler.
@@ -235,21 +234,6 @@ func defaultClientFactory(ep *model.Endpoint) *tts.Client {
 // apiClientFactory adapts defaultClientFactory to the api.ClientFactory type.
 func apiClientFactory(ep *model.Endpoint) *tts.Client {
 	return defaultClientFactory(ep)
-}
-
-// ttsVoiceDiscoverer implements wyoming.VoiceDiscoverer using a TTS client factory.
-type ttsVoiceDiscoverer struct {
-	factory func(ep *model.Endpoint) *tts.Client
-}
-
-func (d *ttsVoiceDiscoverer) DiscoverVoices(ctx context.Context, ep *model.Endpoint) []string {
-	client := d.factory(ep)
-	voices, _ := client.ListVoices(ctx)
-	names := make([]string, len(voices))
-	for i, v := range voices {
-		names[i] = v.ID
-	}
-	return names
 }
 
 // wyomingHandler dispatches Wyoming protocol events.

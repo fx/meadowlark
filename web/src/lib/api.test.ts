@@ -101,6 +101,80 @@ describe('api.endpoints', () => {
       body: JSON.stringify({ url: 'https://api.example.com/v1', api_key: 'sk-test' }),
     })
   })
+
+  it('voices.list calls GET /api/v1/endpoints/:id/voices', async () => {
+    const voices = [
+      {
+        endpoint_id: 'ep-1',
+        voice_id: 'alloy',
+        name: 'Alloy',
+        enabled: true,
+        created_at: '',
+        updated_at: '',
+      },
+    ]
+    mockFetch.mockReturnValueOnce(jsonResponse(voices))
+    const result = await api.endpoints.voices.list('ep-1')
+    expect(result).toEqual(voices)
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices', undefined)
+  })
+
+  it('voices.refresh calls POST /api/v1/endpoints/:id/voices/refresh', async () => {
+    const voices = [
+      {
+        endpoint_id: 'ep-1',
+        voice_id: 'alloy',
+        name: 'Alloy',
+        enabled: false,
+        created_at: '',
+        updated_at: '',
+      },
+    ]
+    mockFetch.mockReturnValueOnce(jsonResponse(voices))
+    const result = await api.endpoints.voices.refresh('ep-1')
+    expect(result).toEqual(voices)
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices/refresh', {
+      method: 'POST',
+      headers: undefined,
+      body: undefined,
+    })
+  })
+
+  it('voices.setEnabled calls PATCH /api/v1/endpoints/:id/voices/:voiceId with body', async () => {
+    const voice = {
+      endpoint_id: 'ep-1',
+      voice_id: 'alloy',
+      name: '',
+      enabled: true,
+      created_at: '',
+      updated_at: '',
+    }
+    mockFetch.mockReturnValueOnce(jsonResponse(voice))
+    const result = await api.endpoints.voices.setEnabled('ep-1', 'alloy', true)
+    expect(result).toEqual(voice)
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices/alloy', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true }),
+    })
+  })
+
+  it('voices.setEnabled URL-encodes the voice_id', async () => {
+    const voice = {
+      endpoint_id: 'ep-1',
+      voice_id: 'clone:abc',
+      name: '',
+      enabled: true,
+      created_at: '',
+      updated_at: '',
+    }
+    mockFetch.mockReturnValueOnce(jsonResponse(voice))
+    await api.endpoints.voices.setEnabled('ep-1', 'clone:abc', true)
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/endpoints/ep-1/voices/clone%3Aabc',
+      expect.objectContaining({ method: 'PATCH' }),
+    )
+  })
 })
 
 describe('api.aliases', () => {

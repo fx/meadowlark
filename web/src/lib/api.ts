@@ -124,6 +124,15 @@ export interface ProbeResult {
   voices: ProbeVoice[]
 }
 
+export interface EndpointVoice {
+  endpoint_id: string
+  voice_id: string
+  name: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface ApiError {
   error: {
     code: string
@@ -176,6 +185,14 @@ function put<T>(url: string, data: unknown): Promise<T> {
   })
 }
 
+function patch<T>(url: string, data: unknown): Promise<T> {
+  return request<T>(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
 function del<T = void>(url: string): Promise<T> {
   return request<T>(url, { method: 'DELETE' })
 }
@@ -189,6 +206,14 @@ export const api = {
     delete: (id: string) => del(`/api/v1/endpoints/${id}`),
     probe: (url: string, apiKey: string) =>
       post<ProbeResult>('/api/v1/endpoints/probe', { url, api_key: apiKey }),
+    voices: {
+      list: (id: string) => get<EndpointVoice[]>(`/api/v1/endpoints/${id}/voices`),
+      refresh: (id: string) => post<EndpointVoice[]>(`/api/v1/endpoints/${id}/voices/refresh`),
+      setEnabled: (id: string, voiceId: string, enabled: boolean) =>
+        patch<EndpointVoice>(`/api/v1/endpoints/${id}/voices/${encodeURIComponent(voiceId)}`, {
+          enabled,
+        }),
+    },
   },
   aliases: {
     list: () => get<VoiceAlias[]>('/api/v1/aliases'),

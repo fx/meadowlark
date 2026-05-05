@@ -121,6 +121,9 @@ func (s *Server) setupRoutes() *chi.Mux {
 		r.Get("/endpoints/{id}/configured-models", s.ListEndpointConfiguredModels)
 		r.Get("/endpoints/{id}/models", s.DiscoverModels)
 		r.Get("/endpoints/{id}/remote-voices", s.DiscoverRemoteVoices)
+		r.Get("/endpoints/{id}/voices", s.ListEndpointVoices)
+		r.Post("/endpoints/{id}/voices/refresh", s.RefreshEndpointVoices)
+		r.Patch("/endpoints/{id}/voices/{voice_id}", s.SetEndpointVoiceEnabled)
 
 		// Aliases
 		r.Get("/aliases", s.ListAliases)

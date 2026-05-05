@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fx/meadowlark/internal/model"
+	"github.com/fx/meadowlark/internal/store"
 	"github.com/fx/meadowlark/internal/tts"
 )
 
@@ -383,6 +385,122 @@ func containsString(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// ListEndpointVoices returns the persisted endpoint_voices rows for an endpoint.
+func (s *Server) ListEndpointVoices(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ep, err := s.store.GetEndpoint(r.Context(), id)
+	if err != nil {
+		slog.Error("list endpoint voices: get endpoint", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to get endpoint")
+		return
+	}
+	if ep == nil {
+		respondError(w, http.StatusNotFound, "not_found", "endpoint not found")
+		return
+	}
+	voices, err := s.store.ListEndpointVoices(r.Context(), id)
+	if err != nil {
+		slog.Error("list endpoint voices", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to list endpoint voices")
+		return
+	}
+	if voices == nil {
+		voices = []model.EndpointVoice{}
+	}
+	respondJSON(w, http.StatusOK, voices)
+}
+
+// RefreshEndpointVoices live-probes the upstream provider and upserts each
+// discovered voice into endpoint_voices, then returns the post-upsert list.
+func (s *Server) RefreshEndpointVoices(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ep, err := s.store.GetEndpoint(r.Context(), id)
+	if err != nil {
+		slog.Error("refresh endpoint voices: get endpoint", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to get endpoint")
+		return
+	}
+	if ep == nil {
+		respondError(w, http.StatusNotFound, "not_found", "endpoint not found")
+		return
+	}
+	client := s.clientFactory(ep)
+	probed, err := client.ListVoices(r.Context())
+	if err != nil {
+		respondError(w, http.StatusBadGateway, "upstream_error", "failed to list voices from upstream")
+		return
+	}
+	upserts := make([]model.EndpointVoice, 0, len(probed))
+	for _, v := range probed {
+		if v.ID == "" {
+			continue
+		}
+		upserts = append(upserts, model.EndpointVoice{VoiceID: v.ID, Name: v.Name})
+	}
+	if err := s.store.UpsertEndpointVoices(r.Context(), id, upserts); err != nil {
+		slog.Error("refresh endpoint voices: upsert", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to persist endpoint voices")
+		return
+	}
+	voices, err := s.store.ListEndpointVoices(r.Context(), id)
+	if err != nil {
+		slog.Error("refresh endpoint voices: list", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to list endpoint voices")
+		return
+	}
+	if voices == nil {
+		voices = []model.EndpointVoice{}
+	}
+	s.rebuildVoiceList(r.Context())
+	respondJSON(w, http.StatusOK, voices)
+}
+
+type setEndpointVoiceEnabledRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// SetEndpointVoiceEnabled toggles the enabled flag for a single endpoint voice row.
+func (s *Server) SetEndpointVoiceEnabled(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rawVoiceID := chi.URLParam(r, "voice_id")
+	voiceID, err := url.PathUnescape(rawVoiceID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "bad_request", "voice_id is not a valid path segment")
+		return
+	}
+	ep, err := s.store.GetEndpoint(r.Context(), id)
+	if err != nil {
+		slog.Error("set endpoint voice enabled: get endpoint", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to get endpoint")
+		return
+	}
+	if ep == nil {
+		respondError(w, http.StatusNotFound, "not_found", "endpoint not found")
+		return
+	}
+	var req setEndpointVoiceEnabledRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+	if req.Enabled == nil {
+		respondError(w, http.StatusBadRequest, "bad_request", "enabled is required")
+		return
+	}
+	updated, err := s.store.SetEndpointVoiceEnabled(r.Context(), id, voiceID, *req.Enabled)
+	if errors.Is(err, store.ErrEndpointVoiceNotFound) {
+		respondError(w, http.StatusNotFound, "not_found", "endpoint voice not found")
+		return
+	}
+	if err != nil {
+		slog.Error("set endpoint voice enabled", "error", err)
+		respondError(w, http.StatusInternalServerError, "internal_error", "failed to update endpoint voice")
+		return
+	}
+	s.rebuildVoiceList(r.Context())
+	respondJSON(w, http.StatusOK, updated)
 }
 
 // ProbeEndpoint probes a remote endpoint for models and voices without saving it.

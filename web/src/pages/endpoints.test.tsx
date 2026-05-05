@@ -40,10 +40,12 @@ const mockEndpoints: Endpoint[] = [
 ]
 
 function mockFetchWith(data: unknown) {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve(data),
+  // Route fetch by URL: list returns the provided data; voices/list returns []; everything else returns []
+  return vi.fn().mockImplementation((url: string) => {
+    if (typeof url === 'string' && url.includes('/voices')) {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) })
+    }
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) })
   })
 }
 
@@ -71,6 +73,95 @@ describe('EndpointsPage', () => {
       expect(screen.getByText('2 models')).toBeInTheDocument()
     })
     expect(screen.getByText('1 model')).toBeInTheDocument()
+  })
+
+  it('shows voice count badges from endpoint_voices', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/endpoints/ep-1/voices')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve([
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'alloy',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'echo',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+              {
+                endpoint_id: 'ep-1',
+                voice_id: 'nova',
+                name: '',
+                enabled: false,
+                created_at: '',
+                updated_at: '',
+              },
+            ]),
+        })
+      }
+      if (url.includes('/endpoints/ep-2/voices')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve([
+              {
+                endpoint_id: 'ep-2',
+                voice_id: 'piper',
+                name: '',
+                enabled: true,
+                created_at: '',
+                updated_at: '',
+              },
+            ]),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockEndpoints),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EndpointsPage />)
+    await waitFor(() => {
+      expect(screen.getByText('2 voices')).toBeInTheDocument()
+    })
+    expect(screen.getByText('1 voice')).toBeInTheDocument()
+  })
+
+  it('shows zero voice count when voices list call fails', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/voices')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ error: { code: 'x', message: 'fail' } }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockEndpoints),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<EndpointsPage />)
+    // Both endpoints fall back to "0 voices".
+    await waitFor(() => {
+      expect(screen.getAllByText('0 voices').length).toBeGreaterThan(0)
+    })
   })
 
   it('shows empty state when no endpoints', async () => {

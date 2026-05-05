@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/fx/meadowlark/internal/model"
 	"github.com/fx/meadowlark/internal/voice"
@@ -20,40 +19,44 @@ type AliasLister interface {
 	ListVoiceAliases(ctx context.Context) ([]model.VoiceAlias, error)
 }
 
-// VoiceDiscoverer discovers available voices for an endpoint.
+// EndpointVoiceLister provides read access to persisted endpoint_voices rows.
+type EndpointVoiceLister interface {
+	ListEndpointVoices(ctx context.Context, endpointID string) ([]model.EndpointVoice, error)
+}
+
+// VoiceDiscoverer is retained for backwards compatibility but is no longer
+// consulted by InfoBuilder. The canonical voice list is built from persisted
+// endpoint_voices rows; live probes have moved to the explicit Refresh flow.
 type VoiceDiscoverer interface {
-	// DiscoverVoices returns voice IDs for the given endpoint.
-	// Returns nil on failure (should not block the info response).
 	DiscoverVoices(ctx context.Context, ep *model.Endpoint) []string
 }
 
-// InfoBuilder aggregates canonical voices from all enabled endpoints and
+// InfoBuilder aggregates canonical voices from persisted endpoint_voices and
 // enabled voice aliases, then builds a complete Info event.
 type InfoBuilder struct {
-	endpoints EndpointLister
-	aliases   AliasLister
-	discoverer VoiceDiscoverer
-	version   string
+	endpoints      EndpointLister
+	aliases        AliasLister
+	endpointVoices EndpointVoiceLister
+	version        string
 
 	mu    sync.RWMutex
 	cache *Info
 }
 
-// NewInfoBuilder creates a new InfoBuilder.
-func NewInfoBuilder(endpoints EndpointLister, aliases AliasLister, discoverer VoiceDiscoverer, version string) *InfoBuilder {
+// NewInfoBuilder creates a new InfoBuilder. The endpointVoices argument is the
+// persisted-state lister; the legacy VoiceDiscoverer parameter is accepted for
+// callers that still pass it but is ignored.
+func NewInfoBuilder(endpoints EndpointLister, aliases AliasLister, endpointVoices EndpointVoiceLister, version string) *InfoBuilder {
 	return &InfoBuilder{
-		endpoints:  endpoints,
-		aliases:    aliases,
-		discoverer: discoverer,
-		version:    version,
+		endpoints:      endpoints,
+		aliases:        aliases,
+		endpointVoices: endpointVoices,
+		version:        version,
 	}
 }
 
-// discoverTimeout is the per-endpoint timeout for voice discovery during info build.
-const discoverTimeout = 5 * time.Second
-
-// Build rebuilds the Info response from the current state of endpoints and aliases.
-// The result is cached until the next call to Build.
+// Build rebuilds the Info response from the current state of endpoints,
+// endpoint_voices, and aliases. The result is cached until the next call to Build.
 func (b *InfoBuilder) Build(ctx context.Context) (*Info, error) {
 	endpoints, err := b.endpoints.ListEndpoints(ctx)
 	if err != nil {
@@ -67,49 +70,25 @@ func (b *InfoBuilder) Build(ctx context.Context) (*Info, error) {
 
 	var voices []TtsVoice
 
-	// Discover voices from all enabled endpoints in parallel.
-	var enabled []model.Endpoint
 	for _, ep := range endpoints {
-		if ep.Enabled {
-			enabled = append(enabled, ep)
+		if !ep.Enabled {
+			continue
 		}
-	}
-
-	discovered := make([][]string, len(enabled))
-	if b.discoverer != nil && len(enabled) > 0 {
-		var wg sync.WaitGroup
-		wg.Add(len(enabled))
-		for i, ep := range enabled {
-			go func(idx int, ep model.Endpoint) {
-				defer wg.Done()
-				dctx, cancel := context.WithTimeout(ctx, discoverTimeout)
-				defer cancel()
-				discovered[idx] = b.discoverer.DiscoverVoices(dctx, &ep)
-			}(i, ep)
-		}
-		wg.Wait()
-	}
-
-	// Build canonical voice entries from discovery results.
-	for i, ep := range enabled {
-		voiceNames := discovered[i]
-		if len(voiceNames) > 0 {
-			for _, m := range ep.Models {
-				for _, v := range voiceNames {
-					voices = append(voices, TtsVoice{
-						Name:        voice.CanonicalName(v, ep.Name, m),
-						Description: fmt.Sprintf("%s (%s, %s)", v, ep.Name, m),
-						Installed:   true,
-						Languages:   []string{"en"},
-					})
-				}
+		var epVoices []model.EndpointVoice
+		if b.endpointVoices != nil {
+			epVoices, err = b.endpointVoices.ListEndpointVoices(ctx, ep.ID)
+			if err != nil {
+				return nil, fmt.Errorf("info: list endpoint voices: %w", err)
 			}
-		} else {
-			// Fallback: use model names when voice discovery fails.
-			for _, m := range ep.Models {
+		}
+		for _, m := range ep.Models {
+			for _, ev := range epVoices {
+				if !ev.Enabled {
+					continue
+				}
 				voices = append(voices, TtsVoice{
-					Name:        voice.CanonicalName(m, ep.Name, m),
-					Description: fmt.Sprintf("%s (%s, %s)", m, ep.Name, m),
+					Name:        voice.CanonicalName(ev.VoiceID, ep.Name, m),
+					Description: fmt.Sprintf("%s (%s, %s)", ev.VoiceID, ep.Name, m),
 					Installed:   true,
 					Languages:   []string{"en"},
 				})
@@ -117,7 +96,6 @@ func (b *InfoBuilder) Build(ctx context.Context) (*Info, error) {
 		}
 	}
 
-	// Add enabled voice aliases.
 	for _, a := range aliases {
 		if !a.Enabled {
 			continue
