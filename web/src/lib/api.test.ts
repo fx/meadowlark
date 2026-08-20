@@ -116,7 +116,20 @@ describe('api.endpoints', () => {
     mockFetch.mockReturnValueOnce(jsonResponse(voices))
     const result = await api.endpoints.voices.list('ep-1')
     expect(result).toEqual(voices)
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices', undefined)
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/endpoints/ep-1/voices',
+      expect.objectContaining({ signal: undefined }),
+    )
+  })
+
+  it('voices.list passes through an AbortSignal', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    const controller = new AbortController()
+    await api.endpoints.voices.list('ep-1', controller.signal)
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/v1/endpoints/ep-1/voices',
+      expect.objectContaining({ signal: controller.signal }),
+    )
   })
 
   it('voices.refresh calls POST /api/v1/endpoints/:id/voices/refresh', async () => {

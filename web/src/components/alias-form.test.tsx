@@ -61,6 +61,17 @@ const mockEndpoints: Endpoint[] = [
   },
 ]
 
+function makeEv(voiceId: string, name: string, enabled = true) {
+  return {
+    endpoint_id: 'ep-1',
+    voice_id: voiceId,
+    name,
+    enabled,
+    created_at: '',
+    updated_at: '',
+  }
+}
+
 const mockAlias: VoiceAlias = {
   id: 'alias-1',
   name: 'Test Alias',
@@ -119,8 +130,22 @@ describe('AliasForm', () => {
       ok: true,
       json: () =>
         Promise.resolve([
-          { id: 'alloy', name: 'Alloy' },
-          { id: 'nova', name: 'Nova' },
+          {
+            endpoint_id: 'ep-1',
+            voice_id: 'alloy',
+            name: 'Alloy',
+            enabled: true,
+            created_at: '',
+            updated_at: '',
+          },
+          {
+            endpoint_id: 'ep-1',
+            voice_id: 'nova',
+            name: 'Nova',
+            enabled: true,
+            created_at: '',
+            updated_at: '',
+          },
         ]),
     })
     render(
@@ -244,9 +269,9 @@ describe('AliasForm', () => {
       ok: true,
       json: () =>
         Promise.resolve([
-          { id: 'alloy', name: 'Alloy' },
-          { id: 'nova', name: 'Nova' },
-          { id: 'shimmer', name: 'Shimmer' },
+          makeEv('alloy', 'Alloy'),
+          makeEv('nova', 'Nova'),
+          makeEv('shimmer', 'Shimmer'),
         ]),
     })
     const { rerender } = render(
@@ -260,7 +285,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-1/remote-voices',
+        '/api/v1/endpoints/ep-1/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -279,14 +304,10 @@ describe('AliasForm', () => {
     })
   })
 
-  it('lists voice names from /remote-voices and submits the voice id', async () => {
+  it('lists voice names from /voices and submits the voice id', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: () =>
-        Promise.resolve([
-          { id: 'alloy', name: 'Alloy' },
-          { id: 'clone:abc', name: 'Clone ABC' },
-        ]),
+      json: () => Promise.resolve([makeEv('alloy', 'Alloy'), makeEv('clone:abc', 'Clone ABC')]),
     })
     const onSubmit = vi.fn()
     render(
@@ -300,7 +321,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-1/remote-voices',
+        '/api/v1/endpoints/ep-1/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -334,9 +355,9 @@ describe('AliasForm', () => {
       json: () =>
         Promise.resolve([
           // name === id: no secondary id text
-          { id: 'alloy', name: 'alloy' },
+          makeEv('alloy', 'alloy'),
           // empty name: label falls back to id, no secondary id text
-          { id: 'echo', name: '' },
+          makeEv('echo', ''),
         ]),
     })
     render(
@@ -350,7 +371,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-1/remote-voices',
+        '/api/v1/endpoints/ep-1/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -387,7 +408,7 @@ describe('AliasForm', () => {
     })
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-2/remote-voices',
+        '/api/v1/endpoints/ep-2/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -406,7 +427,39 @@ describe('AliasForm', () => {
     )
   })
 
-  it('falls back to text input when /remote-voices returns empty array', async () => {
+  it('filters out disabled voices from the dropdown', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve([
+          makeEv('alloy', 'Alloy', true),
+          makeEv('hidden', 'Hidden', false),
+          makeEv('nova', 'Nova', true),
+        ]),
+    })
+    render(
+      <AliasForm
+        alias={mockAlias}
+        endpoints={mockEndpoints}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        isSaving={false}
+      />,
+    )
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/endpoints/ep-1/voices',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Alloy')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Nova')).toBeInTheDocument()
+    expect(screen.queryByText('Hidden')).not.toBeInTheDocument()
+  })
+
+  it('falls back to text input when /voices returns empty array', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([]),
@@ -422,7 +475,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-2/remote-voices',
+        '/api/v1/endpoints/ep-2/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -444,7 +497,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-2/remote-voices',
+        '/api/v1/endpoints/ep-2/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -470,7 +523,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-2/remote-voices',
+        '/api/v1/endpoints/ep-2/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -479,7 +532,7 @@ describe('AliasForm', () => {
     })
   })
 
-  it('aborts in-flight remote-voices request when endpoint changes', async () => {
+  it('aborts in-flight voices request when endpoint changes', async () => {
     const abortedSignals: AbortSignal[] = []
     fetchMock.mockImplementation(
       (_url: string, init?: RequestInit) =>
@@ -504,7 +557,7 @@ describe('AliasForm', () => {
     )
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-1/remote-voices',
+        '/api/v1/endpoints/ep-1/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -517,7 +570,7 @@ describe('AliasForm', () => {
     })
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-2/remote-voices',
+        '/api/v1/endpoints/ep-2/voices',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       )
     })
@@ -539,7 +592,7 @@ describe('AliasForm', () => {
       }
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve([{ id: 'piper-en', name: 'Piper English' }]),
+        json: () => Promise.resolve([makeEv('piper-en', 'Piper English')]),
       })
     })
     render(
@@ -552,10 +605,7 @@ describe('AliasForm', () => {
       />,
     )
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-1/remote-voices',
-        expect.any(Object),
-      )
+      expect(fetchMock).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices', expect.any(Object))
     })
     // Switch endpoint -> aborts the ep-1 request and starts the ep-2 fetch
     act(() => {
@@ -571,7 +621,7 @@ describe('AliasForm', () => {
     act(() => {
       resolvers[0]({
         ok: true,
-        json: () => Promise.resolve([{ id: 'stale', name: 'Stale Voice' }]),
+        json: () => Promise.resolve([makeEv('stale', 'Stale Voice')]),
       })
     })
     // Allow microtasks to flush; the guard MUST prevent the stale write
@@ -593,7 +643,7 @@ describe('AliasForm', () => {
       }
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve([{ id: 'piper-en', name: 'Piper English' }]),
+        json: () => Promise.resolve([makeEv('piper-en', 'Piper English')]),
       })
     })
     render(
@@ -606,10 +656,7 @@ describe('AliasForm', () => {
       />,
     )
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/v1/endpoints/ep-1/remote-voices',
-        expect.any(Object),
-      )
+      expect(fetchMock).toHaveBeenCalledWith('/api/v1/endpoints/ep-1/voices', expect.any(Object))
     })
     act(() => {
       selectCallbacks['alias-endpoint']('ep-2')
