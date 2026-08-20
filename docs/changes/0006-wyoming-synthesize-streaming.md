@@ -690,7 +690,7 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [x] Add `SynthesizeStart`, `SynthesizeChunk`, `SynthesizeStop`, `SynthesizeStopped` structs with `ToEvent` and `…FromEvent`, matching the existing house pattern (PR #44)
   - [x] Encode `SynthesizeStart`'s voice with `name`, `language` and `speaker` all nested under `voice` — and leave `Synthesize`'s existing encoding (only `name` nested; `speaker` and `language` top-level) untouched. Add a test asserting `Synthesize.ToEvent`'s wire shape is unchanged (PR #44)
   - [x] Add `SupportsSynthesizeStreaming bool` to `TtsProgram`; emit it in `Info.ToEvent()` and parse it in `InfoFromEvent` (PR #44)
-  - [x] Set it to `true` in `internal/wyoming/info.go` where the `TtsProgram` is constructed — deliberately deferred to the PR that lands `tts.StreamSession`, because advertising the capability makes Home Assistant take its streaming path, and it must not do so before there is a session behind it (PR #TBD)
+  - [x] Set it to `true` in `internal/wyoming/info.go` where the `TtsProgram` is constructed — deliberately deferred to the PR that lands `tts.StreamSession`, because advertising the capability makes Home Assistant take its streaming path, and it must not do so before there is a session behind it (PR #47)
   - [x] Tests in `internal/wyoming/types_test.go`: round-trip symmetry for all four types, voice-object nesting, `context` passthrough, flag present in `info`, flag defaults to `false` when absent (PR #44)
 - [x] Event-atomic writes (PR #44)
   - [x] Rewrite `WriteEvent` in `internal/wyoming/event.go` to assemble one buffer and issue exactly one `Write`
@@ -737,27 +737,27 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [x] Zero-chunk fallback text handling from R7 (PR #46)
   - [x] Tests in `internal/tts/stream_session_test.go`: ordered emission with prefetch; suppression and fallback; buffered and streaming endpoint modes; format mismatch; upstream error before and after `audio-start`; cancellation closes bodies; idle timeout; JSON-form and tag-form input arriving in fragments; prose never override-parsed; `-race` clean (PR #46)
 - [x] Configuration
-  - [x] Add the four flags from R9 to `cmd/meadowlark/main.go` with `MEADOWLARK_*` fallbacks (PR #TBD)
-  - [x] Validate and fall back to defaults with a warning on incoherent character thresholds (PR #TBD)
-  - [x] Validate the session timeout separately: positive enables, `0` disables, negative is rejected with a warning and falls back to `30s` (PR #TBD)
-  - [x] Pass the resulting `segment.Config` and idle timeout into the handler factory (PR #TBD)
+  - [x] Add the four flags from R9 to `cmd/meadowlark/main.go` with `MEADOWLARK_*` fallbacks (PR #47)
+  - [x] Validate and fall back to defaults with a warning on incoherent character thresholds (PR #47)
+  - [x] Validate the session timeout separately: positive enables, `0` disables, negative is rejected with a warning and falls back to `30s` (PR #47)
+  - [x] Pass the resulting `segment.Config` and idle timeout into the handler factory (PR #47)
 - [x] Handler wiring
-  - [x] Make `wyomingHandler` implement `wyoming.HandlerFactory` (PR #TBD)
-  - [x] Add `connHandler` with a `*tts.StreamSession`, dispatching per the table above, and `CloseConn()` delegating to `session.Close()` (PR #TBD)
-  - [x] Add `cmd/meadowlark/main_test.go` covering the dispatch table, including the bare-`synthesize` and stray-event paths (PR #TBD)
+  - [x] Make `wyomingHandler` implement `wyoming.HandlerFactory` (PR #47)
+  - [x] Add `connHandler` with a `*tts.StreamSession`, dispatching per the table above, and `CloseConn()` delegating to `session.Close()` (PR #47)
+  - [x] Add `cmd/meadowlark/main_test.go` covering the dispatch table, including the bare-`synthesize` and stray-event paths (PR #47)
 - [x] End-to-end conformance test (R11)
-  - [x] Table-driven test over a real TCP connection asserting the ordered emitted event types for every case listed in R11 (PR #TBD)
+  - [x] Table-driven test over a real TCP connection asserting the ordered emitted event types for every case listed in R11 (PR #47)
 - [x] Documentation
-  - [x] **Remove every "planned" marker for this change from the living specs.** The spec-only PR added them because the specs must not assert unshipped behaviour; the implementing PR is what makes them false, so removing them is part of this change, not a follow-up. All three files carry them (PR #TBD):
+  - [x] **Remove every "planned" marker for this change from the living specs.** The spec-only PR added them because the specs must not assert unshipped behaviour; the implementing PR is what makes them false, so removing them is part of this change, not a follow-up. All three files carry them (PR #47):
     - `docs/specs/wyoming-protocol/index.md` — Overview streaming bullet; the `WriteEvent` single-`Write` blockquote under Read/Write Contract; the four `*planned*` cells in the event-type constants table; the commented-out `SupportsSynthesizeStreaming` field and the planned blockquote under Home Assistant Compatibility Requirements; the suppression blockquote under Synthesize; the `Streaming Synthesis Events — *Planned*` heading suffix and its blockquote; the commented-out `HandlerFactory`/`ConnHandler` block and the blockquote under Architecture; the planned blockquote under Connection Lifecycle; the blockquote under `Write Serialization`; the planned blockquote under TCP Server Requirements; the italicised planned scenario; the planned blockquote under Event Handler Routing; the blockquote under `Streaming Synthesis Input`; the planned blockquote under Info Builder Requirements; and the two "gains … with 0006" notes in the Files table
     - `docs/specs/tts-synthesis/index.md` — the Overview inbound-modes bullet and the `internal/segment/` package note; the four-stage pipeline blockquote under Synthesis Flow; the `*planned*` cell in the error table; the blockquote under `Segmented Streaming Synthesis`; the planned blockquote under Endpoint Streaming Configuration Requirements; and the separate "planned file" table under Files, whose two rows fold back into the main table
     - `docs/meadowlark.md` — the four `*planned*` cells in the §2.2 event table; the "Specified but not yet implemented" sentence in §2.2; the planned note on the §2.3 streaming input flow diagram; the planned sub-list in §9.4 Concurrency Model, whose bullets fold back into the main list; and the §16 parenthetical
-  - [x] Restore present tense throughout those sections as the markers come off — several were rewritten to "will" when the markers went on (PR #TBD)
-  - [x] Note that three headings deliberately kept their original text — `Write Serialization`, `Streaming Synthesis Input`, `Segmented Streaming Synthesis` — because other documents link to their anchors; do not rename them while removing the markers (PR #TBD)
-  - [x] Add a changelog row to each amended living spec recording that the behaviour now ships, and reword the existing 0006 rows from "Specify" to reflect implementation (PR #TBD)
-  - [x] Correct the tts-synthesis spec's synthesis-flow step ordering: `doSynthesize` now parses input before resolving the voice, because `resolveSynthesis` takes already-parsed input, so the numbered flow listing resolution as step 1 and parsing as step 2 is stale. Nothing observable changed — `voice.ParseInput` is pure and total — but the documented order no longer matches the code (PR #TBD)
-  - [x] Confirm the living specs still match the implementation; correct them if the shape drifted during implementation (PR #TBD)
-  - [x] Flip this document's status to `complete` and update `docs/index.yml` **and `docs/index.md`** (both carry a status for 0006) (PR #TBD)
+  - [x] Restore present tense throughout those sections as the markers come off — several were rewritten to "will" when the markers went on (PR #47)
+  - [x] Note that three headings deliberately kept their original text — `Write Serialization`, `Streaming Synthesis Input`, `Segmented Streaming Synthesis` — because other documents link to their anchors; do not rename them while removing the markers (PR #47)
+  - [x] Add a changelog row to each amended living spec recording that the behaviour now ships, and reword the existing 0006 rows from "Specify" to reflect implementation (PR #47)
+  - [x] Correct the tts-synthesis spec's synthesis-flow step ordering: `doSynthesize` now parses input before resolving the voice, because `resolveSynthesis` takes already-parsed input, so the numbered flow listing resolution as step 1 and parsing as step 2 is stale. Nothing observable changed — `voice.ParseInput` is pure and total — but the documented order no longer matches the code (PR #47)
+  - [x] Confirm the living specs still match the implementation; correct them if the shape drifted during implementation (PR #47)
+  - [x] Flip this document's status to `complete` and update `docs/index.yml` **and `docs/index.md`** (both carry a status for 0006) (PR #47)
 
 ## Open Questions
 
