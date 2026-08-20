@@ -407,13 +407,35 @@ Segmentation thresholds and the session idle timeout MUST be process-level confi
 | `--synthesize-max-segment-chars` | `MEADOWLARK_SYNTHESIZE_MAX_SEGMENT_CHARS` | `400` |
 | `--synthesize-session-timeout` | `MEADOWLARK_SYNTHESIZE_SESSION_TIMEOUT` | `30s` |
 
-Values MUST satisfy `0 < firstSegmentChars ≤ minSegmentChars ≤ maxSegmentChars`. A configuration violating that ordering, or carrying a non-positive character threshold, MUST log a warning at startup and fall back to all three defaults rather than starting with an incoherent mix. A session timeout of `0` MUST disable the idle timeout.
+Character thresholds MUST satisfy `0 < firstSegmentChars ≤ minSegmentChars ≤ maxSegmentChars`. A configuration violating that ordering, or carrying a non-positive threshold, MUST log a warning at startup and fall back to all three defaults rather than starting with an incoherent mix.
+
+The session timeout MUST be validated separately, because a `time.Duration` flag accepts values the character thresholds cannot take:
+
+| Value | Behaviour |
+|---|---|
+| `> 0` | Idle timeout enabled at that duration. |
+| `= 0` | Idle timeout disabled entirely; sessions never time out. |
+| `< 0` | **Rejected.** Log a warning naming the supplied value and fall back to the `30s` default. |
+
+The negative case is called out explicitly because Cobra and Viper both accept `-1s` without complaint, and handing a negative duration to a timer fires it immediately — every session would fail with `synthesize-timeout` the instant it opened. Silently treating a negative as "disabled" would be equally wrong, since it hides an operator's mistake. Rejecting it with a warning and using the default is the only behaviour that neither breaks synthesis nor conceals the misconfiguration.
 
 #### Scenario: incoherent configuration falls back
 
 - **GIVEN** `--synthesize-min-segment-chars=600` and `--synthesize-max-segment-chars=400`
 - **WHEN** the process starts
 - **THEN** a warning MUST be logged and the segmenter MUST use `24`/`60`/`400`
+
+#### Scenario: negative session timeout is rejected
+
+- **GIVEN** `--synthesize-session-timeout=-1s`
+- **WHEN** the process starts
+- **THEN** a warning naming the supplied value MUST be logged, the timeout MUST be `30s`, and sessions MUST NOT time out immediately
+
+#### Scenario: zero session timeout disables the timer
+
+- **GIVEN** `--synthesize-session-timeout=0`
+- **WHEN** a session sits idle far longer than the default timeout
+- **THEN** no `synthesize-timeout` error MUST be emitted and the session MUST stay open
 
 ### R10: Error handling and terminator discipline
 
@@ -678,7 +700,8 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Tests in `internal/tts/stream_session_test.go`: ordered emission with prefetch; suppression and fallback; buffered and streaming endpoint modes; format mismatch; upstream error before and after `audio-start`; cancellation closes bodies; idle timeout; JSON-form and tag-form input arriving in fragments; prose never override-parsed; `-race` clean
 - [ ] Configuration
   - [ ] Add the four flags from R9 to `cmd/meadowlark/main.go` with `MEADOWLARK_*` fallbacks
-  - [ ] Validate and fall back to defaults with a warning on incoherent values
+  - [ ] Validate and fall back to defaults with a warning on incoherent character thresholds
+  - [ ] Validate the session timeout separately: positive enables, `0` disables, negative is rejected with a warning and falls back to `30s`
   - [ ] Pass the resulting `segment.Config` and idle timeout into the handler factory
 - [ ] Handler wiring
   - [ ] Make `wyomingHandler` implement `wyoming.HandlerFactory`

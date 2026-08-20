@@ -350,7 +350,7 @@ Session state is a field on the per-connection handler produced by `HandlerFacto
 - Cancelling that context MUST abort in-flight upstream HTTP requests and close their response bodies.
 - Connection teardown MUST cancel the session; server shutdown MUST cancel it through the parent context.
 - A session MUST run an idle timer, armed when the session opens, reset by every subsequent client event belonging to that session — each `synthesize-chunk` and the compatibility `synthesize` — and disarmed by `synthesize-stop`. Meadowlark's own progress MUST NOT reset it.
-- When the idle timer expires the session MUST be abandoned: quiesce, emit an `error` with code `synthesize-timeout`, and enter the `terminated` state without emitting `synthesize-stopped`. It MUST NOT return directly to `idle` — a timed-out session is an errored session, so its tombstone MUST keep absorbing until `synthesize-stop`, or a late compatibility `synthesize` would reach the whole-message path and speak the message after the timeout error. A timeout of `0` disables the timer entirely.
+- When the idle timer expires the session MUST be abandoned: quiesce, emit an `error` with code `synthesize-timeout`, and enter the `terminated` state without emitting `synthesize-stopped`. It MUST NOT return directly to `idle` — a timed-out session is an errored session, so its tombstone MUST keep absorbing until `synthesize-stop`, or a late compatibility `synthesize` would reach the whole-message path and speak the message after the timeout error. A timeout of `0` disables the timer entirely; a negative timeout is rejected at startup with a warning and the default is used, since a negative duration would otherwise fire the timer immediately and fail every session.
 
 ### Scenarios
 
