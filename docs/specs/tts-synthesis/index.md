@@ -247,11 +247,17 @@ The pipeline is separable into three independently callable stages, so that a se
 
 | Stage | Steps | Writes to the client? |
 |---|---|---|
-| **Resolution** | 1–6 | No |
+| **Input parsing** | 2 — `voice.ParseInput` over the complete message text | No |
+| **Resolution** | 1, 3–6 — takes the already-parsed overrides | No |
 | **Open** | 7 — issue the upstream request and determine the audio format | No |
 | **Emission** | 8 — `AudioStart`, `AudioChunk`+, `AudioStop` | Yes |
 
-Open and emission are distinct stages rather than one, because a segment's audio format MUST be known and accepted before its `AudioStart` is written; see [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
+Two of those boundaries are load-bearing rather than cosmetic:
+
+- **Input parsing is separate from resolution** because a segmented session must run it over the whole message or not at all, never over one segment.
+- **Open is separate from emission** because a segment's audio format MUST be known and accepted before its `AudioStart` is written.
+
+Both are explained under [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
 
 ### Error Handling
 

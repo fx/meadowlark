@@ -452,7 +452,7 @@ func (s *StreamSession) Close()                              // connection teard
 
 Factor it into **three** pieces, so the session resolves once per session, and — critically — learns each segment's audio format **before** any byte of that segment is written:
 
-- `Proxy.resolveSynthesis(ctx, voiceName, text) (*synthesisPlan, error)` — steps 1–6 of the [existing flow](../specs/tts-synthesis/index.md#synthesis-flow) (resolve voice, parse input, alias defaults, fetch endpoint, endpoint defaults, merge), returning the endpoint, the client, and the merged parameters.
+- `Proxy.resolveSynthesis(ctx, voiceName, parsed voice.ParsedInput) (*synthesisPlan, error)` — steps 1 and 3–6 of the [existing flow](../specs/tts-synthesis/index.md#synthesis-flow) (resolve voice, alias defaults, fetch endpoint, endpoint defaults, merge), returning the endpoint, the client, and the merged parameters. Step 2, input parsing, is **not** part of it — the caller supplies the already-parsed overrides, for the reason in [Override parsing](#per-segment-synthesis-inside-the-proxy) below.
 - `Proxy.openSegment(ctx, plan, text) (*OpenSegment, error)` — step 7 only. Issues the upstream request and determines the audio format: in streaming mode from `{ep.StreamSampleRate, 2, 1}`, in buffered mode by calling `WAVReader.ReadFormat()` on the response. Writes **nothing**. Returns an `*OpenSegment` exposing `Format() *AudioFormat`, a PCM `io.Reader` positioned at the first sample, and `Close() error`.
 - `Proxy.emitSegment(w io.Writer, seg *OpenSegment) error` — step 8 only. Writes `audio-start`, the `audio-chunk` events, and `audio-stop` for an already-opened segment.
 
