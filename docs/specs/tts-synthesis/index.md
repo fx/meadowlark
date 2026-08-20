@@ -4,14 +4,21 @@ Living specification for Meadowlark's text-to-speech synthesis pipeline — the 
 
 ## Overview
 
-The TTS system receives Wyoming `synthesize` events, resolves the voice configuration, calls an OpenAI-compatible `/audio/speech` endpoint, and streams PCM audio back as Wyoming events.
+The TTS system receives Wyoming synthesis requests, resolves the voice configuration, calls an OpenAI-compatible `/audio/speech` endpoint, and streams PCM audio back as Wyoming events.
 
-Two synthesis modes are defined:
+Two **upstream** modes are supported, selected per endpoint:
 
-- **Buffered (WAV):** The current default. The full WAV response is received, the header is parsed for audio format, and PCM data is chunked into Wyoming events. Works with all endpoints.
-- **Streaming (PCM):** *Planned — see [0001](../../changes/0001-streaming-tts-client.md) and [0002](../../changes/0002-streaming-proxy-integration.md).* Opt-in per endpoint. Will send `"stream": true` with `response_format: "pcm"` to endpoints that support it. Raw PCM bytes will be forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format will be determined from endpoint configuration rather than a WAV header.
+- **Buffered (WAV):** The default. The full WAV response is received, the header is parsed for audio format, and PCM data is chunked into Wyoming events. Works with all endpoints.
+- **Streaming (PCM):** Opt-in per endpoint via `StreamingEnabled`. Sends `"stream": true` with `response_format: "pcm"`. Raw PCM bytes are forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format comes from endpoint configuration rather than a WAV header.
 
-**Package:** `internal/tts/`
+Two **inbound** modes are supported, selected by the Wyoming client:
+
+- **Whole-message:** one `synthesize` event carrying the complete text produces one audio group.
+- **Segmented streaming:** text arrives incrementally across a session, is aggregated into sentence-sized segments, and each segment produces its own audio group. See [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
+
+The two dimensions are orthogonal and compose freely.
+
+**Package:** `internal/tts/`, with text segmentation in `internal/segment/`
 
 ## OpenAI-Compatible HTTP Client
 
@@ -72,13 +79,11 @@ The client validates the response is WAV audio by checking the first 4 bytes for
 - The response body MUST be returned as an `io.ReadCloser` for streaming consumption.
 - Error response bodies MUST be truncated to 500 characters for logging.
 
-### SynthesizeStream (Streaming) — *Planned*
-
-> **Not yet implemented.** See [0001-streaming-tts-client](../../changes/0001-streaming-tts-client.md) for the implementation plan.
+### SynthesizeStream (Streaming)
 
 `SynthesizeStream(ctx, req) → (io.ReadCloser, error)`
 
-Will send a `POST {baseURL}/audio/speech` request with `"stream": true` in the JSON body:
+Sends a `POST {baseURL}/audio/speech` request with `"stream": true` in the JSON body:
 
 ```go
 type StreamSynthesizeRequest struct {
@@ -230,14 +235,15 @@ type ClientFactory func(ep *model.Endpoint) *Client
 4. **Fetch endpoint** → `endpoints.GetEndpoint(ctx, resolved.EndpointID)`. Error if not found or disabled.
 5. **Build endpoint defaults** (speed, instructions from endpoint config).
 6. **Merge parameters** → `voice.MergeParams(input, aliasDefaults, endpointDefaults)`. Priority: input > alias > endpoint.
-7. **Call TTS API** → Forces `response_format = "wav"`. Returns error if endpoint's `DefaultResponseFormat` is non-empty and not `"wav"`.
-8. **Parse WAV header** → `WAVReader.ReadFormat()` extracts `AudioFormat`.
-9. **Stream audio chunks**:
+7. **Call TTS API**, branching on `endpoint.StreamingEnabled`:
+   - **Streaming:** call `SynthesizeStream` with `response_format: "pcm"` and `stream: true`. `AudioFormat` is `{StreamSampleRate, 2, 1}`, defaulting the rate to `24000` when zero.
+   - **Buffered:** call `Synthesize` with `response_format: "wav"`. Returns an error if the endpoint's `DefaultResponseFormat` is non-empty and not `"wav"`. `AudioFormat` comes from `WAVReader.ReadFormat()`.
+8. **Stream audio chunks**:
    - Send `AudioStart` event with rate, width, channels.
    - Read PCM in 2048-byte chunks, send `AudioChunk` events.
    - Send `AudioStop` on EOF.
 
-> **Planned:** Step 7 will gain a streaming branch based on `endpoint.StreamingEnabled` — see [0002-streaming-proxy-integration](../../changes/0002-streaming-proxy-integration.md). When streaming is enabled, the proxy will call `SynthesizeStream` with `response_format: "pcm"`, build `AudioFormat` from endpoint config, and forward PCM chunks directly from the HTTP response.
+Steps 1–6 are **resolution** and steps 7–8 are **emission**. The two halves are separately callable so that a segmented streaming session can resolve once and emit many times; see [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
 
 ### Error Handling
 
@@ -251,10 +257,12 @@ All errors in `doSynthesize` are caught by `HandleSynthesize`, which:
 | Voice resolution fails | `"resolve voice: ..."` |
 | Endpoint not found | `"get endpoint: ..."` |
 | Endpoint disabled | `"endpoint ... is disabled"` |
-| Unsupported response format (buffered) | `"endpoint ... uses unsupported response format: ..."` |
-| TTS API call fails | `"tts api call: ..."` |
+| Unsupported response format (buffered) | `"unsupported response format ...; only \"wav\" is supported by proxy"` |
+| TTS API call fails (buffered) | `"tts api call: ..."` |
+| TTS API call fails (streaming) | `"tts api call (streaming): ..."` |
 | WAV parsing fails (buffered only) | `"parse wav header: ..."` |
 | PCM read error | `"read pcm data: ..."` |
+| Segment audio format differs from the session's first segment | `"segment audio format ... differs from session format ..."` |
 
 ### Constants
 
@@ -264,12 +272,11 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 
 ### Requirements
 
-- The proxy MUST force `response_format = "wav"` regardless of client request.
+- In buffered mode the proxy MUST force `response_format = "wav"` regardless of client request.
 - Audio MUST be chunked in exactly 2048-byte segments (final chunk MAY be smaller).
 - Synthesis errors MUST result in a Wyoming `Error` event, never a crash.
 - The connection MUST remain usable after a synthesis error.
-
-> **Planned (streaming):** When implemented, streaming mode MUST be per-endpoint opt-in (default off), MUST use `response_format = "pcm"` and `stream = true`, and MUST derive audio format from endpoint config.
+- Streaming mode MUST be per-endpoint opt-in (default off), MUST use `response_format = "pcm"` and `stream = true`, and MUST derive audio format from endpoint config.
 
 ### Scenarios
 
@@ -289,11 +296,83 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 **WHEN** the proxy reads from the response body,
 **THEN** it MUST send `AudioStop` for any audio already sent, then send a Wyoming `Error` event.
 
-## Endpoint Streaming Configuration — *Planned*
+## Segmented Streaming Synthesis
 
-> **Not yet implemented.** See [0002-streaming-proxy-integration](../../changes/0002-streaming-proxy-integration.md) for the implementation plan.
+When a Wyoming client streams text in rather than sending a whole message (see [wyoming-protocol — Streaming Synthesis Input](../wyoming-protocol/index.md#streaming-synthesis-input)), the proxy synthesizes one segment at a time.
 
-The `Endpoint` model will include streaming configuration:
+### Text Segmentation
+
+Incoming text is aggregated by a pure, I/O-free segmenter in `internal/segment/`. Segment boundaries are:
+
+- an ASCII sentence-terminating rune — `.` `!` `?` `…` — optionally followed by a run of closing punctuation (`"` `'` `”` `’` `)` `]` `}` `»`), and then followed by whitespace;
+- a full-width sentence-terminating rune — `。` `！` `？` — optionally followed by closing punctuation, with no trailing-whitespace requirement, because CJK text is not space-separated;
+- a newline;
+- a forced break at the maximum length.
+
+Requiring trailing whitespace after an ASCII terminator is what makes the rule safe against partial input: a terminator at the very end of the buffer is not yet a boundary, because the next fragment may continue the token. Full-width terminators need no such guard.
+
+A `.` does not create a boundary when it sits between digits, when the preceding token is a known abbreviation (`mr`, `mrs`, `ms`, `dr`, `prof`, `sr`, `jr`, `st`, `vs`, `etc`, `approx`, `no`, `fig`, `inc`, `ltd`, `co`, `e.g`, `i.e`), or when the preceding token is a single letter.
+
+Length gating governs when a qualifying boundary actually flushes:
+
+| Threshold | Default | Meaning |
+|---|---|---|
+| `firstSegmentChars` | 24 | Minimum runes before the session's **first** segment may flush |
+| `minSegmentChars` | 60 | Minimum runes before any later segment may flush |
+| `maxSegmentChars` | 400 | Buffer size at which a break is forced with no boundary |
+
+A forced break prefers, in order: the last soft break (`,` `;` `:` `—` `–` followed by whitespace) at or before the limit; the last whitespace at or before the limit; a rune-aligned hard cut at the limit.
+
+The remainder is flushed unconditionally at the end of a session, unless it is empty or entirely whitespace.
+
+**The tradeoff being tuned:** smaller segments lower time-to-first-audio but cost one upstream HTTP round-trip each and introduce an audible seam at every join, because each request is synthesized with independent prosody. Sentence boundaries put the seam where a speaker would pause anyway. `minSegmentChars = 60` is roughly 4 s of speech, comfortably longer than an upstream time-to-first-byte, so the next segment's request completes while the current one is still playing. `firstSegmentChars` is lower because the opening segment alone determines perceived latency and its own playback covers the next request.
+
+Thresholds are process-level configuration, not per-endpoint: segmentation happens above endpoint resolution, since the first segment must exist before the endpoint is known.
+
+| Flag | Env | Default |
+|---|---|---|
+| `--synthesize-first-segment-chars` | `MEADOWLARK_SYNTHESIZE_FIRST_SEGMENT_CHARS` | `24` |
+| `--synthesize-min-segment-chars` | `MEADOWLARK_SYNTHESIZE_MIN_SEGMENT_CHARS` | `60` |
+| `--synthesize-max-segment-chars` | `MEADOWLARK_SYNTHESIZE_MAX_SEGMENT_CHARS` | `400` |
+| `--synthesize-session-timeout` | `MEADOWLARK_SYNTHESIZE_SESSION_TIMEOUT` | `30s` |
+
+### Multi-Segment Proxy Behaviour
+
+- Voice resolution, input-override parsing, and parameter merging run **once per session**, on the first flushed segment. The resulting plan is reused verbatim for every later segment.
+- Segments are emitted in text order by a single emitter, so ordering is structural rather than a timing accident.
+- Upstream requests are started ahead of emission, bounded at two in flight — the segment being emitted plus one prefetch — so an upstream's time-to-first-byte is spent while the previous segment is still playing.
+
+### Requirements
+
+- Thresholds MUST satisfy `0 < firstSegmentChars ≤ minSegmentChars ≤ maxSegmentChars`; a configuration violating that ordering, or carrying a non-positive threshold, MUST log a warning at startup and fall back to all three defaults.
+- A forced hard cut MUST be rune-aligned and MUST NOT split a multi-byte rune.
+- `voice.ParseInput` MUST run only on the session's first segment; later segments MUST reuse the parsed overrides without re-parsing.
+- Audio for segment N MUST be fully emitted, including its `audio-stop`, before any audio for segment N+1.
+- At most two upstream synthesis requests per session MUST be in flight at any time.
+- All segments of a session MUST use an identical audio format. In streaming mode this holds by construction from `StreamSampleRate`; in buffered mode the format is parsed per response and MAY differ, in which case the mismatched segment MUST NOT be emitted — the session MUST log at warn, emit a Wyoming `Error` naming both formats, and terminate. Resampling is out of scope.
+- Cancelling a session MUST abort in-flight upstream requests and close every held response body, including prefetched segments that were never emitted.
+
+### Scenarios
+
+**GIVEN** a session whose text segments into three parts,
+**WHEN** the session completes successfully,
+**THEN** exactly three `AudioStart`/`AudioChunk`+/`AudioStop` groups MUST be emitted in text order, followed by one `SynthesizeStopped`.
+
+**GIVEN** a buffered-mode endpoint whose first segment returns 24000 Hz WAV and whose second returns 16000 Hz WAV,
+**WHEN** the second segment's header is parsed,
+**THEN** no `AudioStart` MUST be emitted for it and the session MUST terminate with a Wyoming `Error` naming both formats.
+
+**GIVEN** a session whose first segment's text begins with a parameter override tag,
+**WHEN** three segments are synthesized,
+**THEN** the override MUST apply to all three, and the tag MUST be stripped from the first segment's input only.
+
+**GIVEN** a session with one segment emitting and one prefetched,
+**WHEN** the session is cancelled,
+**THEN** both response bodies MUST be closed and no further audio MUST be emitted.
+
+## Endpoint Streaming Configuration
+
+The `Endpoint` model includes streaming configuration:
 
 ```go
 type Endpoint struct {
@@ -309,6 +388,7 @@ type Endpoint struct {
 - `StreamSampleRate` MUST default to `24000` when zero/unset.
 - The audio format for streaming is fixed at 16-bit signed LE mono PCM — only the sample rate is configurable.
 - These fields MUST be exposed in the HTTP API for endpoint CRUD and in the frontend endpoint form.
+- Segmented streaming synthesis MUST work correctly with `StreamingEnabled = false`. The two settings are orthogonal: `StreamingEnabled` governs how a single segment's audio leaves the upstream, segmentation governs how many segments there are. With `StreamingEnabled = false` the latency win is smaller — each segment is one buffered WAV request — but segment 1 still begins as soon as the first segment's worth of text exists, and the cross-segment format-consistency rule becomes load-bearing.
 
 ### Audio Format Convention
 
@@ -329,8 +409,10 @@ This format MUST be assumed for all streaming responses. WAV header parsing is n
 |------|---------|
 | `internal/tts/tts.go` | Package declaration |
 | `internal/tts/client.go` | OpenAI-compatible HTTP client (buffered + streaming) |
-| `internal/tts/proxy.go` | Synthesis proxy orchestration |
+| `internal/tts/proxy.go` | Synthesis proxy orchestration (resolution and per-segment emission) |
+| `internal/tts/stream_session.go` | Segmented streaming session: buffering, ordered pipeline, terminators |
 | `internal/tts/wav.go` | WAV header parser and PCM reader (buffered mode only) |
+| `internal/segment/segmenter.go` | Pure text segmenter (no I/O) |
 
 ## Changelog
 
@@ -338,3 +420,4 @@ This format MUST be assumed for all streaming responses. WAV header parsing is n
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
 | 2026-04-19 | Add streaming PCM synthesis mode (spec + changes) | [0001](../../changes/0001-streaming-tts-client.md), [0002](../../changes/0002-streaming-proxy-integration.md) |
+| 2026-08-20 | Drop "planned" markers now that 0001/0002 have shipped; add segmented streaming synthesis, text segmentation, and multi-segment proxy behaviour | [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
