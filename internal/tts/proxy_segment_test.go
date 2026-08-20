@@ -446,14 +446,18 @@ func TestProxy_OpenSegment_WritesNothing(t *testing.T) {
 	plan, err := proxy.resolveSynthesis(context.Background(), "alloy (Test, tts-1)", voice.ParsedInput{Input: "Hello"})
 	require.NoError(t, err)
 
-	var buf bytes.Buffer
+	// openSegment takes no io.Writer at all, so "writes nothing" holds by
+	// construction; what this asserts is the half that does not — that the
+	// format is available once it returns, before anything is emitted.
+	// TestProxy_OpenSegment_FormatMismatchRejectedWithNoBytesWritten asserts
+	// the no-bytes property against a writer that already holds output.
 	seg, err := proxy.openSegment(context.Background(), plan, "Hello")
 	require.NoError(t, err)
 	defer seg.Close()
 
 	require.NotNil(t, seg.Format(), "the format must be known after openSegment")
-	assert.Zero(t, buf.Len(), "openSegment must write nothing")
 
+	var buf bytes.Buffer
 	require.NoError(t, proxy.emitSegment(&buf, seg))
 	assert.NotZero(t, buf.Len(), "emitSegment is what writes")
 }
