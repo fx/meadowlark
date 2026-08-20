@@ -286,37 +286,65 @@ func (w *errWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestWriteEventHeaderWriteError(t *testing.T) {
-	ev := &Event{Type: "ping"}
-	w := &errWriter{maxBytes: 5}
-	err := WriteEvent(w, ev)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "write header")
+// WriteEvent assembles the whole message and issues one Write, so a failing
+// writer surfaces as a single "write event" error regardless of which part of
+// the message the underlying writer choked on.
+func TestWriteEventWriteError(t *testing.T) {
+	tests := []struct {
+		name string
+		ev   *Event
+	}{
+		{"header only", &Event{Type: "ping"}},
+		{"with data", &Event{Type: "test", Data: map[string]any{"key": "value"}}},
+		{"with payload", &Event{Type: "test", Payload: []byte{0x01, 0x02, 0x03}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &errWriter{maxBytes: 5}
+			err := WriteEvent(w, tt.ev)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "write event")
+			assert.ErrorIs(t, err, io.ErrShortWrite)
+		})
+	}
 }
 
-func TestWriteEventNewlineWriteError(t *testing.T) {
-	ev := &Event{Type: "ping"}
-	headerJSON := `{"type":"ping","version":"1.8.0"}`
-	w := &errWriter{maxBytes: len(headerJSON)}
-	err := WriteEvent(w, ev)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "write header newline")
+// countingWriter records how many Write calls it received.
+type countingWriter struct {
+	writes int
+	buf    bytes.Buffer
 }
 
-func TestWriteEventDataWriteError(t *testing.T) {
-	ev := &Event{Type: "test", Data: map[string]any{"key": "value"}}
-	headerJSON := `{"type":"test","version":"1.8.0","data_length":15}`
-	w := &errWriter{maxBytes: len(headerJSON) + 1}
-	err := WriteEvent(w, ev)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "write data")
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.writes++
+	return w.buf.Write(p)
 }
 
-func TestWriteEventPayloadWriteError(t *testing.T) {
-	ev := &Event{Type: "test", Payload: []byte{0x01, 0x02, 0x03}}
-	headerJSON := `{"type":"test","version":"1.8.0","payload_length":3}`
-	w := &errWriter{maxBytes: len(headerJSON) + 1}
-	err := WriteEvent(w, ev)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "write payload")
+// R4: an event with both data and a binary payload costs exactly one Write.
+func TestWriteEventIssuesSingleWrite(t *testing.T) {
+	tests := []struct {
+		name string
+		ev   *Event
+	}{
+		{"header only", &Event{Type: TypePing}},
+		{"data only", &Event{Type: TypeSynthesize, Data: map[string]any{"text": "hi"}}},
+		{"payload only", &Event{Type: TypeAudioChunk, Payload: []byte{1, 2, 3}}},
+		{"data and payload", &Event{
+			Type:    TypeAudioChunk,
+			Data:    map[string]any{"rate": 24000, "width": 2, "channels": 1},
+			Payload: bytes.Repeat([]byte{0xAB}, 2048),
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := &countingWriter{}
+			require.NoError(t, WriteEvent(w, tt.ev))
+			assert.Equal(t, 1, w.writes)
+
+			got, err := ReadEvent(bufio.NewReader(&w.buf))
+			require.NoError(t, err)
+			assert.Equal(t, tt.ev.Type, got.Type)
+			assert.Equal(t, tt.ev.Payload, got.Payload)
+		})
+	}
 }

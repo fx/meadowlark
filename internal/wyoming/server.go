@@ -28,6 +28,48 @@ func (f HandlerFunc) HandleEvent(ctx context.Context, ev *Event, w io.Writer) er
 	return f(ctx, ev, w)
 }
 
+// HandlerFactory is an optional interface a Handler may implement to be
+// constructed per connection rather than shared process-wide. It exists
+// because per-connection state — a streaming synthesis session, for one — has
+// nowhere to live in HandleEvent's signature, which carries no connection
+// identity.
+//
+// A Handler that does not implement it, HandlerFunc included, is used as a
+// process-wide singleton exactly as before.
+type HandlerFactory interface {
+	// NewConnHandler returns a fresh Handler for one accepted connection.
+	NewConnHandler() Handler
+}
+
+// ConnHandler is an optional interface a per-connection Handler may implement
+// to release resources when its connection is torn down.
+//
+// CloseConn must block until the connection's background work has finished, so
+// that Shutdown's connection drain genuinely waits for in-flight work rather
+// than abandoning it.
+type ConnHandler interface {
+	// CloseConn releases the handler's resources. It is called exactly once,
+	// before the connection goroutine exits.
+	CloseConn()
+}
+
+// connWriter serializes writes to a connection shared by several goroutines.
+//
+// It is only half of the atomicity guarantee: WriteEvent issues exactly one
+// Write per event, and this mutex makes that Write exclusive. Neither half is
+// sufficient alone.
+type connWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+// Write writes p to the underlying writer, excluding any concurrent write.
+func (c *connWriter) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.w.Write(p)
+}
+
 // Server is a Wyoming protocol TCP server.
 type Server struct {
 	addr    string
@@ -131,7 +173,22 @@ func (s *Server) Shutdown() {
 
 func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	defer s.wg.Done()
+
+	// Build a per-connection handler when the configured handler is a factory;
+	// otherwise keep using the shared singleton.
+	handler := s.handler
+	if factory, ok := s.handler.(HandlerFactory); ok {
+		handler = factory.NewConnHandler()
+	}
+
 	defer func() {
+		// CloseConn blocks until the connection's background work has
+		// finished, and runs before the socket is closed so that work can
+		// still drain what it has already started. It is what makes
+		// Shutdown's wg.Wait genuinely wait for in-flight synthesis.
+		if ch, ok := handler.(ConnHandler); ok {
+			ch.CloseConn()
+		}
 		conn.Close()
 		s.mu.Lock()
 		delete(s.conns, conn)
@@ -141,6 +198,10 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	remote := conn.RemoteAddr().String()
 	s.logger.Debug("connection accepted", "remote", remote)
 
+	// Every event written to this connection — by the handler, by a session's
+	// background goroutine, or by the read loop below — goes through w, so no
+	// two writes can interleave.
+	w := &connWriter{w: conn}
 	reader := bufio.NewReader(conn)
 
 	for {
@@ -160,10 +221,10 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 
 		s.logger.Debug("event received", "remote", remote, "type", ev.Type)
 
-		if err := s.handler.HandleEvent(ctx, ev, conn); err != nil {
+		if err := handler.HandleEvent(ctx, ev, w); err != nil {
 			s.logger.Error("handle event", "remote", remote, "type", ev.Type, "error", err)
 			errEv := &Error{Text: err.Error(), Code: "handler-error"}
-			if writeErr := WriteEvent(conn, errEv.ToEvent()); writeErr != nil {
+			if writeErr := WriteEvent(w, errEv.ToEvent()); writeErr != nil {
 				s.logger.Error("write error event", "remote", remote, "error", writeErr)
 				return
 			}
