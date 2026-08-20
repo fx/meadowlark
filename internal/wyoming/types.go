@@ -4,15 +4,19 @@ import "fmt"
 
 // Wyoming event type constants.
 const (
-	TypeDescribe   = "describe"
-	TypeInfo       = "info"
-	TypeSynthesize = "synthesize"
-	TypeAudioStart = "audio-start"
-	TypeAudioChunk = "audio-chunk"
-	TypeAudioStop  = "audio-stop"
-	TypePing       = "ping"
-	TypePong       = "pong"
-	TypeError      = "error"
+	TypeDescribe          = "describe"
+	TypeInfo              = "info"
+	TypeSynthesize        = "synthesize"
+	TypeSynthesizeStart   = "synthesize-start"
+	TypeSynthesizeChunk   = "synthesize-chunk"
+	TypeSynthesizeStop    = "synthesize-stop"
+	TypeSynthesizeStopped = "synthesize-stopped"
+	TypeAudioStart        = "audio-start"
+	TypeAudioChunk        = "audio-chunk"
+	TypeAudioStop         = "audio-stop"
+	TypePing              = "ping"
+	TypePong              = "pong"
+	TypeError             = "error"
 )
 
 // Synthesize represents a TTS synthesis request.
@@ -61,6 +65,125 @@ func SynthesizeFromEvent(ev *Event) (*Synthesize, error) {
 		s.Language = language
 	}
 	return s, nil
+}
+
+// SynthesizeStart opens a streaming synthesis session. The client follows it
+// with zero or more SynthesizeChunk events and terminates it with
+// SynthesizeStop.
+//
+// Its voice encoding is deliberately NOT the same as Synthesize's: this event
+// nests name, language and speaker all under "voice", following the upstream
+// wyoming/tts.py shape, whereas Synthesize nests only "name" and emits speaker
+// and language at the top level. The two must not be harmonised — Synthesize's
+// shape is what existing Wyoming clients already speak.
+type SynthesizeStart struct {
+	Voice      string
+	Language   string
+	Speaker    string
+	TextFormat string // "text" (default) or "ssml"
+	Context    any    // opaque, round-tripped unchanged
+}
+
+// ToEvent converts a SynthesizeStart to a generic Event.
+//
+// The "voice" object is omitted only when Voice, Language and Speaker are all
+// empty; a start event carrying only a language or only a speaker is valid and
+// must survive the round trip. Within the object each field is omitted when
+// empty.
+func (s *SynthesizeStart) ToEvent() *Event {
+	data := map[string]any{}
+	if s.Voice != "" || s.Language != "" || s.Speaker != "" {
+		v := map[string]any{}
+		if s.Voice != "" {
+			v["name"] = s.Voice
+		}
+		if s.Language != "" {
+			v["language"] = s.Language
+		}
+		if s.Speaker != "" {
+			v["speaker"] = s.Speaker
+		}
+		data["voice"] = v
+	}
+	if s.TextFormat != "" {
+		data["text_format"] = s.TextFormat
+	}
+	if s.Context != nil {
+		data["context"] = s.Context
+	}
+	return &Event{Type: TypeSynthesizeStart, Data: data}
+}
+
+// SynthesizeStartFromEvent extracts a SynthesizeStart from a generic Event.
+func SynthesizeStartFromEvent(ev *Event) (*SynthesizeStart, error) {
+	if ev.Type != TypeSynthesizeStart {
+		return nil, fmt.Errorf("expected type %q, got %q", TypeSynthesizeStart, ev.Type)
+	}
+	s := &SynthesizeStart{}
+	if v, ok := ev.Data["voice"].(map[string]any); ok {
+		s.Voice = stringFromAny(v["name"])
+		s.Language = stringFromAny(v["language"])
+		s.Speaker = stringFromAny(v["speaker"])
+	}
+	s.TextFormat = stringFromAny(ev.Data["text_format"])
+	if c, ok := ev.Data["context"]; ok {
+		s.Context = c
+	}
+	return s, nil
+}
+
+// SynthesizeChunk carries a fragment of text into an open streaming session.
+type SynthesizeChunk struct {
+	Text string
+}
+
+// ToEvent converts a SynthesizeChunk to a generic Event.
+func (s *SynthesizeChunk) ToEvent() *Event {
+	return &Event{
+		Type: TypeSynthesizeChunk,
+		Data: map[string]any{"text": s.Text},
+	}
+}
+
+// SynthesizeChunkFromEvent extracts a SynthesizeChunk from a generic Event.
+func SynthesizeChunkFromEvent(ev *Event) (*SynthesizeChunk, error) {
+	if ev.Type != TypeSynthesizeChunk {
+		return nil, fmt.Errorf("expected type %q, got %q", TypeSynthesizeChunk, ev.Type)
+	}
+	return &SynthesizeChunk{Text: stringFromAny(ev.Data["text"])}, nil
+}
+
+// SynthesizeStop signals that the client will send no further text.
+type SynthesizeStop struct{}
+
+// ToEvent converts a SynthesizeStop to a generic Event.
+func (s *SynthesizeStop) ToEvent() *Event {
+	return &Event{Type: TypeSynthesizeStop}
+}
+
+// SynthesizeStopFromEvent extracts a SynthesizeStop from a generic Event.
+func SynthesizeStopFromEvent(ev *Event) (*SynthesizeStop, error) {
+	if ev.Type != TypeSynthesizeStop {
+		return nil, fmt.Errorf("expected type %q, got %q", TypeSynthesizeStop, ev.Type)
+	}
+	return &SynthesizeStop{}, nil
+}
+
+// SynthesizeStopped terminates a completed streaming synthesis session. It is
+// the only one of the four streaming events sent server to client.
+type SynthesizeStopped struct{}
+
+// ToEvent converts a SynthesizeStopped to a generic Event.
+func (s *SynthesizeStopped) ToEvent() *Event {
+	return &Event{Type: TypeSynthesizeStopped}
+}
+
+// SynthesizeStoppedFromEvent extracts a SynthesizeStopped from a generic Event.
+func SynthesizeStoppedFromEvent(ev *Event) (*SynthesizeStopped, error) {
+	if ev.Type != TypeSynthesizeStopped {
+		return nil, fmt.Errorf("expected type %q, got %q", TypeSynthesizeStopped, ev.Type)
+	}
+	return &SynthesizeStopped{}, nil
 }
 
 // AudioStart signals the beginning of audio output.
@@ -165,6 +288,12 @@ type TtsProgram struct {
 	Installed   bool       `json:"installed"`
 	Version     string     `json:"version"`
 	Voices      []TtsVoice `json:"voices"`
+
+	// SupportsSynthesizeStreaming reports whether the service accepts the
+	// synthesize-start / synthesize-chunk / synthesize-stop streaming input
+	// protocol. Home Assistant reads this flag to choose between its
+	// buffering and its streaming TTS path.
+	SupportsSynthesizeStreaming bool `json:"supports_synthesize_streaming"`
 }
 
 // Info represents the service capabilities response.
@@ -199,12 +328,13 @@ func (i *Info) ToEvent() *Event {
 			voices[vi] = vm
 		}
 		ttsSlice[idx] = map[string]any{
-			"name":        prog.Name,
-			"description": prog.Description,
-			"installed":   prog.Installed,
-			"version":     prog.Version,
-			"voices":      voices,
-			"attribution": map[string]any{"name": "", "url": ""},
+			"name":                          prog.Name,
+			"description":                   prog.Description,
+			"installed":                     prog.Installed,
+			"version":                       prog.Version,
+			"voices":                        voices,
+			"attribution":                   map[string]any{"name": "", "url": ""},
+			"supports_synthesize_streaming": prog.SupportsSynthesizeStreaming,
 		}
 	}
 	return &Event{
@@ -229,10 +359,11 @@ func InfoFromEvent(ev *Event) (*Info, error) {
 			continue
 		}
 		tp := TtsProgram{
-			Name:        stringFromAny(prog["name"]),
-			Description: stringFromAny(prog["description"]),
-			Installed:   boolFromAny(prog["installed"]),
-			Version:     stringFromAny(prog["version"]),
+			Name:                        stringFromAny(prog["name"]),
+			Description:                 stringFromAny(prog["description"]),
+			Installed:                   boolFromAny(prog["installed"]),
+			Version:                     stringFromAny(prog["version"]),
+			SupportsSynthesizeStreaming: boolFromAny(prog["supports_synthesize_streaming"]),
 		}
 		if voicesRaw, ok := prog["voices"].([]any); ok {
 			for _, vRaw := range voicesRaw {

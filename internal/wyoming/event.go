@@ -2,6 +2,7 @@ package wyoming
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -90,6 +91,12 @@ func ReadEvent(r *bufio.Reader) (*Event, error) {
 //
 // Data is always written as external bytes (not inlined in the header) so
 // that the header stays compact and the format is unambiguous.
+//
+// All three parts are assembled into one buffer and issued as exactly one
+// Write call on w. That is what makes an event atomic when several goroutines
+// share a connection: a mutex around a multi-Write encoder would still let
+// another goroutine interleave its own parts between them, corrupting framing
+// for every subsequent event.
 func WriteEvent(w io.Writer, ev *Event) error {
 	h := header{
 		Type:    ev.Type,
@@ -115,26 +122,22 @@ func WriteEvent(w io.Writer, ev *Event) error {
 		return fmt.Errorf("marshal header: %w", err)
 	}
 
-	// Write header line.
-	if _, err := w.Write(headerBytes); err != nil {
-		return fmt.Errorf("write header: %w", err)
-	}
-	if _, err := w.Write([]byte("\n")); err != nil {
-		return fmt.Errorf("write header newline: %w", err)
-	}
+	var buf bytes.Buffer
+	buf.Grow(len(headerBytes) + 1 + len(dataBytes) + len(ev.Payload))
+	buf.Write(headerBytes)
+	buf.WriteByte('\n')
+	buf.Write(dataBytes)
+	buf.Write(ev.Payload)
 
-	// Write data bytes.
-	if len(dataBytes) > 0 {
-		if _, err := w.Write(dataBytes); err != nil {
-			return fmt.Errorf("write data: %w", err)
-		}
+	n, err := w.Write(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("write event: %w", err)
 	}
-
-	// Write payload bytes.
-	if len(ev.Payload) > 0 {
-		if _, err := w.Write(ev.Payload); err != nil {
-			return fmt.Errorf("write payload: %w", err)
-		}
+	if n < buf.Len() {
+		// A compliant io.Writer reports a short write as an error, but a
+		// truncated frame corrupts every subsequent event on the connection,
+		// so a non-compliant one must not pass silently.
+		return fmt.Errorf("write event: %w", io.ErrShortWrite)
 	}
 
 	return nil

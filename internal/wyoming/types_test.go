@@ -377,3 +377,241 @@ func TestSynthesizeFromEventBadVoiceType(t *testing.T) {
 	assert.Equal(t, "hello", got.Text)
 	assert.Empty(t, got.Voice)
 }
+
+// R2: Synthesize's wire shape is NOT SynthesizeStart's and must not drift.
+// Only the voice name is nested; speaker and language sit at the top level.
+func TestSynthesizeWireShapeUnchanged(t *testing.T) {
+	s := &Synthesize{Text: "Hello", Voice: "alloy", Speaker: "s1", Language: "en"}
+	ev := s.ToEvent()
+
+	assert.Equal(t, map[string]any{"name": "alloy"}, ev.Data["voice"])
+	assert.Equal(t, "s1", ev.Data["speaker"])
+	assert.Equal(t, "en", ev.Data["language"])
+	assert.Equal(t, "Hello", ev.Data["text"])
+
+	voice, ok := ev.Data["voice"].(map[string]any)
+	require.True(t, ok)
+	assert.NotContains(t, voice, "speaker")
+	assert.NotContains(t, voice, "language")
+}
+
+func TestSynthesizeStartRoundTrip(t *testing.T) {
+	s := &SynthesizeStart{Voice: "alloy (OpenAI, tts-1)", TextFormat: "text"}
+	ev := s.ToEvent()
+	assert.Equal(t, TypeSynthesizeStart, ev.Type)
+
+	got, err := SynthesizeStartFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, s, got)
+}
+
+// R2: SynthesizeStart nests all three voice fields under "voice".
+func TestSynthesizeStartVoiceNesting(t *testing.T) {
+	s := &SynthesizeStart{Voice: "alloy", Language: "en", Speaker: "s1"}
+	ev := s.ToEvent()
+
+	assert.Equal(t, map[string]any{"name": "alloy", "language": "en", "speaker": "s1"}, ev.Data["voice"])
+	assert.NotContains(t, ev.Data, "speaker")
+	assert.NotContains(t, ev.Data, "language")
+}
+
+// R2 scenario: voice metadata without a name survives.
+func TestSynthesizeStartVoiceWithoutName(t *testing.T) {
+	s := &SynthesizeStart{Language: "de", Speaker: "s2"}
+	ev := s.ToEvent()
+
+	voice, ok := ev.Data["voice"].(map[string]any)
+	require.True(t, ok, "voice object must be present when only language/speaker are set")
+	assert.NotContains(t, voice, "name")
+
+	got, err := SynthesizeStartFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, "de", got.Language)
+	assert.Equal(t, "s2", got.Speaker)
+	assert.Empty(t, got.Voice)
+}
+
+// R2 scenario: fully empty voice is omitted.
+func TestSynthesizeStartOmitsEmptyVoice(t *testing.T) {
+	tests := []struct {
+		name      string
+		start     *SynthesizeStart
+		wantVoice bool
+	}{
+		{"all empty", &SynthesizeStart{}, false},
+		{"text format only", &SynthesizeStart{TextFormat: "ssml"}, false},
+		{"name only", &SynthesizeStart{Voice: "alloy"}, true},
+		{"language only", &SynthesizeStart{Language: "de"}, true},
+		{"speaker only", &SynthesizeStart{Speaker: "s2"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := tt.start.ToEvent()
+			if tt.wantVoice {
+				assert.Contains(t, ev.Data, "voice")
+			} else {
+				assert.NotContains(t, ev.Data, "voice")
+			}
+
+			got, err := SynthesizeStartFromEvent(ev)
+			require.NoError(t, err)
+			assert.Equal(t, tt.start, got)
+		})
+	}
+}
+
+func TestSynthesizeStartOmitsEmptyTextFormat(t *testing.T) {
+	ev := (&SynthesizeStart{Voice: "alloy"}).ToEvent()
+	assert.NotContains(t, ev.Data, "text_format")
+	assert.NotContains(t, ev.Data, "context")
+}
+
+// R2: Context round-trips unchanged so a future change can echo it back.
+func TestSynthesizeStartContextPassthrough(t *testing.T) {
+	ctx := map[string]any{"conversation_id": "abc", "n": float64(3)}
+	s := &SynthesizeStart{Voice: "alloy", Context: ctx}
+
+	var buf bytes.Buffer
+	require.NoError(t, WriteEvent(&buf, s.ToEvent()))
+	ev, err := ReadEvent(bufio.NewReader(&buf))
+	require.NoError(t, err)
+
+	got, err := SynthesizeStartFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, ctx, got.Context)
+}
+
+func TestSynthesizeStartWireRoundTrip(t *testing.T) {
+	s := &SynthesizeStart{Voice: "nova", Language: "en", Speaker: "s1", TextFormat: "ssml"}
+	var buf bytes.Buffer
+	require.NoError(t, WriteEvent(&buf, s.ToEvent()))
+
+	ev, err := ReadEvent(bufio.NewReader(&buf))
+	require.NoError(t, err)
+	got, err := SynthesizeStartFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, s, got)
+}
+
+func TestSynthesizeStartFromEventIgnoresMalformedVoice(t *testing.T) {
+	got, err := SynthesizeStartFromEvent(&Event{
+		Type: TypeSynthesizeStart,
+		Data: map[string]any{"voice": "alloy", "text_format": 42},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, got.Voice)
+	assert.Empty(t, got.TextFormat)
+}
+
+func TestSynthesizeChunkRoundTrip(t *testing.T) {
+	c := &SynthesizeChunk{Text: "Turning the "}
+	ev := c.ToEvent()
+	assert.Equal(t, TypeSynthesizeChunk, ev.Type)
+	assert.Equal(t, "Turning the ", ev.Data["text"])
+
+	got, err := SynthesizeChunkFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, c, got)
+}
+
+func TestSynthesizeChunkWireRoundTrip(t *testing.T) {
+	c := &SynthesizeChunk{Text: "こんにちは"}
+	var buf bytes.Buffer
+	require.NoError(t, WriteEvent(&buf, c.ToEvent()))
+
+	ev, err := ReadEvent(bufio.NewReader(&buf))
+	require.NoError(t, err)
+	got, err := SynthesizeChunkFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, c, got)
+}
+
+func TestSynthesizeStopRoundTrip(t *testing.T) {
+	ev := (&SynthesizeStop{}).ToEvent()
+	assert.Equal(t, TypeSynthesizeStop, ev.Type)
+	assert.Empty(t, ev.Data)
+
+	got, err := SynthesizeStopFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, &SynthesizeStop{}, got)
+}
+
+func TestSynthesizeStoppedRoundTrip(t *testing.T) {
+	ev := (&SynthesizeStopped{}).ToEvent()
+	assert.Equal(t, TypeSynthesizeStopped, ev.Type)
+	assert.Empty(t, ev.Data)
+
+	got, err := SynthesizeStoppedFromEvent(ev)
+	require.NoError(t, err)
+	assert.Equal(t, &SynthesizeStopped{}, got)
+}
+
+func TestSynthesizeStopWireRoundTrip(t *testing.T) {
+	for _, ev := range []*Event{(&SynthesizeStop{}).ToEvent(), (&SynthesizeStopped{}).ToEvent()} {
+		var buf bytes.Buffer
+		require.NoError(t, WriteEvent(&buf, ev))
+		got, err := ReadEvent(bufio.NewReader(&buf))
+		require.NoError(t, err)
+		assert.Equal(t, ev.Type, got.Type)
+	}
+}
+
+func TestStreamingEventsFromEventWrongType(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   func(*Event) error
+	}{
+		{"synthesize-start", func(ev *Event) error { _, err := SynthesizeStartFromEvent(ev); return err }},
+		{"synthesize-chunk", func(ev *Event) error { _, err := SynthesizeChunkFromEvent(ev); return err }},
+		{"synthesize-stop", func(ev *Event) error { _, err := SynthesizeStopFromEvent(ev); return err }},
+		{"synthesize-stopped", func(ev *Event) error { _, err := SynthesizeStoppedFromEvent(ev); return err }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fn(&Event{Type: TypePing})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "expected type")
+		})
+	}
+}
+
+// R1 scenario: the flag is serialized on every tts[] entry and survives a
+// round trip.
+func TestInfoSupportsSynthesizeStreamingRoundTrip(t *testing.T) {
+	for _, want := range []bool{true, false} {
+		info := &Info{Tts: []TtsProgram{{
+			Name:                        "meadowlark",
+			Version:                     "1.0.0",
+			Installed:                   true,
+			SupportsSynthesizeStreaming: want,
+		}}}
+
+		ev := info.ToEvent()
+		tts, ok := ev.Data["tts"].([]any)
+		require.True(t, ok)
+		prog, ok := tts[0].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, want, prog["supports_synthesize_streaming"])
+
+		var buf bytes.Buffer
+		require.NoError(t, WriteEvent(&buf, ev))
+		read, err := ReadEvent(bufio.NewReader(&buf))
+		require.NoError(t, err)
+
+		got, err := InfoFromEvent(read)
+		require.NoError(t, err)
+		require.Len(t, got.Tts, 1)
+		assert.Equal(t, want, got.Tts[0].SupportsSynthesizeStreaming)
+	}
+}
+
+// R1 scenario: parsing an info event without the flag defaults to false.
+func TestInfoFromEventMissingStreamingFlag(t *testing.T) {
+	got, err := InfoFromEvent(&Event{
+		Type: TypeInfo,
+		Data: map[string]any{"tts": []any{map[string]any{"name": "meadowlark"}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, got.Tts, 1)
+	assert.False(t, got.Tts[0].SupportsSynthesizeStreaming)
+}

@@ -98,7 +98,9 @@ The `voice` object MUST be omitted only when **all three** of `Voice`, `Language
 
 `Context` MUST round-trip unchanged so a future change can echo it back.
 
-> **This is NOT the same shape as the existing `Synthesize` event, and the two MUST NOT be harmonised.** `Synthesize.ToEvent` in `internal/wyoming/types.go` nests only `name` under `voice` and emits `speaker` and `language` at the **top level** of the data object. That is the wire format Wyoming clients already speak, and R7 requires the whole-message path to keep working byte for byte, so changing it to match `SynthesizeStart` would be a regression. `SynthesizeStart` follows the upstream `wyoming/tts.py` shape; `Synthesize` keeps its existing shape. Implement them as two separate encoders.
+> **This is NOT the same shape as the existing `Synthesize` event, and the two MUST NOT be harmonised in this change.** `Synthesize.ToEvent` in `internal/wyoming/types.go` nests only `name` under `voice` and emits `speaker` and `language` at the **top level** of the data object. That divergence is pre-existing and it is wrong: upstream `rhasspy/wyoming` `wyoming/tts.py` builds `SynthesizeVoice.to_dict()` as `{"name": ...}` with `speaker` nested inside it — or `{"language": ...}` when there is no name — and `Synthesize.event()` assigns that whole object to `data["voice"]`, so upstream nests `speaker` and `language` under `voice` for `synthesize` as well. Home Assistant sends `Synthesize(text=..., voice=SynthesizeVoice(name=..., language=...))`, so its `language` arrives nested, and `SynthesizeFromEvent` — which reads `ev.Data["language"]` at the top level — silently drops it.
+>
+> That mismatch is nonetheless behaviourally inert today: `Synthesize.Language` and `Synthesize.Speaker` are read nowhere outside `internal/wyoming/types.go` and its tests — `internal/tts/proxy.go` uses only `Voice` and `Text` — so nothing observes the dropped fields. This change does not touch `Synthesize`'s encoding, and a coder implementing 0006 MUST NOT "fix" it here: correcting it alters an existing wire contract and belongs with a requirement that actually needs those fields. `SynthesizeStart` follows the upstream `wyoming/tts.py` shape; `Synthesize` keeps its existing shape. Implement them as two separate encoders. The correction is recorded in [Open Questions](#open-questions).
 
 `SynthesizeChunk` MUST carry `Text`. `SynthesizeStop` and `SynthesizeStopped` MUST have no fields.
 
@@ -684,28 +686,28 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
 ## Tasks
 
 - [ ] Wyoming event types and info flag
-  - [ ] Add `TypeSynthesizeStart`, `TypeSynthesizeChunk`, `TypeSynthesizeStop`, `TypeSynthesizeStopped` to `internal/wyoming/types.go`
-  - [ ] Add `SynthesizeStart`, `SynthesizeChunk`, `SynthesizeStop`, `SynthesizeStopped` structs with `ToEvent` and `…FromEvent`, matching the existing house pattern
-  - [ ] Encode `SynthesizeStart`'s voice with `name`, `language` and `speaker` all nested under `voice` — and leave `Synthesize`'s existing encoding (only `name` nested; `speaker` and `language` top-level) untouched. Add a test asserting `Synthesize.ToEvent`'s wire shape is unchanged
-  - [ ] Add `SupportsSynthesizeStreaming bool` to `TtsProgram`; emit it in `Info.ToEvent()` and parse it in `InfoFromEvent`
-  - [ ] Set it to `true` in `internal/wyoming/info.go` where the `TtsProgram` is constructed
-  - [ ] Tests in `internal/wyoming/types_test.go`: round-trip symmetry for all four types, voice-object nesting, `context` passthrough, flag present in `info`, flag defaults to `false` when absent
-- [ ] Event-atomic writes
-  - [ ] Rewrite `WriteEvent` in `internal/wyoming/event.go` to assemble one buffer and issue exactly one `Write`
-  - [ ] Add an unexported mutex-guarded connection writer in `internal/wyoming/server.go`; use it for both handler dispatch and the read loop's own error writes
-  - [ ] Tests: counting writer asserts exactly one `Write` per event; concurrent-writer test under `-race` asserts no interleaving
-- [ ] Per-connection handlers
-  - [ ] Add `HandlerFactory` and `ConnHandler` interfaces to `internal/wyoming/server.go`
-  - [ ] Use them in `handleConn`: build once per connection when available, `CloseConn()` from the existing teardown `defer`
-  - [ ] Tests: one handler per connection; `CloseConn` called exactly once on disconnect and on `Shutdown()`; non-factory handlers and `HandlerFunc` unchanged
-- [ ] `internal/segment` package
-  - [ ] `segment.Config{First, Min, Max int}` with defaults and the `0 < First ≤ Min ≤ Max` validation from R9
-  - [ ] `segment.Segmenter` with `Write(text string) []string` and `Flush() string`
-  - [ ] Boundary detection, closing-punctuation run, trailing-whitespace guard, newline boundary
-  - [ ] Abbreviation, decimal, and single-initial suppression
-  - [ ] Length gating with the first-segment threshold
-  - [ ] Forced break with soft-break → whitespace → rune-aligned hard-cut preference
-  - [ ] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
+  - [x] Add `TypeSynthesizeStart`, `TypeSynthesizeChunk`, `TypeSynthesizeStop`, `TypeSynthesizeStopped` to `internal/wyoming/types.go` (PR #44)
+  - [x] Add `SynthesizeStart`, `SynthesizeChunk`, `SynthesizeStop`, `SynthesizeStopped` structs with `ToEvent` and `…FromEvent`, matching the existing house pattern (PR #44)
+  - [x] Encode `SynthesizeStart`'s voice with `name`, `language` and `speaker` all nested under `voice` — and leave `Synthesize`'s existing encoding (only `name` nested; `speaker` and `language` top-level) untouched. Add a test asserting `Synthesize.ToEvent`'s wire shape is unchanged (PR #44)
+  - [x] Add `SupportsSynthesizeStreaming bool` to `TtsProgram`; emit it in `Info.ToEvent()` and parse it in `InfoFromEvent` (PR #44)
+  - [ ] Set it to `true` in `internal/wyoming/info.go` where the `TtsProgram` is constructed — deliberately deferred to the PR that lands `tts.StreamSession`, because advertising the capability makes Home Assistant take its streaming path, and it must not do so before there is a session behind it
+  - [x] Tests in `internal/wyoming/types_test.go`: round-trip symmetry for all four types, voice-object nesting, `context` passthrough, flag present in `info`, flag defaults to `false` when absent (PR #44)
+- [x] Event-atomic writes (PR #44)
+  - [x] Rewrite `WriteEvent` in `internal/wyoming/event.go` to assemble one buffer and issue exactly one `Write`
+  - [x] Add an unexported mutex-guarded connection writer in `internal/wyoming/server.go`; use it for both handler dispatch and the read loop's own error writes
+  - [x] Tests: counting writer asserts exactly one `Write` per event; concurrent-writer test under `-race` asserts no interleaving
+- [x] Per-connection handlers (PR #44)
+  - [x] Add `HandlerFactory` and `ConnHandler` interfaces to `internal/wyoming/server.go`
+  - [x] Use them in `handleConn`: build once per connection when available, `CloseConn()` from the existing teardown `defer`
+  - [x] Tests: one handler per connection; `CloseConn` called exactly once on disconnect and on `Shutdown()`; non-factory handlers and `HandlerFunc` unchanged
+- [x] `internal/segment` package (PR #44)
+  - [x] `segment.Config{FirstSegmentChars, MinSegmentChars, MaxSegmentChars int}` with defaults and the `0 < First ≤ Min ≤ Max` validation from R9
+  - [x] `segment.Segmenter` with `Add(text string) []string` and `Flush() []string`
+  - [x] Boundary detection, closing-punctuation run, trailing-whitespace guard, newline boundary
+  - [x] Abbreviation, decimal, and single-initial suppression
+  - [x] Length gating with the first-segment threshold
+  - [x] Forced break with soft-break → whitespace → rune-aligned hard-cut preference
+  - [x] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
 - [ ] Proxy refactor
   - [ ] Extract `resolveSynthesis(ctx, voiceName, parsed voice.ParsedInput)` from `doSynthesize` in `internal/tts/proxy.go` — resolve, alias/endpoint defaults, merge, fetch endpoint, build client. It MUST NOT call `voice.ParseInput` itself; the caller owns that, because a streaming session must parse the whole message or not at all
   - [ ] Extract `openSegment` — issues the upstream request and determines the `*AudioFormat` (WAV header in buffered mode, endpoint config in streaming mode) while writing nothing; returns an `*OpenSegment` with `Format()`, a PCM reader, and `Close()`
@@ -762,6 +764,8 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
 - [ ] Is `firstSegmentChars = 24` too aggressive for slow upstreams? A very short opener followed by a slow segment 2 could still stutter despite prefetch. Measure once deployed; the flag exists precisely so this can be tuned without a release.
 - [ ] Should a future change echo `synthesize-start`'s `context` field back on `synthesize-stopped`? Nothing in Home Assistant reads it today. Deferred.
 - [ ] Does the installed Home Assistant version transcode the streamed WAV to mp3 incrementally? This determines how much of the ~5.2 s gap this change actually recovers on the satellite leg. Verify by measuring first-audio time at the satellite after deployment.
+- [ ] Should `no` stay in R6's abbreviation list? It is far more common as a sentence-final word ("The answer is no. Next question.") than as the abbreviation "No." for a number, so listing it suppresses boundaries that are legitimate sentence ends. The list is specified verbatim in R6, so removing it is a contract amendment rather than a code fix, and it is deliberately left alone here. The impact is bounded: a suppressed boundary neither loses nor corrupts text, it only defers the flush to the next boundary or to the forced cut, and it can only matter once the candidate segment has already reached the minimum length — below that threshold the boundary would not have flushed anyway.
+- [ ] Should `Synthesize` be corrected to nest `language` and `speaker` inside its `voice` object, matching upstream? Upstream `rhasspy/wyoming` `wyoming/tts.py` builds `SynthesizeVoice.to_dict()` as `{"name": ...}` with `speaker` nested inside it — or `{"language": ...}` when there is no name — and `Synthesize.event()` assigns that object to `data["voice"]`; Home Assistant sends `Synthesize(text=..., voice=SynthesizeVoice(name=..., language=...))`, so `language` arrives nested and `SynthesizeFromEvent`, which reads `ev.Data["language"]` at the top level, drops it. Inert today because nothing reads `Synthesize.Language` or `Synthesize.Speaker` outside `internal/wyoming/types.go` and its tests. Deferred out of 0006 because it changes an existing wire contract; see the note in [R2](#r2-streaming-event-types).
 
 ## References
 
