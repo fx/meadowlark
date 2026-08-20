@@ -94,7 +94,9 @@ Meadowlark MUST advertise `true` **unconditionally**. See [Decisions](#decisions
 {"voice": {"name": "alloy", "language": "en", "speaker": "s1"}, "text_format": "text"}
 ```
 
-The object MUST be omitted entirely when the voice name is empty, and `Context` MUST round-trip unchanged so a future change can echo it back.
+The `voice` object MUST be omitted only when **all three** of `Voice`, `Language` and `Speaker` are empty. Omitting it whenever the *name* alone is empty would silently discard a `synthesize-start` that carries only `language` or only `speaker` — which upstream permits, since `voice` is optional as an object rather than conditional on its name — and would break the round-trip symmetry this requirement demands. Within the object, each individual field is omitted when empty.
+
+`Context` MUST round-trip unchanged so a future change can echo it back.
 
 > **This is NOT the same shape as the existing `Synthesize` event, and the two MUST NOT be harmonised.** `Synthesize.ToEvent` in `internal/wyoming/types.go` nests only `name` under `voice` and emits `speaker` and `language` at the **top level** of the data object. That is the wire format Wyoming clients already speak, and R7 requires the whole-message path to keep working byte for byte, so changing it to match `SynthesizeStart` would be a regression. `SynthesizeStart` follows the upstream `wyoming/tts.py` shape; `Synthesize` keeps its existing shape. Implement them as two separate encoders.
 
@@ -105,6 +107,18 @@ The object MUST be omitted entirely when the voice name is empty, and `Context` 
 - **GIVEN** a `SynthesizeStart{Voice: "alloy (OpenAI, tts-1)", TextFormat: "text"}`
 - **WHEN** it is converted with `ToEvent` and read back with `SynthesizeStartFromEvent`
 - **THEN** the result MUST equal the original
+
+#### Scenario: voice metadata without a name survives
+
+- **GIVEN** a `SynthesizeStart{Language: "de", Speaker: "s2"}` with an empty `Voice`
+- **WHEN** it is round-tripped
+- **THEN** the `voice` object MUST be present in the event, and the result MUST still carry `Language: "de"` and `Speaker: "s2"`
+
+#### Scenario: fully empty voice is omitted
+
+- **GIVEN** a `SynthesizeStart` whose `Voice`, `Language` and `Speaker` are all empty
+- **WHEN** `ToEvent` is called
+- **THEN** the event data MUST contain no `voice` key at all
 
 ### R3: Per-connection handler construction
 

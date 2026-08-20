@@ -153,7 +153,7 @@ type SynthesizeStop struct{}
 type SynthesizeStopped struct{}
 ```
 
-- `SynthesizeStart` nests all three voice fields under `voice` — `{"voice": {"name": ..., "language": ..., "speaker": ...}}` — and omits the object entirely when the voice name is empty.
+- `SynthesizeStart` nests all three voice fields under `voice` — `{"voice": {"name": ..., "language": ..., "speaker": ...}}` — omitting each field when empty, and omitting the object itself only when all three are empty. A start event carrying only `language` or only `speaker` is valid and MUST survive a round trip.
 - **`Synthesize` and `SynthesizeStart` do not share a voice encoding.** `Synthesize` nests only `name` under `voice` and emits `speaker` and `language` at the top level of its data object. That is the shape existing Wyoming clients speak and it MUST NOT be changed to match `SynthesizeStart`; the two are encoded separately.
 - `text_format: "ssml"` is accepted without error and treated as plain text. SSML rendering is not supported.
 - `Context` is round-tripped but otherwise unused.
