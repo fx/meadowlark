@@ -130,6 +130,10 @@ func run(cmd *cobra.Command, args []string) error {
 		"no_zeroconf", viper.GetBool("no_zeroconf"),
 		"log_level", viper.GetString("log_level"),
 		"log_format", viper.GetString("log_format"),
+		"synthesize_first_segment_chars", viper.GetInt("synthesize_first_segment_chars"),
+		"synthesize_min_segment_chars", viper.GetInt("synthesize_min_segment_chars"),
+		"synthesize_max_segment_chars", viper.GetInt("synthesize_max_segment_chars"),
+		"synthesize_session_timeout", viper.GetDuration("synthesize_session_timeout").String(),
 	)
 
 	// Segmentation and session configuration are validated before anything is
