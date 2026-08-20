@@ -116,6 +116,19 @@ func run(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
+	// Segmentation and session configuration are validated before anything is
+	// built, so a misconfigured process logs its warning at startup rather than
+	// on the first synthesis — and before the summary below, which reports the
+	// values actually in effect. Logging the raw flags instead would tell an
+	// operator whose configuration was rejected that their values are live,
+	// contradicting the warning in the very case they most need to trust it.
+	segCfg := segmentConfig(logger,
+		viper.GetInt("synthesize_first_segment_chars"),
+		viper.GetInt("synthesize_min_segment_chars"),
+		viper.GetInt("synthesize_max_segment_chars"),
+	)
+	idleTimeout := sessionTimeout(logger, viper.GetDuration("synthesize_session_timeout"))
+
 	// Log configuration summary
 	slog.Info("starting meadowlark",
 		"version", version,
@@ -130,21 +143,11 @@ func run(cmd *cobra.Command, args []string) error {
 		"no_zeroconf", viper.GetBool("no_zeroconf"),
 		"log_level", viper.GetString("log_level"),
 		"log_format", viper.GetString("log_format"),
-		"synthesize_first_segment_chars", viper.GetInt("synthesize_first_segment_chars"),
-		"synthesize_min_segment_chars", viper.GetInt("synthesize_min_segment_chars"),
-		"synthesize_max_segment_chars", viper.GetInt("synthesize_max_segment_chars"),
-		"synthesize_session_timeout", viper.GetDuration("synthesize_session_timeout").String(),
+		"synthesize_first_segment_chars", segCfg.FirstSegmentChars,
+		"synthesize_min_segment_chars", segCfg.MinSegmentChars,
+		"synthesize_max_segment_chars", segCfg.MaxSegmentChars,
+		"synthesize_session_timeout", idleTimeout.String(),
 	)
-
-	// Segmentation and session configuration are validated before anything is
-	// built, so a misconfigured process logs its warning at startup rather than
-	// on the first synthesis.
-	segCfg := segmentConfig(logger,
-		viper.GetInt("synthesize_first_segment_chars"),
-		viper.GetInt("synthesize_min_segment_chars"),
-		viper.GetInt("synthesize_max_segment_chars"),
-	)
-	idleTimeout := sessionTimeout(logger, viper.GetDuration("synthesize_session_timeout"))
 
 	// 1. Initialize database store.
 	db, err := openStore(ctx, viper.GetString("db_driver"), viper.GetString("db_dsn"))
