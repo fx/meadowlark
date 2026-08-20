@@ -177,16 +177,22 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	// Build a per-connection handler when the configured handler is a factory;
 	// otherwise keep using the shared singleton.
 	handler := s.handler
+	var perConn Handler
 	if factory, ok := s.handler.(HandlerFactory); ok {
-		handler = factory.NewConnHandler()
+		perConn = factory.NewConnHandler()
+		handler = perConn
 	}
 
 	defer func() {
+		// Teardown is only ever signalled to a handler this connection owns.
+		// A shared singleton that happens to implement ConnHandler must not be
+		// torn down when one of many connections closes.
+		//
 		// CloseConn blocks until the connection's background work has
 		// finished, and runs before the socket is closed so that work can
 		// still drain what it has already started. It is what makes
 		// Shutdown's wg.Wait genuinely wait for in-flight synthesis.
-		if ch, ok := handler.(ConnHandler); ok {
+		if ch, ok := perConn.(ConnHandler); ok {
 			ch.CloseConn()
 		}
 		conn.Close()

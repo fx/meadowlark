@@ -348,3 +348,19 @@ func TestWriteEventIssuesSingleWrite(t *testing.T) {
 		})
 	}
 }
+
+// shortWriter reports a partial write with a nil error, which the io.Writer
+// contract forbids but nothing enforces.
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) {
+	return len(p) - 1, nil
+}
+
+// A truncated frame corrupts every subsequent event, so a short write must not
+// be reported as success even when the writer claims no error.
+func TestWriteEventShortWrite(t *testing.T) {
+	err := WriteEvent(shortWriter{}, &Event{Type: TypePing})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, io.ErrShortWrite)
+}

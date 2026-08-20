@@ -683,3 +683,47 @@ func TestServer_HandlerReceivesSerializedWriter(t *testing.T) {
 		t.Fatal("handler was not called")
 	}
 }
+
+// sharedConnHandler implements ConnHandler but NOT HandlerFactory, so it stays
+// the process-wide singleton and must never be told a connection closed.
+type sharedConnHandler struct {
+	mu     sync.Mutex
+	closes int
+}
+
+func (h *sharedConnHandler) HandleEvent(_ context.Context, _ *Event, w io.Writer) error {
+	return WriteEvent(w, (&Pong{}).ToEvent())
+}
+
+func (h *sharedConnHandler) CloseConn() {
+	h.mu.Lock()
+	h.closes++
+	h.mu.Unlock()
+}
+
+func (h *sharedConnHandler) closeCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.closes
+}
+
+// R3: CloseConn is for the handler a connection owns. A shared singleton that
+// happens to implement ConnHandler must behave exactly as before, which means
+// never being torn down when one of many connections closes.
+func TestServer_SharedHandlerIsNotTornDown(t *testing.T) {
+	handler := &sharedConnHandler{}
+	srv, cancel := startTestServer(t, handler)
+	defer cancel()
+
+	for i := 0; i < 2; i++ {
+		conn := dialServer(t, srv)
+		require.NoError(t, WriteEvent(conn, (&Ping{}).ToEvent()))
+		ev, err := ReadEvent(bufio.NewReader(conn))
+		require.NoError(t, err)
+		assert.Equal(t, TypePong, ev.Type)
+		conn.Close()
+	}
+
+	srv.Shutdown()
+	assert.Zero(t, handler.closeCount(), "a shared handler must not receive CloseConn")
+}

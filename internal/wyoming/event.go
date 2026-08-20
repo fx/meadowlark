@@ -129,8 +129,15 @@ func WriteEvent(w io.Writer, ev *Event) error {
 	buf.Write(dataBytes)
 	buf.Write(ev.Payload)
 
-	if _, err := w.Write(buf.Bytes()); err != nil {
+	n, err := w.Write(buf.Bytes())
+	if err != nil {
 		return fmt.Errorf("write event: %w", err)
+	}
+	if n < buf.Len() {
+		// A compliant io.Writer reports a short write as an error, but a
+		// truncated frame corrupts every subsequent event on the connection,
+		// so a non-compliant one must not pass silently.
+		return fmt.Errorf("write event: %w", io.ErrShortWrite)
 	}
 
 	return nil
