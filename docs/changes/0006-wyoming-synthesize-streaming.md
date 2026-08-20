@@ -187,12 +187,16 @@ Taken together these make every emitted event atomic with respect to any other g
 
 A connection MUST hold at most one streaming session. The session MUST be created on `synthesize-start` and terminated on `synthesize-stop`, on error, on idle timeout, or on connection teardown.
 
-| Event | No session open | Session open |
-|---|---|---|
-| `synthesize-start` | Open a session. Record voice, language, speaker, text format. | Terminate the current session (cancel in-flight work, discard buffered text, emit `synthesize-stopped`), then open a new one. |
-| `synthesize-chunk` | Ignore; log at debug. | Append `text` to the buffer and flush any completed segments (R6). |
-| `synthesize` | Existing behaviour, unchanged: delegate to `Proxy.HandleSynthesize`. | Suppress (R7). |
-| `synthesize-stop` | Ignore; log at debug. Emit nothing. | Flush the remainder, wait for all segments to finish emitting, emit `synthesize-stopped`, close the session. |
+A session is in exactly one of **three** states. The third exists because a session that fails mid-stream MUST keep suppressing until Home Assistant has finished sending the events for that message.
+
+| Event | `idle` (no session) | `open` | `terminated` (errored, awaiting `synthesize-stop`) |
+|---|---|---|---|
+| `synthesize-start` | Open a session. Record voice, language, speaker, text format. | Terminate the current session (cancel in-flight work, discard buffered text, emit `synthesize-stopped`), then open a new one. | Discard the tombstone and open a new session. |
+| `synthesize-chunk` | Ignore; log at debug. | Append `text` to the buffer and flush any completed segments (R6). | Absorb silently. |
+| `synthesize` | Existing behaviour, unchanged: delegate to `Proxy.HandleSynthesize`. | Suppress (R7). | Absorb silently — **never** delegate. |
+| `synthesize-stop` | Ignore; log at debug. Emit nothing. | Flush the remainder, wait for all segments to finish emitting, emit `synthesize-stopped`, return to `idle`. | Emit nothing; return to `idle`. |
+
+**Why `terminated` is a distinct state and not simply a closed session.** Home Assistant sends its compatibility `synthesize` *after* the chunks and *before* `synthesize-stop`. If a segment fails early — an upstream error, a format mismatch, or an idle timeout — and the session were closed immediately, that compatibility event would arrive to find no session, fall through the `idle` row, and be synthesized in full: Meadowlark would speak the entire message a second time, long after Home Assistant had already raised on the `error`. The tombstone absorbs every remaining event of the failed message and is cleared only by `synthesize-stop`, a new `synthesize-start`, or connection teardown.
 
 **Voice.** `synthesize-start`'s `voice` is the Wyoming voice name for the whole session and is the only thing that selects the endpoint and model. It MUST be resolved exactly as a `synthesize` event's voice is resolved today, including the empty case, which falls to the resolver's default-voice stage. A JSON or tag `voice` override in the message body MUST NOT participate in endpoint selection; it overrides only the `voice` parameter sent upstream, at input priority, as it does today.
 
@@ -320,7 +324,7 @@ While a session is open, a `synthesize` event MUST NOT be synthesized. Its text 
 
 On `synthesize-stop`, if the session received **zero** `synthesize-chunk` events and fallback text is present, the fallback text MUST be fed through the segmenter and synthesized as the session's content. Otherwise the fallback text MUST be discarded.
 
-When no session is open, a `synthesize` event MUST be handled exactly as it is today, with no behavioural difference whatsoever — this is the non-streaming path used by Wyoming clients that do not implement streaming input.
+In the `idle` state — and only there — a `synthesize` event MUST be handled exactly as it is today, with no behavioural difference whatsoever. This is the non-streaming path used by Wyoming clients that do not implement streaming input. A `terminated` session is **not** idle: it absorbs the event (R10).
 
 #### Scenario: compatibility event is suppressed
 
@@ -393,8 +397,10 @@ This is deliberate. Home Assistant's `_read_tts_audio` raises on `error` and bre
 Consequently:
 
 - Session completed successfully → exactly one `synthesize-stopped`, no `error`.
-- Session failed → exactly one `error`, no `synthesize-stopped`. A `synthesize-stop` arriving afterwards MUST be absorbed silently.
+- Session failed → exactly one `error`, no `synthesize-stopped`. The session MUST then enter the `terminated` state of R5 rather than closing, so that **every** remaining event of that message — the compatibility `synthesize` included — is absorbed silently. Absorbing only the trailing `synthesize-stop` is not sufficient: a failure that happens before Home Assistant sends its compatibility `synthesize` would otherwise let the full message be synthesized a second time.
 - No session was ever opened and a `synthesize-stop` arrives → emit nothing.
+
+This applies identically to every way a session can fail — an upstream error, a mid-session format mismatch (R8), and the idle timeout (R5).
 
 On failure the session MUST cancel every remaining and in-flight segment, close their upstream response bodies, and MUST NOT emit audio for any segment after the failing one. The connection MUST remain open and usable, matching the existing contract that handler errors never close the connection.
 
@@ -405,6 +411,18 @@ If a segment fails **after** its `audio-start` was emitted, the session MUST emi
 - **GIVEN** a three-segment session whose second segment's upstream returns HTTP 500 before any audio
 - **WHEN** the failure is observed
 - **THEN** segment 1's group MUST have been emitted in full, no `audio-start` MUST be emitted for segments 2 or 3, exactly one `error` with code `tts-error` MUST be emitted, no `synthesize-stopped` MUST be emitted, and the connection MUST stay open
+
+#### Scenario: compatibility synthesize after an early failure
+
+- **GIVEN** a session whose first segment's upstream fails before Home Assistant has sent its compatibility `synthesize`
+- **WHEN** that `synthesize` arrives carrying the entire message, followed by `synthesize-stop`
+- **THEN** it MUST be absorbed silently, `Proxy.HandleSynthesize` MUST NOT be called, no audio MUST be emitted for it, and no second `error` or `synthesize-stopped` MUST be emitted
+
+#### Scenario: idle timeout then compatibility synthesize
+
+- **GIVEN** a session abandoned by the idle timeout, which emitted `error` with code `synthesize-timeout`
+- **WHEN** a late compatibility `synthesize` arrives on the same connection before any new `synthesize-start`
+- **THEN** it MUST be absorbed silently rather than synthesized
 
 #### Scenario: upstream disconnects mid-segment
 
@@ -460,7 +478,7 @@ func (s *StreamSession) Stop() error
 func (s *StreamSession) Close()                              // connection teardown; blocks
 ```
 
-`Compat` returns `true` when the session absorbed the event (R7) and `false` when the caller MUST fall through to the existing `Proxy.HandleSynthesize`. That single boolean is the whole suppression contract, and it lives in a tested internal package rather than in `main`.
+`Compat` returns `true` when the session absorbed the event and `false` only when the session is `idle`, in which case the caller MUST fall through to the existing `Proxy.HandleSynthesize`. It therefore returns `true` in **both** the `open` state (R7 suppression) and the `terminated` state (R10 tombstone) — a failed session must keep absorbing, or the compatibility event escapes and the message is spoken twice. `Active()` reports the same two states for the same reason. That single boolean is the whole suppression contract, and it lives in a tested internal package rather than in `main`.
 
 #### Per-segment synthesis inside the proxy
 
@@ -621,7 +639,9 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Override-form detection on the session's first non-whitespace character: `{` or `[` suspends segmentation until `synthesize-stop`, then `ParseInput` the whole message and segment its `Input`; anything else skips `ParseInput` entirely and segments incrementally
   - [ ] Resolve once, before the first segment is synthesized; reuse the plan for all later segments
   - [ ] Format recording and R8 mismatch abort
-  - [ ] Terminator discipline from R10, including `audio-stop` before `error` when a segment fails after `audio-start`
+  - [ ] Three-state machine from R5: `idle` / `open` / `terminated`, with `Active()` and `Compat()` both treating `terminated` as absorbing
+  - [ ] Terminator discipline from R10, including `audio-stop` before `error` when a segment fails after `audio-start`, and the tombstone that absorbs the compatibility `synthesize` after an early failure
+  - [ ] Test that a failure occurring *before* the compatibility `synthesize` still suppresses it — the message MUST NOT be synthesized a second time
   - [ ] Idle timer: armed on `Start`, reset by `Chunk` and `Compat`, disarmed by `Stop`, `synthesize-timeout` error on expiry, disabled entirely when the timeout is `0`
   - [ ] Test that a session receiving one chunk and then stalling is abandoned after the timeout, and that a session receiving a chunk every half-timeout is not
   - [ ] `synthesize-start` while active: cancel, discard, emit `synthesize-stopped`, restart

@@ -304,25 +304,27 @@ Two Home Assistant behaviours constrain what Meadowlark may emit:
 
 ### Session Semantics
 
-A connection holds at most one streaming session.
+A connection holds at most one streaming session, in one of three states.
 
-| Event | No session open | Session open |
-|---|---|---|
-| `synthesize-start` | Open a session; record voice, language, speaker, text format. | Terminate the current session — cancel in-flight work, discard buffered text, emit `synthesize-stopped` — then open a new one. |
-| `synthesize-chunk` | Ignore; log at debug. | Append text and flush any completed segments. |
-| `synthesize` | Handled as a whole-message request, unchanged. | Suppressed: recorded as fallback text, never synthesized directly. |
-| `synthesize-stop` | Ignore; emit nothing. | Flush the remainder, wait for all segments to be emitted, emit `synthesize-stopped`, close the session. |
+| Event | `idle` (no session) | `open` | `terminated` (errored, awaiting `synthesize-stop`) |
+|---|---|---|---|
+| `synthesize-start` | Open a session; record voice, language, speaker, text format. | Terminate the current session — cancel in-flight work, discard buffered text, emit `synthesize-stopped` — then open a new one. | Discard the tombstone and open a new session. |
+| `synthesize-chunk` | Ignore; log at debug. | Append text and flush any completed segments. | Absorb silently. |
+| `synthesize` | Handled as a whole-message request, unchanged. | Suppressed: recorded as fallback text, never synthesized directly. | Absorb silently; never handled as a whole-message request. |
+| `synthesize-stop` | Ignore; emit nothing. | Flush the remainder, wait for all segments to be emitted, emit `synthesize-stopped`, return to `idle`. | Emit nothing; return to `idle`. |
+
+The `terminated` state exists because Home Assistant sends its compatibility `synthesize` after the chunks and before `synthesize-stop`. A session that failed early and simply closed would let that event fall through to the whole-message path and speak the entire message a second time, after the client had already raised on the `error`.
 
 ### Requirements
 
 - A `synthesize` event received while a session is open MUST NOT produce audio; its text MUST be recorded as the session's fallback text.
 - If a session ends having received zero `synthesize-chunk` events and holding fallback text, that fallback text MUST be synthesized as the session's content — exactly once.
-- A `synthesize` event received with no session open MUST be handled exactly as a whole-message request, with no behavioural difference from a connection that never uses streaming.
+- A `synthesize` event received in the `idle` state MUST be handled exactly as a whole-message request, with no behavioural difference from a connection that never uses streaming. A `terminated` session is not idle and absorbs the event instead.
 - Each synthesized segment MUST be framed as `audio-start`, one or more `audio-chunk`, `audio-stop`.
 - Exactly one `synthesize-stopped` MUST terminate a successful session, after the final segment's `audio-stop`. It MUST NOT be emitted per segment.
 - All segments within a session MUST use an identical audio format.
 - A session MUST emit either a Wyoming `error` or a `synthesize-stopped`, never both, and never more than one of either. Emitting both would leave an unconsumed terminator that the next stream would read as an immediate end-of-stream.
-- A session terminated by an error MUST silently absorb the `synthesize-stop` that follows.
+- A session terminated by an error MUST silently absorb **every** remaining event of that message — further `synthesize-chunk` events, the compatibility `synthesize`, and the trailing `synthesize-stop` — and MUST NOT hand any of them to the whole-message path.
 - When a segment fails after its `audio-start` was emitted, `audio-stop` MUST be emitted for that segment before the `error`.
 - A synthesis error MUST NOT close the connection.
 
