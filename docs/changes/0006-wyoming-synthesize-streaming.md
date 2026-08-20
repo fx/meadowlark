@@ -708,7 +708,7 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [x] Length gating with the first-segment threshold
   - [x] Forced break with soft-break → whitespace → rune-aligned hard-cut preference
   - [x] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
-- [x] Proxy refactor (PR #TBD)
+- [x] Proxy refactor (PR #45)
   - [x] Extract `resolveSynthesis(ctx, voiceName, parsed voice.ParsedInput)` from `doSynthesize` in `internal/tts/proxy.go` — resolve, alias/endpoint defaults, merge, fetch endpoint, build client. It MUST NOT call `voice.ParseInput` itself; the caller owns that, because a streaming session must parse the whole message or not at all
   - [x] Extract `openSegment` — issues the upstream request and determines the `*AudioFormat` (WAV header in buffered mode, endpoint config in streaming mode) while writing nothing; returns an `*OpenSegment` with `Format()`, a PCM reader, and `Close()`
   - [x] Extract `emitSegment` — writes `audio-start`/chunks/`audio-stop` for an already-opened segment
@@ -755,6 +755,7 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Restore present tense throughout those sections as the markers come off — several were rewritten to "will" when the markers went on
   - [ ] Note that three headings deliberately kept their original text — `Write Serialization`, `Streaming Synthesis Input`, `Segmented Streaming Synthesis` — because other documents link to their anchors; do not rename them while removing the markers
   - [ ] Add a changelog row to each amended living spec recording that the behaviour now ships, and reword the existing 0006 rows from "Specify" to reflect implementation
+  - [ ] Correct the tts-synthesis spec's synthesis-flow step ordering: `doSynthesize` now parses input before resolving the voice, because `resolveSynthesis` takes already-parsed input, so the numbered flow listing resolution as step 1 and parsing as step 2 is stale. Nothing observable changed — `voice.ParseInput` is pure and total — but the documented order no longer matches the code
   - [ ] Confirm the living specs still match the implementation; correct them if the shape drifted during implementation
   - [ ] Flip this document's status to `complete` and update `docs/index.yml` **and `docs/index.md`** (both carry a status for 0006)
 
