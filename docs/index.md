@@ -20,4 +20,4 @@
 | 0003 | [alias-form-voice-fix](changes/0003-alias-form-voice-fix.md) | [frontend](specs/frontend/) | complete | — |
 | 0004 | [endpoint-models-toggle](changes/0004-endpoint-models-toggle.md) | [voice-resolution](specs/voice-resolution/) | complete | — |
 | 0005 | [endpoint-voice-toggle](changes/0005-endpoint-voice-toggle.md) | [voice-resolution](specs/voice-resolution/) | complete | 0004 |
-| 0006 | [wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md) | [wyoming-protocol](specs/wyoming-protocol/) | draft | 0002 |
+| 0006 | [wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md) | [wyoming-protocol](specs/wyoming-protocol/) | complete | 0002 |
