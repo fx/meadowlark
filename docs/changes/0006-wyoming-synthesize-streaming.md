@@ -708,13 +708,13 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [x] Length gating with the first-segment threshold
   - [x] Forced break with soft-break → whitespace → rune-aligned hard-cut preference
   - [x] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
-- [ ] Proxy refactor
-  - [ ] Extract `resolveSynthesis(ctx, voiceName, parsed voice.ParsedInput)` from `doSynthesize` in `internal/tts/proxy.go` — resolve, alias/endpoint defaults, merge, fetch endpoint, build client. It MUST NOT call `voice.ParseInput` itself; the caller owns that, because a streaming session must parse the whole message or not at all
-  - [ ] Extract `openSegment` — issues the upstream request and determines the `*AudioFormat` (WAV header in buffered mode, endpoint config in streaming mode) while writing nothing; returns an `*OpenSegment` with `Format()`, a PCM reader, and `Close()`
-  - [ ] Extract `emitSegment` — writes `audio-start`/chunks/`audio-stop` for an already-opened segment
-  - [ ] Re-express `doSynthesize` as `resolveSynthesis` → `openSegment` → `emitSegment` so streaming and non-streaming share one pipeline
-  - [ ] Test that a buffered-mode format mismatch is detectable between `openSegment` and `emitSegment` — i.e. `openSegment` writes nothing to `w`
-  - [ ] Confirm existing `internal/tts/proxy_test.go` passes unchanged — the non-streaming path MUST be behaviourally identical
+- [x] Proxy refactor (PR #TBD)
+  - [x] Extract `resolveSynthesis(ctx, voiceName, parsed voice.ParsedInput)` from `doSynthesize` in `internal/tts/proxy.go` — resolve, alias/endpoint defaults, merge, fetch endpoint, build client. It MUST NOT call `voice.ParseInput` itself; the caller owns that, because a streaming session must parse the whole message or not at all
+  - [x] Extract `openSegment` — issues the upstream request and determines the `*AudioFormat` (WAV header in buffered mode, endpoint config in streaming mode) while writing nothing; returns an `*OpenSegment` with `Format()`, a PCM reader, and `Close()`
+  - [x] Extract `emitSegment` — writes `audio-start`/chunks/`audio-stop` for an already-opened segment
+  - [x] Re-express `doSynthesize` as `resolveSynthesis` → `openSegment` → `emitSegment` so streaming and non-streaming share one pipeline
+  - [x] Test that a buffered-mode format mismatch is detectable between `openSegment` and `emitSegment` — i.e. `openSegment` writes nothing to `w`
+  - [x] Confirm existing `internal/tts/proxy_test.go` passes unchanged — the non-streaming path MUST be behaviourally identical
 - [ ] `tts.StreamSession`
   - [ ] `NewStreamSession`, `Active`, `Start`, `Chunk`, `Compat`, `Stop`, `Close` per the API above
   - [ ] Session context via `context.WithCancel` from the `Start` call's `ctx`; cancel on `Close`, error, and idle timeout
