@@ -133,11 +133,24 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			continue
 		}
 
+		// Registration, the shutdown check and the wait-group increment must
+		// all happen under one acquisition of s.mu. Splitting them leaves a
+		// window in which Shutdown can iterate an empty s.conns and observe a
+		// zero wait-group counter, return, and only then have this loop start a
+		// connection goroutine that nothing will ever close. Holding the mutex
+		// across all three leaves exactly two interleavings: either this
+		// connection is registered and counted before Shutdown takes the mutex,
+		// or it observes closed and is refused.
 		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			conn.Close()
+			continue
+		}
 		s.conns[conn] = struct{}{}
+		s.wg.Add(1)
 		s.mu.Unlock()
 
-		s.wg.Add(1)
 		go s.handleConn(ctx, conn)
 	}
 }

@@ -723,3 +723,114 @@ func TestServer_SharedHandlerIsNotTornDown(t *testing.T) {
 	srv.Shutdown()
 	assert.Zero(t, handler.closeCount(), "a shared handler must not receive CloseConn")
 }
+
+// R3: Shutdown must genuinely drain. A connection accepted in the window
+// between Accept returning and the connection being registered used to escape
+// both the s.conns sweep and wg.Wait. That leaked a goroutine blocked in
+// ReadEvent on a socket nobody would ever close and, because that goroutine
+// owns a per-connection handler, left CloseConn permanently uncalled for it.
+// Depending on where wg.Add landed relative to wg.Wait, the same window could
+// instead wedge Shutdown forever, so both outcomes are checked.
+//
+// The test drives the interleaving rather than waiting to stumble into it:
+// every dialer and the Shutdown are released from one barrier, over many
+// short-lived servers. Client sockets are held open until after the final
+// check so a leaked goroutine stays blocked in ReadEvent instead of seeing EOF
+// and tearing itself down, which would hide the leak.
+//
+// The server is built inline rather than via startTestServer because this test
+// needs the ListenAndServe goroutine to be joinable: once it has returned, the
+// accept loop is provably done making decisions about the sockets we dialled.
+func TestServer_ShutdownRacingAcceptDoesNotLeakConnections(t *testing.T) {
+	const (
+		servers        = 150
+		dialsPerServer = 4
+		shutdownBudget = 10 * time.Second
+		settleWindow   = 200 * time.Millisecond
+	)
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	var clientMu sync.Mutex
+	clients := make([]net.Conn, 0, servers*dialsPerServer)
+	defer func() {
+		clientMu.Lock()
+		defer clientMu.Unlock()
+		for _, c := range clients {
+			c.Close()
+		}
+	}()
+
+	factories := make([]*factoryHandler, 0, servers)
+
+	for i := 0; i < servers; i++ {
+		factory := &factoryHandler{}
+		factories = append(factories, factory)
+
+		srv := NewServer("127.0.0.1:0", factory, logger)
+		ctx, cancel := context.WithCancel(context.Background())
+		served := make(chan struct{})
+		go func() {
+			defer close(served)
+			_ = srv.ListenAndServe(ctx)
+		}()
+
+		deadline := time.Now().Add(2 * time.Second)
+		addr := srv.Addr()
+		for addr == "" {
+			require.Truef(t, time.Now().Before(deadline),
+				"iteration %d: listener did not come up", i)
+			time.Sleep(time.Millisecond)
+			addr = srv.Addr()
+		}
+
+		start := make(chan struct{})
+		var dialers sync.WaitGroup
+		for j := 0; j < dialsPerServer; j++ {
+			dialers.Add(1)
+			go func() {
+				defer dialers.Done()
+				<-start
+				c, err := net.DialTimeout("tcp", addr, 2*time.Second)
+				if err != nil {
+					return // Listener already closed; nothing was accepted.
+				}
+				clientMu.Lock()
+				clients = append(clients, c)
+				clientMu.Unlock()
+			}()
+		}
+
+		shutdownDone := make(chan struct{})
+		go func() {
+			<-start
+			srv.Shutdown()
+			close(shutdownDone)
+		}()
+
+		close(start)
+		dialers.Wait()
+
+		select {
+		case <-shutdownDone:
+		case <-time.After(shutdownBudget):
+			t.Fatalf("iteration %d: Shutdown never returned; a connection accepted "+
+				"during shutdown was counted but never closed", i)
+		}
+
+		cancel()
+		<-served // The accept loop is done deciding about these sockets.
+	}
+
+	// A goroutine that slipped through starts its handler a moment after the
+	// racing Shutdown returned, so give it time to appear before concluding
+	// there is none.
+	time.Sleep(settleWindow)
+
+	for i, f := range factories {
+		built, closed := f.builtCount(), f.closeCount()
+		require.Equalf(t, built, closed,
+			"iteration %d: %d per-connection handlers built but %d closed; a "+
+				"connection goroutine outlived Shutdown", i, built, closed)
+	}
+}
