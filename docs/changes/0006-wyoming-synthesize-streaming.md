@@ -746,8 +746,15 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
 - [ ] End-to-end conformance test (R11)
   - [ ] Table-driven test over a real TCP connection asserting the ordered emitted event types for every case listed in R11
 - [ ] Documentation
-  - [ ] Confirm the living specs shipped with this change still match the implementation; correct them and add changelog rows if the shape drifted during implementation
-  - [ ] Flip this document's status to `complete` and update `docs/index.yml` and `docs/index.md`
+  - [ ] **Remove every "planned" marker for this change from the living specs.** The spec-only PR added them because the specs must not assert unshipped behaviour; the implementing PR is what makes them false, so removing them is part of this change, not a follow-up. All three files carry them:
+    - `docs/specs/wyoming-protocol/index.md` — Overview streaming bullet; the `WriteEvent` single-`Write` blockquote under Read/Write Contract; the four `*planned*` cells in the event-type constants table; the commented-out `SupportsSynthesizeStreaming` field and the planned blockquote under Home Assistant Compatibility Requirements; the suppression blockquote under Synthesize; the `Streaming Synthesis Events — *Planned*` heading suffix and its blockquote; the commented-out `HandlerFactory`/`ConnHandler` block and the blockquote under Architecture; the planned blockquote under Connection Lifecycle; the blockquote under `Write Serialization`; the planned blockquote under TCP Server Requirements; the italicised planned scenario; the planned blockquote under Event Handler Routing; the blockquote under `Streaming Synthesis Input`; the planned blockquote under Info Builder Requirements; and the two "gains … with 0006" notes in the Files table
+    - `docs/specs/tts-synthesis/index.md` — the Overview inbound-modes bullet and the `internal/segment/` package note; the four-stage pipeline blockquote under Synthesis Flow; the `*planned*` cell in the error table; the blockquote under `Segmented Streaming Synthesis`; the planned blockquote under Endpoint Streaming Configuration Requirements; and the separate "planned file" table under Files, whose two rows fold back into the main table
+    - `docs/meadowlark.md` — the four `*planned*` cells in the §2.2 event table; the "Specified but not yet implemented" sentence in §2.2; the planned note on the §2.3 streaming input flow diagram; the planned sub-list in §9.4 Concurrency Model, whose bullets fold back into the main list; and the §16 parenthetical
+  - [ ] Restore present tense throughout those sections as the markers come off — several were rewritten to "will" when the markers went on
+  - [ ] Note that three headings deliberately kept their original text — `Write Serialization`, `Streaming Synthesis Input`, `Segmented Streaming Synthesis` — because other documents link to their anchors; do not rename them while removing the markers
+  - [ ] Add a changelog row to each amended living spec recording that the behaviour now ships, and reword the existing 0006 rows from "Specify" to reflect implementation
+  - [ ] Confirm the living specs still match the implementation; correct them if the shape drifted during implementation
+  - [ ] Flip this document's status to `complete` and update `docs/index.yml` **and `docs/index.md`** (both carry a status for 0006)
 
 ## Open Questions
 

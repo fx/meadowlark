@@ -11,14 +11,14 @@ Two **upstream** modes are supported, selected per endpoint:
 - **Buffered (WAV):** The default. The full WAV response is received, the header is parsed for audio format, and PCM data is chunked into Wyoming events. Works with all endpoints.
 - **Streaming (PCM):** Opt-in per endpoint via `StreamingEnabled`. Sends `"stream": true` with `response_format: "pcm"`. Raw PCM bytes are forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format comes from endpoint configuration rather than a WAV header.
 
-Two **inbound** modes are supported, selected by the Wyoming client:
+Two **inbound** modes are defined, selected by the Wyoming client:
 
 - **Whole-message:** one `synthesize` event carrying the complete text produces one audio group.
-- **Segmented streaming:** text arrives incrementally across a session, is aggregated into sentence-sized segments, and each segment produces its own audio group. See [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
+- **Segmented streaming:** *Planned — see [0006](../../changes/0006-wyoming-synthesize-streaming.md).* Text will arrive incrementally across a session, be aggregated into sentence-sized segments, and each segment will produce its own audio group. See [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
 
-The two dimensions are orthogonal and compose freely.
+The two dimensions are orthogonal and will compose freely.
 
-**Package:** `internal/tts/`, with text segmentation in `internal/segment/`
+**Package:** `internal/tts/`. Text segmentation will live in a new `internal/segment/` package — *planned ([0006](../../changes/0006-wyoming-synthesize-streaming.md))*.
 
 ## OpenAI-Compatible HTTP Client
 
@@ -243,21 +243,16 @@ type ClientFactory func(ep *model.Endpoint) *Client
    - Read PCM in 2048-byte chunks, send `AudioChunk` events.
    - Send `AudioStop` on EOF.
 
-The pipeline is separable into three independently callable stages, so that a segmented streaming session can resolve once and synthesize many times:
-
-| Stage | Steps | Writes to the client? |
-|---|---|---|
-| **Input parsing** | 2 — `voice.ParseInput` over the complete message text | No |
-| **Resolution** | 1, 3–6 — takes the already-parsed overrides | No |
-| **Open** | 7 — issue the upstream request and determine the audio format | No |
-| **Emission** | 8 — `AudioStart`, `AudioChunk`+, `AudioStop` | Yes |
-
-Two of those boundaries are load-bearing rather than cosmetic:
-
-- **Input parsing is separate from resolution** because a segmented session must run it over the whole message or not at all, never over one segment.
-- **Open is separate from emission** because a segment's audio format MUST be known and accepted before its `AudioStart` is written.
-
-Both are explained under [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
+> **Planned:** [0006](../../changes/0006-wyoming-synthesize-streaming.md) will split this pipeline into four independently callable stages, so a segmented streaming session can resolve once and synthesize many times. Today it runs as one `doSynthesize` call.
+>
+> | Stage | Steps | Writes to the client? |
+> |---|---|---|
+> | **Input parsing** | 2 — `voice.ParseInput` over the complete message text | No |
+> | **Resolution** | 1, 3–6 — takes the already-parsed overrides | No |
+> | **Open** | 7 — issue the upstream request and determine the audio format | No |
+> | **Emission** | 8 — `AudioStart`, `AudioChunk`+, `AudioStop` | Yes |
+>
+> Two of those boundaries will be load-bearing rather than cosmetic. **Input parsing is separate from resolution** because a segmented session must run it over the whole message or not at all, never over one segment. **Open is separate from emission** because a segment's audio format must be known and accepted before its `AudioStart` is written. Both are explained under [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
 
 ### Error Handling
 
@@ -276,7 +271,7 @@ All errors in `doSynthesize` are caught by `HandleSynthesize`, which:
 | TTS API call fails (streaming) | `"tts api call (streaming): ..."` |
 | WAV parsing fails (buffered only) | `"parse wav header: ..."` |
 | PCM read error | `"read pcm data: ..."` |
-| Segment audio format differs from the session's first segment | `"segment audio format ... differs from session format ..."` |
+| Segment audio format differs from the session's first segment — *planned ([0006](../../changes/0006-wyoming-synthesize-streaming.md))* | `"segment audio format ... differs from session format ..."` |
 
 ### Constants
 
@@ -312,7 +307,9 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 
 ## Segmented Streaming Synthesis
 
-When a Wyoming client streams text in rather than sending a whole message (see [wyoming-protocol — Streaming Synthesis Input](../wyoming-protocol/index.md#streaming-synthesis-input)), the proxy synthesizes one segment at a time.
+> **Not yet implemented.** See [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md) for the implementation plan. Everything in this section describes behaviour that will exist once that change lands; none of it ships today, and neither `internal/segment/` nor `internal/tts/stream_session.go` exists yet.
+
+When a Wyoming client streams text in rather than sending a whole message (see [wyoming-protocol — Streaming Synthesis Input](../wyoming-protocol/index.md#streaming-synthesis-input)), the proxy will synthesize one segment at a time.
 
 ### Text Segmentation
 
@@ -407,7 +404,8 @@ type Endpoint struct {
 - `StreamSampleRate` MUST default to `24000` when zero/unset.
 - The audio format for streaming is fixed at 16-bit signed LE mono PCM — only the sample rate is configurable.
 - These fields MUST be exposed in the HTTP API for endpoint CRUD and in the frontend endpoint form.
-- Segmented streaming synthesis MUST work correctly with `StreamingEnabled = false`. The two settings are orthogonal: `StreamingEnabled` governs how a single segment's audio leaves the upstream, segmentation governs how many segments there are. With `StreamingEnabled = false` the latency win is smaller — each segment is one buffered WAV request — but segment 1 still begins as soon as the first segment's worth of text exists, and the cross-segment format-consistency rule becomes load-bearing.
+
+> **Planned (segmented streaming):** When implemented, segmented streaming synthesis MUST work correctly with `StreamingEnabled = false`. The two settings are orthogonal: `StreamingEnabled` governs how a single segment's audio leaves the upstream, segmentation governs how many segments there are. With `StreamingEnabled = false` the latency win is smaller — each segment is one buffered WAV request — but segment 1 still begins as soon as the first segment's worth of text exists, and the cross-segment format-consistency rule becomes load-bearing. See [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md).
 
 ### Audio Format Convention
 
@@ -428,9 +426,14 @@ This format MUST be assumed for all streaming responses. WAV header parsing is n
 |------|---------|
 | `internal/tts/tts.go` | Package declaration |
 | `internal/tts/client.go` | OpenAI-compatible HTTP client (buffered + streaming) |
-| `internal/tts/proxy.go` | Synthesis proxy orchestration (resolution and per-segment emission) |
-| `internal/tts/stream_session.go` | Segmented streaming session: buffering, ordered pipeline, terminators |
+| `internal/tts/proxy.go` | Synthesis proxy orchestration; splits into resolution and per-segment open/emission with [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
 | `internal/tts/wav.go` | WAV header parser and PCM reader (buffered mode only) |
+
+Two further files are **planned**, not present — see [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md):
+
+| Planned file | Purpose |
+|------|---------|
+| `internal/tts/stream_session.go` | Segmented streaming session: buffering, ordered pipeline, terminators |
 | `internal/segment/segmenter.go` | Pure text segmenter (no I/O) |
 
 ## Changelog
@@ -439,4 +442,4 @@ This format MUST be assumed for all streaming responses. WAV header parsing is n
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
 | 2026-04-19 | Add streaming PCM synthesis mode (spec + changes) | [0001](../../changes/0001-streaming-tts-client.md), [0002](../../changes/0002-streaming-proxy-integration.md) |
-| 2026-08-20 | Drop "planned" markers now that 0001/0002 have shipped; add segmented streaming synthesis, text segmentation, and multi-segment proxy behaviour | [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
+| 2026-08-20 | Drop "planned" markers now that 0001/0002 have shipped; specify segmented streaming synthesis, text segmentation, and multi-segment proxy behaviour (planned, not yet implemented) | [0006](../../changes/0006-wyoming-synthesize-streaming.md) |

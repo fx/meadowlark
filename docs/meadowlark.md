@@ -62,10 +62,10 @@ Meadowlark must implement the following events as a **TTS server**:
 | `describe` | client -> server | Request service capabilities |
 | `info` | server -> client | Respond with available voices/capabilities |
 | `synthesize` | client -> server | Whole-message TTS request (text + voice) |
-| `synthesize-start` | client -> server | Open a streaming synthesis session (voice, text format) |
-| `synthesize-chunk` | client -> server | A fragment of text for the open session |
-| `synthesize-stop` | client -> server | No further text for the open session |
-| `synthesize-stopped` | server -> client | Streaming session terminated |
+| `synthesize-start` | client -> server | Open a streaming synthesis session (voice, text format) — *planned* |
+| `synthesize-chunk` | client -> server | A fragment of text for the open session — *planned* |
+| `synthesize-stop` | client -> server | No further text for the open session — *planned* |
+| `synthesize-stopped` | server -> client | Streaming session terminated — *planned* |
 | `audio-start` | server -> client | Begin audio output (rate, width, channels) |
 | `audio-chunk` | server -> client | Raw PCM audio chunk (binary payload) |
 | `audio-stop` | server -> client | End audio output |
@@ -73,7 +73,7 @@ Meadowlark must implement the following events as a **TTS server**:
 | `pong` | server -> client | Health check response |
 | `error` | server -> client | Error notification (text + code) |
 
-**Streaming synthesis** (`synthesize-start`, `synthesize-chunk`, `synthesize-stop`, `synthesize-stopped`) is required, and Meadowlark must advertise `supports_synthesize_streaming: true`. An earlier revision of this document declared it out of scope on the grounds that a proxy to HTTP APIs has different latency characteristics from a local TTS engine. Measurement showed that reasoning was wrong: the dominant latency is Home Assistant buffering the entire message and the entire WAV before anything downstream can start, and that buffering is triggered solely by the missing capability flag. See [0006-wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md).
+**Streaming synthesis** (`synthesize-start`, `synthesize-chunk`, `synthesize-stop`, `synthesize-stopped`) is required, and Meadowlark must advertise `supports_synthesize_streaming: true`. *Specified but not yet implemented — see [0006-wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md); the four event types in the table above are likewise planned.* An earlier revision of this document declared streaming out of scope on the grounds that a proxy to HTTP APIs has different latency characteristics from a local TTS engine. Measurement showed that reasoning was wrong: the dominant latency is Home Assistant buffering the entire message and the entire WAV before anything downstream can start, and that buffering is triggered solely by the missing capability flag.
 
 ### 2.3 TTS Request Flow
 
@@ -95,7 +95,7 @@ Client                              Meadowlark                         OpenAI En
   |<-- audio-stop ---------------------|                                    |
 ```
 
-**Streaming input flow** (Home Assistant with `supports_synthesize_streaming`):
+**Streaming input flow** — *planned, see [0006-wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md)* (Home Assistant with `supports_synthesize_streaming`):
 
 ```
 Client                              Meadowlark                         OpenAI Endpoint
@@ -574,12 +574,16 @@ meadowlark/
 
 ### 9.4 Concurrency Model
 
-- Wyoming TCP server: one goroutine per connection, and one handler instance per connection
+- Wyoming TCP server: one goroutine per connection
 - Each synthesis request: goroutine reads streaming HTTP response and writes Wyoming events
-- Streaming synthesis sessions: a background emitter goroutine writes audio events while the read loop continues accepting events, so all writes to a connection go through a mutex-guarded writer and every Wyoming event is written in a single `Write` call
-- Segment pipelining: at most two upstream synthesis requests in flight per session; emission stays strictly in text order
 - Database access: connection pooling (pgx for Postgres, single connection for SQLite with mutex)
 - HTTP API server: standard `net/http` concurrency
+
+*Planned — see [0006-wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md):*
+
+- One handler instance per connection, rather than a process-wide singleton
+- Streaming synthesis sessions: a background emitter goroutine writes audio events while the read loop continues accepting events, so all writes to a connection go through a mutex-guarded writer and every Wyoming event is written in a single `Write` call
+- Segment pipelining: at most two upstream synthesis requests in flight per session; emission stays strictly in text order
 
 ### 9.5 Error Handling
 
@@ -1149,7 +1153,7 @@ Release PR merged
 - Audio format conversion / resampling
 - Response caching for repeated phrases
 - Rate limiting per endpoint
-- Multiple concurrent *client-initiated* synthesis requests per connection (segment pipelining within a single streaming session is supported)
+- Multiple concurrent *client-initiated* synthesis requests per connection (segment pipelining within a single streaming session is planned under [0006](changes/0006-wyoming-synthesize-streaming.md), and is a separate thing)
 - WebSocket transport for Wyoming
 - ARM64 build target
 - Authentication for admin UI
