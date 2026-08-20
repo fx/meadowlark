@@ -191,10 +191,21 @@ A session is in exactly one of **three** states. The third exists because a sess
 
 | Event | `idle` (no session) | `open` | `terminated` (errored, awaiting `synthesize-stop`) |
 |---|---|---|---|
-| `synthesize-start` | Open a session. Record voice, language, speaker, text format. | Terminate the current session (cancel in-flight work, discard buffered text, emit `synthesize-stopped`), then open a new one. | Discard the tombstone and open a new session. |
+| `synthesize-start` | Open a session. Record voice, language, speaker, text format. | **Quiesce** the current session (below), emit `synthesize-stopped`, then open a new one. | Discard the tombstone and open a new session. |
 | `synthesize-chunk` | Ignore; log at debug. | Append `text` to the buffer and flush any completed segments (R6). | Absorb silently. |
 | `synthesize` | Existing behaviour, unchanged: delegate to `Proxy.HandleSynthesize`. | Suppress (R7). | Absorb silently — **never** delegate. |
 | `synthesize-stop` | Ignore; log at debug. Emit nothing. | Flush the remainder, wait for all segments to finish emitting, emit `synthesize-stopped`, return to `idle`. | Emit nothing; return to `idle`. |
+
+**Quiescing a session.** Every path that ends a session early — a restart, a failure, the idle timeout, connection teardown — MUST perform the same ordered shutdown before anything else is written to the connection:
+
+1. Cancel the session context, so in-flight and prefetched upstream requests abort and every held response body is closed.
+2. If an `audio-start` has been written for a segment that has no matching `audio-stop`, write that `audio-stop`, so the client is never left inside an unterminated audio group.
+3. **Wait for the emitter goroutine to exit.** No further `audio-start`, `audio-chunk` or `audio-stop` for the old session may be written after this point.
+4. Discard buffered text and any queued segments.
+
+Only then may a terminator (`synthesize-stopped` or `error`) be written, and only then may a replacement session open. Step 3 is the one that is easy to omit and the one that corrupts the stream if omitted: without joining the emitter, a stale `audio-chunk` can land after the old session's terminator or, worse, in the middle of the new session's audio — and Home Assistant has no way to tell the two apart.
+
+**On connection teardown, steps 2 and the terminator are skipped** — the connection is gone, so nothing may be written to it. Steps 1, 3 and 4 still run, and `CloseConn` returns only once step 3 has completed.
 
 **Why `terminated` is a distinct state and not simply a closed session.** Home Assistant sends its compatibility `synthesize` *after* the chunks and *before* `synthesize-stop`. If a segment fails early — an upstream error, a format mismatch, or an idle timeout — and the session were closed immediately, that compatibility event would arrive to find no session, fall through the `idle` row, and be synthesized in full: Meadowlark would speak the entire message a second time, long after Home Assistant had already raised on the `error`. The tombstone absorbs every remaining event of the failed message and is cleared only by `synthesize-stop`, a new `synthesize-start`, or connection teardown.
 
@@ -204,7 +215,7 @@ The session MUST derive its context from the `ctx` passed to `HandleEvent` at `s
 
 **Idle timeout.** The session MUST run an idle timer, armed when the session opens and **reset on every subsequent event belonging to that session** — each `synthesize-chunk`, and the compatibility `synthesize`. Only client events reset it; Meadowlark's own progress, such as a segment finishing, does not, because a session whose client has gone silent is dead regardless of how much audio is still draining.
 
-When the timer expires the session MUST be abandoned: cancel in-flight work, discard buffered text, emit a Wyoming `error` with code `synthesize-timeout`, and close the session without emitting `synthesize-stopped`. The timeout MUST be configurable and MUST be disable-able (R9).
+When the timer expires the session MUST be abandoned: quiesce as above, emit a Wyoming `error` with code `synthesize-timeout`, and enter the `terminated` state without emitting `synthesize-stopped`. The timeout MUST be configurable and MUST be disable-able (R9).
 
 The `synthesize-stop` case is not a timer expiry — it terminates the session normally and disarms the timer.
 
@@ -219,6 +230,12 @@ The `synthesize-stop` case is not a timer expiry — it terminates the session n
 - **GIVEN** an open session with buffered text
 - **WHEN** a second `synthesize-start` arrives
 - **THEN** the buffered text MUST be discarded without being synthesized, a single `synthesize-stopped` MUST be emitted for the abandoned session, and a fresh session MUST be opened
+
+#### Scenario: restart while audio is mid-flight
+
+- **GIVEN** an open session whose second segment has emitted `audio-start` and some `audio-chunk` events
+- **WHEN** a second `synthesize-start` arrives
+- **THEN** the emitted order MUST be exactly: that segment's `audio-stop`, then `synthesize-stopped`, then nothing from the old session at all — no `audio-chunk` or `audio-stop` from the old session MUST appear after the `synthesize-stopped`, or interleaved with the new session's audio
 
 ### R6: Text segmentation
 
@@ -402,9 +419,9 @@ Consequently:
 
 This applies identically to every way a session can fail — an upstream error, a mid-session format mismatch (R8), and the idle timeout (R5).
 
-On failure the session MUST cancel every remaining and in-flight segment, close their upstream response bodies, and MUST NOT emit audio for any segment after the failing one. The connection MUST remain open and usable, matching the existing contract that handler errors never close the connection.
+On failure the session MUST **quiesce** as defined in R5 — cancel, close the unterminated audio group, join the emitter, discard the queue — before the `error` is written. That ordering is what guarantees the `error` is the last thing the client sees for that message; without joining the emitter first, a stale `audio-chunk` can arrive after it. The connection MUST remain open and usable, matching the existing contract that handler errors never close the connection.
 
-If a segment fails **after** its `audio-start` was emitted, the session MUST emit `audio-stop` for that segment before the `error`, so the client is not left inside an unterminated audio group.
+Step 2 of quiescing is what covers a segment failing **after** its `audio-start` was emitted: that segment's `audio-stop` is written before the `error`, so the client is not left inside an unterminated audio group.
 
 #### Scenario: upstream failure on the second segment
 
@@ -644,7 +661,9 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Test that a failure occurring *before* the compatibility `synthesize` still suppresses it — the message MUST NOT be synthesized a second time
   - [ ] Idle timer: armed on `Start`, reset by `Chunk` and `Compat`, disarmed by `Stop`, `synthesize-timeout` error on expiry, disabled entirely when the timeout is `0`
   - [ ] Test that a session receiving one chunk and then stalling is abandoned after the timeout, and that a session receiving a chunk every half-timeout is not
-  - [ ] `synthesize-start` while active: cancel, discard, emit `synthesize-stopped`, restart
+  - [ ] A single `quiesce` helper implementing R5's four ordered steps — cancel, close an unterminated audio group, **join the emitter**, discard the queue — used by the restart, failure, timeout and teardown paths alike, so none of them can skip the join
+  - [ ] `synthesize-start` while active: quiesce, emit `synthesize-stopped`, restart
+  - [ ] Test under `-race` that a restart mid-audio emits the old group's `audio-stop`, then `synthesize-stopped`, and that no old-session audio event appears afterwards or interleaves with the new session's
   - [ ] Zero-chunk fallback text handling from R7
   - [ ] Tests in `internal/tts/stream_session_test.go`: ordered emission with prefetch; suppression and fallback; buffered and streaming endpoint modes; format mismatch; upstream error before and after `audio-start`; cancellation closes bodies; idle timeout; JSON-form and tag-form input arriving in fragments; prose never override-parsed; `-race` clean
 - [ ] Configuration
