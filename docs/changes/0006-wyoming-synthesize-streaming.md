@@ -684,28 +684,28 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
 ## Tasks
 
 - [ ] Wyoming event types and info flag
-  - [ ] Add `TypeSynthesizeStart`, `TypeSynthesizeChunk`, `TypeSynthesizeStop`, `TypeSynthesizeStopped` to `internal/wyoming/types.go`
-  - [ ] Add `SynthesizeStart`, `SynthesizeChunk`, `SynthesizeStop`, `SynthesizeStopped` structs with `ToEvent` and `…FromEvent`, matching the existing house pattern
-  - [ ] Encode `SynthesizeStart`'s voice with `name`, `language` and `speaker` all nested under `voice` — and leave `Synthesize`'s existing encoding (only `name` nested; `speaker` and `language` top-level) untouched. Add a test asserting `Synthesize.ToEvent`'s wire shape is unchanged
-  - [ ] Add `SupportsSynthesizeStreaming bool` to `TtsProgram`; emit it in `Info.ToEvent()` and parse it in `InfoFromEvent`
-  - [ ] Set it to `true` in `internal/wyoming/info.go` where the `TtsProgram` is constructed
-  - [ ] Tests in `internal/wyoming/types_test.go`: round-trip symmetry for all four types, voice-object nesting, `context` passthrough, flag present in `info`, flag defaults to `false` when absent
-- [ ] Event-atomic writes
-  - [ ] Rewrite `WriteEvent` in `internal/wyoming/event.go` to assemble one buffer and issue exactly one `Write`
-  - [ ] Add an unexported mutex-guarded connection writer in `internal/wyoming/server.go`; use it for both handler dispatch and the read loop's own error writes
-  - [ ] Tests: counting writer asserts exactly one `Write` per event; concurrent-writer test under `-race` asserts no interleaving
-- [ ] Per-connection handlers
-  - [ ] Add `HandlerFactory` and `ConnHandler` interfaces to `internal/wyoming/server.go`
-  - [ ] Use them in `handleConn`: build once per connection when available, `CloseConn()` from the existing teardown `defer`
-  - [ ] Tests: one handler per connection; `CloseConn` called exactly once on disconnect and on `Shutdown()`; non-factory handlers and `HandlerFunc` unchanged
-- [ ] `internal/segment` package
-  - [ ] `segment.Config{First, Min, Max int}` with defaults and the `0 < First ≤ Min ≤ Max` validation from R9
-  - [ ] `segment.Segmenter` with `Write(text string) []string` and `Flush() string`
-  - [ ] Boundary detection, closing-punctuation run, trailing-whitespace guard, newline boundary
-  - [ ] Abbreviation, decimal, and single-initial suppression
-  - [ ] Length gating with the first-segment threshold
-  - [ ] Forced break with soft-break → whitespace → rune-aligned hard-cut preference
-  - [ ] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
+  - [x] Add `TypeSynthesizeStart`, `TypeSynthesizeChunk`, `TypeSynthesizeStop`, `TypeSynthesizeStopped` to `internal/wyoming/types.go` (PR #44)
+  - [x] Add `SynthesizeStart`, `SynthesizeChunk`, `SynthesizeStop`, `SynthesizeStopped` structs with `ToEvent` and `…FromEvent`, matching the existing house pattern (PR #44)
+  - [x] Encode `SynthesizeStart`'s voice with `name`, `language` and `speaker` all nested under `voice` — and leave `Synthesize`'s existing encoding (only `name` nested; `speaker` and `language` top-level) untouched. Add a test asserting `Synthesize.ToEvent`'s wire shape is unchanged (PR #44)
+  - [x] Add `SupportsSynthesizeStreaming bool` to `TtsProgram`; emit it in `Info.ToEvent()` and parse it in `InfoFromEvent` (PR #44)
+  - [ ] Set it to `true` in `internal/wyoming/info.go` where the `TtsProgram` is constructed — deliberately deferred to the PR that lands `tts.StreamSession`, because advertising the capability makes Home Assistant take its streaming path, and it must not do so before there is a session behind it
+  - [x] Tests in `internal/wyoming/types_test.go`: round-trip symmetry for all four types, voice-object nesting, `context` passthrough, flag present in `info`, flag defaults to `false` when absent (PR #44)
+- [x] Event-atomic writes (PR #44)
+  - [x] Rewrite `WriteEvent` in `internal/wyoming/event.go` to assemble one buffer and issue exactly one `Write`
+  - [x] Add an unexported mutex-guarded connection writer in `internal/wyoming/server.go`; use it for both handler dispatch and the read loop's own error writes
+  - [x] Tests: counting writer asserts exactly one `Write` per event; concurrent-writer test under `-race` asserts no interleaving
+- [x] Per-connection handlers (PR #44)
+  - [x] Add `HandlerFactory` and `ConnHandler` interfaces to `internal/wyoming/server.go`
+  - [x] Use them in `handleConn`: build once per connection when available, `CloseConn()` from the existing teardown `defer`
+  - [x] Tests: one handler per connection; `CloseConn` called exactly once on disconnect and on `Shutdown()`; non-factory handlers and `HandlerFunc` unchanged
+- [x] `internal/segment` package (PR #44)
+  - [x] `segment.Config{FirstSegmentChars, MinSegmentChars, MaxSegmentChars int}` with defaults and the `0 < First ≤ Min ≤ Max` validation from R9
+  - [x] `segment.Segmenter` with `Add(text string) []string` and `Flush() []string`
+  - [x] Boundary detection, closing-punctuation run, trailing-whitespace guard, newline boundary
+  - [x] Abbreviation, decimal, and single-initial suppression
+  - [x] Length gating with the first-segment threshold
+  - [x] Forced break with soft-break → whitespace → rune-aligned hard-cut preference
+  - [x] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
 - [ ] Proxy refactor
   - [ ] Extract `resolveSynthesis(ctx, voiceName, parsed voice.ParsedInput)` from `doSynthesize` in `internal/tts/proxy.go` — resolve, alias/endpoint defaults, merge, fetch endpoint, build client. It MUST NOT call `voice.ParseInput` itself; the caller owns that, because a streaming session must parse the whole message or not at all
   - [ ] Extract `openSegment` — issues the upstream request and determines the `*AudioFormat` (WAV header in buffered mode, endpoint config in streaming mode) while writing nothing; returns an `*OpenSegment` with `Format()`, a PCM reader, and `Close()`
