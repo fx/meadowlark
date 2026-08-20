@@ -332,7 +332,8 @@ Session state is a field on the per-connection handler produced by `HandlerFacto
 - The session's context MUST derive from the `ctx` passed to `HandleEvent` at `synthesize-start`, via `context.WithCancel`.
 - Cancelling that context MUST abort in-flight upstream HTTP requests and close their response bodies.
 - Connection teardown MUST cancel the session; server shutdown MUST cancel it through the parent context.
-- A session with no `synthesize-chunk` and no `synthesize-stop` for longer than the configured session timeout MUST be abandoned: cancel in-flight work, discard buffered text, emit an `error` with code `synthesize-timeout`, and close the session without emitting `synthesize-stopped`. A timeout of `0` disables this.
+- A session MUST run an idle timer, armed when the session opens, reset by every subsequent client event belonging to that session — each `synthesize-chunk` and the compatibility `synthesize` — and disarmed by `synthesize-stop`. Meadowlark's own progress MUST NOT reset it.
+- When the idle timer expires the session MUST be abandoned: cancel in-flight work, discard buffered text, emit an `error` with code `synthesize-timeout`, and close the session without emitting `synthesize-stopped`. A timeout of `0` disables the timer entirely.
 
 ### Scenarios
 

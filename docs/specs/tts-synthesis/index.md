@@ -243,7 +243,15 @@ type ClientFactory func(ep *model.Endpoint) *Client
    - Read PCM in 2048-byte chunks, send `AudioChunk` events.
    - Send `AudioStop` on EOF.
 
-Steps 1–6 are **resolution** and steps 7–8 are **emission**. The two halves are separately callable so that a segmented streaming session can resolve once and emit many times; see [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
+The pipeline is separable into three independently callable stages, so that a segmented streaming session can resolve once and synthesize many times:
+
+| Stage | Steps | Writes to the client? |
+|---|---|---|
+| **Resolution** | 1–6 | No |
+| **Open** | 7 — issue the upstream request and determine the audio format | No |
+| **Emission** | 8 — `AudioStart`, `AudioChunk`+, `AudioStop` | Yes |
+
+Open and emission are distinct stages rather than one, because a segment's audio format MUST be known and accepted before its `AudioStart` is written; see [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
 
 ### Error Handling
 
@@ -313,7 +321,7 @@ Requiring trailing whitespace after an ASCII terminator is what makes the rule s
 
 A `.` does not create a boundary when it sits between digits, when the preceding token is a known abbreviation (`mr`, `mrs`, `ms`, `dr`, `prof`, `sr`, `jr`, `st`, `vs`, `etc`, `approx`, `no`, `fig`, `inc`, `ltd`, `co`, `e.g`, `i.e`), or when the preceding token is a single letter.
 
-Length gating governs when a qualifying boundary actually flushes:
+Length gating governs when a qualifying boundary actually flushes. The **candidate segment** it measures is everything buffered up to and including the boundary's terminator and any closing-punctuation run, with leading and trailing whitespace trimmed, counted in runes rather than bytes — so `"Hello."` is 6 runes.
 
 | Threshold | Default | Meaning |
 |---|---|---|
@@ -339,8 +347,9 @@ Thresholds are process-level configuration, not per-endpoint: segmentation happe
 ### Multi-Segment Proxy Behaviour
 
 - Voice resolution, input-override parsing, and parameter merging run **once per session**, on the first flushed segment. The resulting plan is reused verbatim for every later segment.
+- Each segment is **opened** before it is emitted: the upstream request is issued and the audio format determined without writing anything to the client. The session compares that format against the session format and only then emits.
 - Segments are emitted in text order by a single emitter, so ordering is structural rather than a timing accident.
-- Upstream requests are started ahead of emission, bounded at two in flight — the segment being emitted plus one prefetch — so an upstream's time-to-first-byte is spent while the previous segment is still playing.
+- Upstream requests are started ahead of emission, bounded at two in flight — the segment being emitted plus one prefetch — so an upstream's time-to-first-byte is spent while the previous segment is still playing. A prefetch is precisely an early open.
 
 ### Requirements
 
@@ -349,6 +358,7 @@ Thresholds are process-level configuration, not per-endpoint: segmentation happe
 - `voice.ParseInput` MUST run only on the session's first segment; later segments MUST reuse the parsed overrides without re-parsing.
 - Audio for segment N MUST be fully emitted, including its `audio-stop`, before any audio for segment N+1.
 - At most two upstream synthesis requests per session MUST be in flight at any time.
+- A segment's audio format MUST be determined before any `AudioStart` for that segment is written, so a mismatch can be detected without emitting anything.
 - All segments of a session MUST use an identical audio format. In streaming mode this holds by construction from `StreamSampleRate`; in buffered mode the format is parsed per response and MAY differ, in which case the mismatched segment MUST NOT be emitted — the session MUST log at warn, emit a Wyoming `Error` naming both formats, and terminate. Resampling is out of scope.
 - Cancelling a session MUST abort in-flight upstream requests and close every held response body, including prefetched segments that were never emitted.
 

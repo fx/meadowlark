@@ -73,7 +73,7 @@ Meadowlark must implement the following events as a **TTS server**:
 | `pong` | server -> client | Health check response |
 | `error` | server -> client | Error notification (text + code) |
 
-**Streaming synthesis** (`synthesize-start`, `synthesize-chunk`, `synthesize-stop`, `synthesize-stopped`) is supported, and Meadowlark advertises `supports_synthesize_streaming: true`. An earlier revision of this document declared it out of scope on the grounds that a proxy to HTTP APIs has different latency characteristics from a local TTS engine. Measurement showed that reasoning was wrong: the dominant latency is Home Assistant buffering the entire message and the entire WAV before anything downstream can start, and that buffering is triggered solely by the missing capability flag. See [0006-wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md).
+**Streaming synthesis** (`synthesize-start`, `synthesize-chunk`, `synthesize-stop`, `synthesize-stopped`) is required, and Meadowlark must advertise `supports_synthesize_streaming: true`. An earlier revision of this document declared it out of scope on the grounds that a proxy to HTTP APIs has different latency characteristics from a local TTS engine. Measurement showed that reasoning was wrong: the dominant latency is Home Assistant buffering the entire message and the entire WAV before anything downstream can start, and that buffering is triggered solely by the missing capability flag. See [0006-wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md).
 
 ### 2.3 TTS Request Flow
 

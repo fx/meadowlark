@@ -174,7 +174,11 @@ A connection MUST hold at most one streaming session. The session MUST be create
 
 The session MUST derive its context from the `ctx` passed to `HandleEvent` at `synthesize-start`, via `context.WithCancel`. Cancelling it MUST abort in-flight upstream HTTP requests and close their response bodies. Both server shutdown (parent cancellation) and connection teardown (`CloseConn`) MUST therefore stop synthesis promptly.
 
-A session that has been open with no `synthesize-chunk` and no `synthesize-stop` for longer than the configured session timeout MUST be abandoned: cancel in-flight work, discard buffered text, emit a Wyoming `error` with code `synthesize-timeout`, and close the session without emitting `synthesize-stopped`. The timeout MUST be configurable and MUST be disable-able (R9).
+**Idle timeout.** The session MUST run an idle timer, armed when the session opens and **reset on every subsequent event belonging to that session** — each `synthesize-chunk`, and the compatibility `synthesize`. Only client events reset it; Meadowlark's own progress, such as a segment finishing, does not, because a session whose client has gone silent is dead regardless of how much audio is still draining.
+
+When the timer expires the session MUST be abandoned: cancel in-flight work, discard buffered text, emit a Wyoming `error` with code `synthesize-timeout`, and close the session without emitting `synthesize-stopped`. The timeout MUST be configurable and MUST be disable-able (R9).
+
+The `synthesize-stop` case is not a timer expiry — it terminates the session normally and disarms the timer.
 
 #### Scenario: connection drops mid-synthesis
 
@@ -207,7 +211,9 @@ The trailing-whitespace requirement on the ASCII terminators is what makes the r
 - the token immediately preceding it matches a known abbreviation, case-insensitively: `mr`, `mrs`, `ms`, `dr`, `prof`, `sr`, `jr`, `st`, `vs`, `etc`, `approx`, `no`, `fig`, `inc`, `ltd`, `co`, `e.g`, `i.e`; **or**
 - the token immediately preceding it is a single letter (an initial, e.g. `A. Smith`).
 
-**Length gating.** A boundary MUST NOT flush unless the trimmed candidate segment is at least `minSegmentChars` runes long — except for the first segment of a session, which uses the lower `firstSegmentChars` threshold. Below the threshold, accumulation continues and the boundary is passed over.
+**Length gating.** A boundary MUST NOT flush unless the candidate segment is at least `minSegmentChars` runes long — except for the first segment of a session, which uses the lower `firstSegmentChars` threshold. Below the threshold, accumulation continues and the boundary is passed over.
+
+The **candidate segment** is everything buffered up to and including the boundary's terminator and any closing-punctuation run, with leading and trailing whitespace trimmed, measured in runes rather than bytes. Every threshold in this document is measured that way, so `"Hello."` is 6 runes, not 5.
 
 **Forced break.** When the buffer reaches `maxSegmentChars` runes with no qualifying boundary, the segmenter MUST flush, preferring in order: the last soft break (`,` `;` `:` `—` `–` followed by whitespace) at or before the limit; else the last whitespace at or before the limit; else a hard cut exactly at the limit. A hard cut MUST be rune-aligned and MUST NOT split a multi-byte rune.
 
@@ -218,8 +224,17 @@ The trailing-whitespace requirement on the ASCII terminators is what makes the r
 #### Scenario: one chunk containing several sentences
 
 - **GIVEN** a session and defaults
-- **WHEN** a single `synthesize-chunk` carries `"The weather is sunny today and quite warm. Tomorrow will bring rain across the whole region. Bring an umbrella."`
-- **THEN** the segmenter MUST emit three segments, split after each sentence-final period
+- **WHEN** a single `synthesize-chunk` carries `"The weather is sunny today and quite warm. Tomorrow will bring rain across the whole region. Bring an umbrella."`, followed by `synthesize-stop`
+- **THEN** exactly two segments MUST be produced: `"The weather is sunny today and quite warm."` and `"Tomorrow will bring rain across the whole region. Bring an umbrella."`
+
+Working through why, because this case exercises three rules at once and an implementer who expects three segments has misread one of them:
+
+| Boundary | Candidate length | Outcome |
+|---|---|---|
+| `.` after `warm` | 42 runes | Flushes — it is the session's first segment, so `firstSegmentChars = 24` applies |
+| `.` after `region` | 49 runes | Passed over — 49 < `minSegmentChars = 60`, so accumulation continues |
+| `.` after `umbrella` | — | Not a boundary at all: it ends the buffer, so the trailing-whitespace guard has not been satisfied |
+| `synthesize-stop` | 68 runes | Final flush, unconditional |
 
 #### Scenario: text that never reaches punctuation
 
@@ -236,14 +251,14 @@ The trailing-whitespace requirement on the ASCII terminators is what makes the r
 #### Scenario: abbreviation does not split
 
 - **GIVEN** a session and defaults
-- **WHEN** the accumulated text is `"I asked Dr. Nakamura about the results of the second trial and she was optimistic."`
-- **THEN** exactly one segment MUST be produced, containing the whole sentence
+- **WHEN** the accumulated text is `"I asked Dr. Nakamura about the results of the second trial and she was optimistic."`, followed by `synthesize-stop`
+- **THEN** exactly one segment MUST be produced, containing the whole sentence — the `.` after `Dr` is suppressed as an abbreviation, and the final `.` ends the buffer so it never satisfies the trailing-whitespace guard, leaving the final flush to produce the segment
 
 #### Scenario: short sentence coalesces
 
 - **GIVEN** a session and defaults, and no prior segment in this session
-- **WHEN** the text `"Sure."` arrives followed by `" The living room lights are now at forty percent brightness."`
-- **THEN** the `.` after `"Sure"` MUST NOT flush on its own, because 5 runes is below `firstSegmentChars`, and a single segment covering both sentences MUST be produced
+- **WHEN** the text `"Sure."` arrives, then `" The living room lights are now at forty percent brightness."`, then `synthesize-stop`
+- **THEN** the `.` after `"Sure"` MUST NOT flush on its own, because the 5-rune candidate is below `firstSegmentChars`, and a single segment covering both sentences MUST be produced by the final flush
 
 #### Scenario: multi-byte runes survive a hard cut
 
@@ -284,6 +299,8 @@ When no session is open, a `synthesize` event MUST be handled exactly as it is t
 Each synthesized segment MUST be framed as `audio-start`, one or more `audio-chunk`, `audio-stop`. A single `synthesize-stopped` MUST follow the final segment of a successful session and MUST NOT be emitted per segment.
 
 Home Assistant's `_read_tts_audio` writes its WAV header from the **first** `audio-start` it sees and ignores every later one, so the rate, width, and channels of the first segment govern the entire session. Every segment within a session MUST therefore use an identical audio format.
+
+A segment's audio format MUST be determined before any `audio-start` for that segment is written. That is what the `openSegment`/`emitSegment` split in [Per-segment synthesis inside the proxy](#per-segment-synthesis-inside-the-proxy) exists for: opening a segment issues the upstream request and parses the format while writing nothing, so a mismatch is caught with no bytes on the wire.
 
 The session MUST record the format of its first segment. If a later segment's format differs:
 
@@ -403,12 +420,17 @@ func (s *StreamSession) Close()                              // connection teard
 
 `doSynthesize` currently resolves the voice, parses input overrides, fetches the endpoint, merges parameters, calls the client, and emits the audio group — all for one text. Segment synthesis needs the same pipeline minus the emission, run repeatedly with the same resolution.
 
-Factor the resolution half out so the session resolves **once per session** and synthesizes **once per segment**:
+Factor it into **three** pieces, so the session resolves once per session, and — critically — learns each segment's audio format **before** any byte of that segment is written:
 
 - `Proxy.resolveSynthesis(ctx, voiceName, text) (*synthesisPlan, error)` — steps 1–6 of the [existing flow](../specs/tts-synthesis/index.md#synthesis-flow) (resolve voice, parse input, alias defaults, fetch endpoint, endpoint defaults, merge), returning the endpoint, the client, and the merged parameters.
-- `Proxy.streamSegment(ctx, plan, text, w) (*AudioFormat, error)` — steps 7–8 for one segment, returning the format actually used so the session can enforce R8.
+- `Proxy.openSegment(ctx, plan, text) (*OpenSegment, error)` — step 7 only. Issues the upstream request and determines the audio format: in streaming mode from `{ep.StreamSampleRate, 2, 1}`, in buffered mode by calling `WAVReader.ReadFormat()` on the response. Writes **nothing**. Returns an `*OpenSegment` exposing `Format() *AudioFormat`, a PCM `io.Reader` positioned at the first sample, and `Close() error`.
+- `Proxy.emitSegment(w io.Writer, seg *OpenSegment) error` — step 8 only. Writes `audio-start`, the `audio-chunk` events, and `audio-stop` for an already-opened segment.
 
-`doSynthesize` MUST be re-expressed in terms of these two so the non-streaming path and the streaming path share one implementation. This is the load-bearing refactor of the change; keeping two copies of the synthesis pipeline would guarantee divergence.
+The split is what makes R8 implementable: the session calls `openSegment`, compares `seg.Format()` against the session format, and only then calls `emitSegment` — so a mismatched segment is closed without a single `audio-start` reaching the client. A contract that returned the format *after* emitting could not satisfy R8 at all.
+
+The same split is what the prefetch in [Ordered pipelining](#ordered-pipelining) needs: prefetching segment N+1 is exactly an early `openSegment` call, and the emitter's job is exactly `emitSegment`. `OpenSegment.Close()` is what a cancelled or discarded prefetch releases.
+
+`doSynthesize` MUST be re-expressed as `resolveSynthesis` → `openSegment` → `emitSegment` so the non-streaming path and the streaming path share one implementation. This is the load-bearing refactor of the change; keeping two copies of the synthesis pipeline would guarantee divergence.
 
 **Override parsing happens once per session, not once per segment.** `voice.ParseInput` extracts tag/JSON overrides from the *front* of a message. Re-running it per segment would apply overrides only to segment 1 and would misparse a segment that happens to start with a bracket. The session therefore runs `resolveSynthesis` on the **first** flushed segment, keeps the resulting plan, uses the stripped `Input` as segment 1's text, and reuses the same plan verbatim for every later segment.
 
@@ -513,8 +535,10 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
 - [ ] Proxy refactor
   - [ ] Extract `resolveSynthesis` (resolve, parse input, merge params, fetch endpoint, build client) from `doSynthesize` in `internal/tts/proxy.go`
-  - [ ] Extract `streamSegment` (call client, emit `audio-start`/chunks/`audio-stop`, return the `*AudioFormat` used)
-  - [ ] Re-express `doSynthesize` in terms of both so streaming and non-streaming share one pipeline
+  - [ ] Extract `openSegment` — issues the upstream request and determines the `*AudioFormat` (WAV header in buffered mode, endpoint config in streaming mode) while writing nothing; returns an `*OpenSegment` with `Format()`, a PCM reader, and `Close()`
+  - [ ] Extract `emitSegment` — writes `audio-start`/chunks/`audio-stop` for an already-opened segment
+  - [ ] Re-express `doSynthesize` as `resolveSynthesis` → `openSegment` → `emitSegment` so streaming and non-streaming share one pipeline
+  - [ ] Test that a buffered-mode format mismatch is detectable between `openSegment` and `emitSegment` — i.e. `openSegment` writes nothing to `w`
   - [ ] Confirm existing `internal/tts/proxy_test.go` passes unchanged — the non-streaming path MUST be behaviourally identical
 - [ ] `tts.StreamSession`
   - [ ] `NewStreamSession`, `Active`, `Start`, `Chunk`, `Compat`, `Stop`, `Close` per the API above
@@ -523,7 +547,8 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Resolve once on the first segment; reuse the plan for all later segments
   - [ ] Format recording and R8 mismatch abort
   - [ ] Terminator discipline from R10, including `audio-stop` before `error` when a segment fails after `audio-start`
-  - [ ] Idle timer with `synthesize-timeout` error, disabled when the timeout is `0`
+  - [ ] Idle timer: armed on `Start`, reset by `Chunk` and `Compat`, disarmed by `Stop`, `synthesize-timeout` error on expiry, disabled entirely when the timeout is `0`
+  - [ ] Test that a session receiving one chunk and then stalling is abandoned after the timeout, and that a session receiving a chunk every half-timeout is not
   - [ ] `synthesize-start` while active: cancel, discard, emit `synthesize-stopped`, restart
   - [ ] Zero-chunk fallback text handling from R7
   - [ ] Tests in `internal/tts/stream_session_test.go`: ordered emission with prefetch; suppression and fallback; buffered and streaming endpoint modes; format mismatch; upstream error before and after `audio-start`; cancellation closes bodies; idle timeout; `-race` clean
