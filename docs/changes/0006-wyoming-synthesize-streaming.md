@@ -88,7 +88,15 @@ Meadowlark MUST advertise `true` **unconditionally**. See [Decisions](#decisions
 | `TypeSynthesizeStop` | `synthesize-stop` | client → server | none |
 | `TypeSynthesizeStopped` | `synthesize-stopped` | server → client | none |
 
-`SynthesizeStart` MUST carry `Voice`, `Language`, `Speaker`, `TextFormat`, and `Context any`. The `voice` object MUST be encoded and decoded with the same nesting as `Synthesize` (`{"voice": {"name": ..., "language": ..., "speaker": ...}}`), and MUST be omitted entirely when the voice name is empty. `Context` MUST round-trip unchanged so a future change can echo it back.
+`SynthesizeStart` MUST carry `Voice`, `Language`, `Speaker`, `TextFormat`, and `Context any`. Its `voice` object nests all three voice fields:
+
+```json
+{"voice": {"name": "alloy", "language": "en", "speaker": "s1"}, "text_format": "text"}
+```
+
+The object MUST be omitted entirely when the voice name is empty, and `Context` MUST round-trip unchanged so a future change can echo it back.
+
+> **This is NOT the same shape as the existing `Synthesize` event, and the two MUST NOT be harmonised.** `Synthesize.ToEvent` in `internal/wyoming/types.go` nests only `name` under `voice` and emits `speaker` and `language` at the **top level** of the data object. That is the wire format Wyoming clients already speak, and R7 requires the whole-message path to keep working byte for byte, so changing it to match `SynthesizeStart` would be a regression. `SynthesizeStart` follows the upstream `wyoming/tts.py` shape; `Synthesize` keeps its existing shape. Implement them as two separate encoders.
 
 `SynthesizeChunk` MUST carry `Text`. `SynthesizeStop` and `SynthesizeStopped` MUST have no fields.
 
@@ -211,6 +219,8 @@ The trailing-whitespace requirement on the ASCII terminators is what makes the r
 - the token immediately preceding it matches a known abbreviation, case-insensitively: `mr`, `mrs`, `ms`, `dr`, `prof`, `sr`, `jr`, `st`, `vs`, `etc`, `approx`, `no`, `fig`, `inc`, `ltd`, `co`, `e.g`, `i.e`; **or**
 - the token immediately preceding it is a single letter (an initial, e.g. `A. Smith`).
 
+Here **token** means the maximal run of non-whitespace characters immediately preceding the `.`, not including the `.` itself. That definition is what makes the multi-part entries matchable: in `e.g.` the token before the final `.` is `e.g`, so it matches the list directly rather than needing a nested rule.
+
 **Length gating.** A boundary MUST NOT flush unless the candidate segment is at least `minSegmentChars` runes long — except for the first segment of a session, which uses the lower `firstSegmentChars` threshold. Below the threshold, accumulation continues and the boundary is passed over.
 
 The **candidate segment** is everything buffered up to and including the boundary's terminator and any closing-punctuation run, with leading and trailing whitespace trimmed, measured in runes rather than bytes. Every threshold in this document is measured that way, so `"Hello."` is 6 runes, not 5.
@@ -220,6 +230,26 @@ The **candidate segment** is everything buffered up to and including the boundar
 **Final flush.** On `synthesize-stop` the remainder MUST be flushed regardless of length. A remainder that is empty or entirely whitespace MUST flush nothing.
 
 **Defaults.** `firstSegmentChars = 24`, `minSegmentChars = 60`, `maxSegmentChars = 400`. Rationale and the tradeoff being tuned are in [Decisions](#decisions).
+
+**Override-form input suspends segmentation.** If the session's first non-whitespace character is `{` or `[`, the session MUST buffer the whole message and flush nothing until `synthesize-stop`, then parse it with `voice.ParseInput` and segment the resulting `Input`. Otherwise `voice.ParseInput` MUST NOT be run at all and the raw text is segmented as it arrives. The reasoning is in [Override parsing](#per-segment-synthesis-inside-the-proxy).
+
+#### Scenario: JSON-form input is not spoken
+
+- **GIVEN** a session whose chunks together spell `{"voice": "alloy", "input": "Turning on the lights now."}`, arriving in fragments
+- **WHEN** `synthesize-stop` arrives
+- **THEN** no segment MUST have been flushed before `synthesize-stop`, the resolved voice MUST be `alloy`, the synthesized text MUST be `Turning on the lights now.`, and no brace or key name MUST appear in any synthesized segment
+
+#### Scenario: tag-form input strips the tag
+
+- **GIVEN** a session whose chunks together spell `[speed: 1.2] The kitchen light is now on.`, with the `]` arriving in a later chunk than the `[`
+- **WHEN** `synthesize-stop` arrives
+- **THEN** the merged speed MUST be `1.2` and the synthesized text MUST NOT contain `[speed: 1.2]`
+
+#### Scenario: prose is never override-parsed
+
+- **GIVEN** a session whose text is ordinary prose
+- **WHEN** segments are flushed
+- **THEN** `voice.ParseInput` MUST NOT be called on any segment, and segments MUST flush incrementally rather than waiting for `synthesize-stop`
 
 #### Scenario: one chunk containing several sentences
 
@@ -432,7 +462,27 @@ The same split is what the prefetch in [Ordered pipelining](#ordered-pipelining)
 
 `doSynthesize` MUST be re-expressed as `resolveSynthesis` → `openSegment` → `emitSegment` so the non-streaming path and the streaming path share one implementation. This is the load-bearing refactor of the change; keeping two copies of the synthesis pipeline would guarantee divergence.
 
-**Override parsing happens once per session, not once per segment.** `voice.ParseInput` extracts tag/JSON overrides from the *front* of a message. Re-running it per segment would apply overrides only to segment 1 and would misparse a segment that happens to start with a bracket. The session therefore runs `resolveSynthesis` on the **first** flushed segment, keeps the resulting plan, uses the stripped `Input` as segment 1's text, and reuses the same plan verbatim for every later segment.
+**Override parsing must see the whole message, so segmentation is deferred when overrides are present.**
+
+`voice.ParseInput` dispatches on the first non-whitespace character of the text and has two very different behaviours (`internal/voice/parser.go`):
+
+- **`{` — JSON form.** `parseJSON` unmarshals the **entire** string as one JSON object. It does not extract JSON from a prefix. Handed a fragment, `json.Unmarshal` fails and `ParseInput` falls through to treating the fragment as plain input — so the braces would be **spoken aloud** and every override silently dropped.
+- **`[` — tag form.** `parseTags` consumes leading `[...]` groups and returns the rest as `Input`. It works on a prefix, but only once the closing `]` has actually arrived.
+
+Running `ParseInput` on the first flushed segment therefore corrupts both forms. The rule instead keys on the same character `ParseInput` itself dispatches on:
+
+- **The session's first non-whitespace character is `{` or `[`** → the session MUST NOT flush any segment. It buffers the entire message and, on `synthesize-stop`, runs `ParseInput` on the complete text exactly as the whole-message path does, then segments the resulting `Input` and emits those segments. The latency win is forfeited for this message; correctness is not. Log at debug that override-form input disabled incremental segmentation.
+- **Anything else** → this is ordinary prose, which is what Home Assistant streams. `ParseInput` MUST NOT be run at all, and the raw text is segmented as it arrives. Not running it is deliberate: a prose message is not an override form, and parsing per-segment could only misfire.
+
+In both cases the overrides are known before the first segment is synthesized, so `resolveSynthesis` runs once and its plan is reused verbatim for every segment.
+
+Because the caller now owns input parsing, `resolveSynthesis` takes the already-parsed overrides rather than raw text:
+
+```go
+func (p *Proxy) resolveSynthesis(ctx context.Context, voiceName string, parsed voice.ParsedInput) (*synthesisPlan, error)
+```
+
+`doSynthesize` supplies `voice.ParseInput(ev.Text)`; a prose streaming session supplies a zero `voice.ParsedInput`; an override-form streaming session supplies `voice.ParseInput(<whole buffered message>)`.
 
 #### Ordered pipelining
 
@@ -514,6 +564,7 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
 - [ ] Wyoming event types and info flag
   - [ ] Add `TypeSynthesizeStart`, `TypeSynthesizeChunk`, `TypeSynthesizeStop`, `TypeSynthesizeStopped` to `internal/wyoming/types.go`
   - [ ] Add `SynthesizeStart`, `SynthesizeChunk`, `SynthesizeStop`, `SynthesizeStopped` structs with `ToEvent` and `…FromEvent`, matching the existing house pattern
+  - [ ] Encode `SynthesizeStart`'s voice with `name`, `language` and `speaker` all nested under `voice` — and leave `Synthesize`'s existing encoding (only `name` nested; `speaker` and `language` top-level) untouched. Add a test asserting `Synthesize.ToEvent`'s wire shape is unchanged
   - [ ] Add `SupportsSynthesizeStreaming bool` to `TtsProgram`; emit it in `Info.ToEvent()` and parse it in `InfoFromEvent`
   - [ ] Set it to `true` in `internal/wyoming/info.go` where the `TtsProgram` is constructed
   - [ ] Tests in `internal/wyoming/types_test.go`: round-trip symmetry for all four types, voice-object nesting, `context` passthrough, flag present in `info`, flag defaults to `false` when absent
@@ -534,7 +585,7 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Forced break with soft-break → whitespace → rune-aligned hard-cut preference
   - [ ] Table-driven tests for every R6 scenario plus: CJK punctuation, ellipsis, closing quote after period, whitespace-only remainder, text arriving one rune at a time
 - [ ] Proxy refactor
-  - [ ] Extract `resolveSynthesis` (resolve, parse input, merge params, fetch endpoint, build client) from `doSynthesize` in `internal/tts/proxy.go`
+  - [ ] Extract `resolveSynthesis(ctx, voiceName, parsed voice.ParsedInput)` from `doSynthesize` in `internal/tts/proxy.go` — resolve, alias/endpoint defaults, merge, fetch endpoint, build client. It MUST NOT call `voice.ParseInput` itself; the caller owns that, because a streaming session must parse the whole message or not at all
   - [ ] Extract `openSegment` — issues the upstream request and determines the `*AudioFormat` (WAV header in buffered mode, endpoint config in streaming mode) while writing nothing; returns an `*OpenSegment` with `Format()`, a PCM reader, and `Close()`
   - [ ] Extract `emitSegment` — writes `audio-start`/chunks/`audio-stop` for an already-opened segment
   - [ ] Re-express `doSynthesize` as `resolveSynthesis` → `openSegment` → `emitSegment` so streaming and non-streaming share one pipeline
@@ -544,14 +595,15 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] `NewStreamSession`, `Active`, `Start`, `Chunk`, `Compat`, `Stop`, `Close` per the API above
   - [ ] Session context via `context.WithCancel` from the `Start` call's `ctx`; cancel on `Close`, error, and idle timeout
   - [ ] Ordered job FIFO with `maxInFlight = 2` prefetch and a single emitter goroutine
-  - [ ] Resolve once on the first segment; reuse the plan for all later segments
+  - [ ] Override-form detection on the session's first non-whitespace character: `{` or `[` suspends segmentation until `synthesize-stop`, then `ParseInput` the whole message and segment its `Input`; anything else skips `ParseInput` entirely and segments incrementally
+  - [ ] Resolve once, before the first segment is synthesized; reuse the plan for all later segments
   - [ ] Format recording and R8 mismatch abort
   - [ ] Terminator discipline from R10, including `audio-stop` before `error` when a segment fails after `audio-start`
   - [ ] Idle timer: armed on `Start`, reset by `Chunk` and `Compat`, disarmed by `Stop`, `synthesize-timeout` error on expiry, disabled entirely when the timeout is `0`
   - [ ] Test that a session receiving one chunk and then stalling is abandoned after the timeout, and that a session receiving a chunk every half-timeout is not
   - [ ] `synthesize-start` while active: cancel, discard, emit `synthesize-stopped`, restart
   - [ ] Zero-chunk fallback text handling from R7
-  - [ ] Tests in `internal/tts/stream_session_test.go`: ordered emission with prefetch; suppression and fallback; buffered and streaming endpoint modes; format mismatch; upstream error before and after `audio-start`; cancellation closes bodies; idle timeout; `-race` clean
+  - [ ] Tests in `internal/tts/stream_session_test.go`: ordered emission with prefetch; suppression and fallback; buffered and streaming endpoint modes; format mismatch; upstream error before and after `audio-start`; cancellation closes bodies; idle timeout; JSON-form and tag-form input arriving in fragments; prose never override-parsed; `-race` clean
 - [ ] Configuration
   - [ ] Add the four flags from R9 to `cmd/meadowlark/main.go` with `MEADOWLARK_*` fallbacks
   - [ ] Validate and fall back to defaults with a warning on incoherent values

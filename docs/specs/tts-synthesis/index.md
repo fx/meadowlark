@@ -319,7 +319,7 @@ Incoming text is aggregated by a pure, I/O-free segmenter in `internal/segment/`
 
 Requiring trailing whitespace after an ASCII terminator is what makes the rule safe against partial input: a terminator at the very end of the buffer is not yet a boundary, because the next fragment may continue the token. Full-width terminators need no such guard.
 
-A `.` does not create a boundary when it sits between digits, when the preceding token is a known abbreviation (`mr`, `mrs`, `ms`, `dr`, `prof`, `sr`, `jr`, `st`, `vs`, `etc`, `approx`, `no`, `fig`, `inc`, `ltd`, `co`, `e.g`, `i.e`), or when the preceding token is a single letter.
+A `.` does not create a boundary when it sits between digits, when the preceding token is a known abbreviation (`mr`, `mrs`, `ms`, `dr`, `prof`, `sr`, `jr`, `st`, `vs`, `etc`, `approx`, `no`, `fig`, `inc`, `ltd`, `co`, `e.g`, `i.e`), or when the preceding token is a single letter. **Token** here means the maximal run of non-whitespace characters immediately preceding the `.`, excluding the `.` itself — so in `e.g.` the token is `e.g`.
 
 Length gating governs when a qualifying boundary actually flushes. The **candidate segment** it measures is everything buffered up to and including the boundary's terminator and any closing-punctuation run, with leading and trailing whitespace trimmed, counted in runes rather than bytes — so `"Hello."` is 6 runes.
 
@@ -346,7 +346,8 @@ Thresholds are process-level configuration, not per-endpoint: segmentation happe
 
 ### Multi-Segment Proxy Behaviour
 
-- Voice resolution, input-override parsing, and parameter merging run **once per session**, on the first flushed segment. The resulting plan is reused verbatim for every later segment.
+- Voice resolution and parameter merging run **once per session**; the resulting plan is reused verbatim for every segment.
+- Input-override parsing needs the whole message, because `ParseInput`'s JSON form only unmarshals a complete object and its tag form needs its closing bracket. A session whose first non-whitespace character is `{` or `[` therefore buffers the entire message, flushes nothing until the session ends, then parses it and segments the resulting `Input`. Any other session is ordinary prose: override parsing is skipped entirely and text is segmented as it arrives.
 - Each segment is **opened** before it is emitted: the upstream request is issued and the audio format determined without writing anything to the client. The session compares that format against the session format and only then emits.
 - Segments are emitted in text order by a single emitter, so ordering is structural rather than a timing accident.
 - Upstream requests are started ahead of emission, bounded at two in flight — the segment being emitted plus one prefetch — so an upstream's time-to-first-byte is spent while the previous segment is still playing. A prefetch is precisely an early open.
@@ -355,7 +356,7 @@ Thresholds are process-level configuration, not per-endpoint: segmentation happe
 
 - Thresholds MUST satisfy `0 < firstSegmentChars ≤ minSegmentChars ≤ maxSegmentChars`; a configuration violating that ordering, or carrying a non-positive threshold, MUST log a warning at startup and fall back to all three defaults.
 - A forced hard cut MUST be rune-aligned and MUST NOT split a multi-byte rune.
-- `voice.ParseInput` MUST run only on the session's first segment; later segments MUST reuse the parsed overrides without re-parsing.
+- `voice.ParseInput` MUST be given the complete message text or not run at all; it MUST NOT be run on an individual segment, because a fragment of a JSON-form input parses as plain text and would be spoken verbatim with its overrides dropped.
 - Audio for segment N MUST be fully emitted, including its `audio-stop`, before any audio for segment N+1.
 - At most two upstream synthesis requests per session MUST be in flight at any time.
 - A segment's audio format MUST be determined before any `AudioStart` for that segment is written, so a mismatch can be detected without emitting anything.
@@ -372,9 +373,9 @@ Thresholds are process-level configuration, not per-endpoint: segmentation happe
 **WHEN** the second segment's header is parsed,
 **THEN** no `AudioStart` MUST be emitted for it and the session MUST terminate with a Wyoming `Error` naming both formats.
 
-**GIVEN** a session whose first segment's text begins with a parameter override tag,
-**WHEN** three segments are synthesized,
-**THEN** the override MUST apply to all three, and the tag MUST be stripped from the first segment's input only.
+**GIVEN** a session whose text begins with a parameter override tag or a JSON-form object,
+**WHEN** the session ends and its text is segmented,
+**THEN** no segment MUST have been flushed before the session ended, the override MUST apply to every segment, and neither the tag nor any JSON syntax MUST appear in any synthesized segment.
 
 **GIVEN** a session with one segment emitting and one prefetched,
 **WHEN** the session is cancelled,

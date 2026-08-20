@@ -130,7 +130,7 @@ type Synthesize struct {
 }
 ```
 
-Wire format maps voice to nested object: `{"voice": {"name": "alloy"}}`.
+Wire format nests **only** the voice name: `{"text": ..., "voice": {"name": "alloy"}, "speaker": ..., "language": ...}`. `speaker` and `language` sit at the top level of the data object, not inside `voice`, and each optional field is omitted when empty.
 
 A `synthesize` event received while a streaming session is open on the same connection is suppressed; see [Streaming Synthesis Input](#streaming-synthesis-input).
 
@@ -153,7 +153,8 @@ type SynthesizeStop struct{}
 type SynthesizeStopped struct{}
 ```
 
-- `SynthesizeStart` encodes and decodes its voice with the same nesting as `Synthesize` (`{"voice": {"name": ..., "language": ..., "speaker": ...}}`), and omits the object entirely when the voice name is empty.
+- `SynthesizeStart` nests all three voice fields under `voice` — `{"voice": {"name": ..., "language": ..., "speaker": ...}}` — and omits the object entirely when the voice name is empty.
+- **`Synthesize` and `SynthesizeStart` do not share a voice encoding.** `Synthesize` nests only `name` under `voice` and emits `speaker` and `language` at the top level of its data object. That is the shape existing Wyoming clients speak and it MUST NOT be changed to match `SynthesizeStart`; the two are encoded separately.
 - `text_format: "ssml"` is accepted without error and treated as plain text. SSML rendering is not supported.
 - `Context` is round-tripped but otherwise unused.
 - `SynthesizeStopped` is the only one of the four sent server → client.
