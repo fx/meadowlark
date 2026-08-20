@@ -54,6 +54,32 @@ func TestInfoBuilder_Build_EmptyState(t *testing.T) {
 	assert.True(t, info.Tts[0].Installed)
 	assert.Equal(t, "1.0.0", info.Tts[0].Version)
 	assert.Empty(t, info.Tts[0].Voices)
+	assert.True(t, info.Tts[0].SupportsSynthesizeStreaming)
+}
+
+// The streaming-input capability is a property of the service, not of any
+// endpoint, so it is advertised whatever the configured state happens to be.
+func TestInfoBuilder_Build_AdvertisesSynthesizeStreaming(t *testing.T) {
+	builder := NewInfoBuilder(
+		&mockEndpointLister{endpoints: []model.Endpoint{{
+			ID: "ep-1", Name: "Test", Enabled: true, Models: model.StringSlice{"tts-1"},
+		}}},
+		&mockAliasLister{},
+		&mockEndpointVoiceLister{byEndpoint: map[string][]model.EndpointVoice{
+			"ep-1": {{EndpointID: "ep-1", VoiceID: "alloy", Enabled: true}},
+		}},
+		"1.0.0",
+	)
+	info, err := builder.Build(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, info.Tts, 1)
+	assert.True(t, info.Tts[0].SupportsSynthesizeStreaming)
+
+	// And it survives to the wire, which is where Home Assistant reads it.
+	ev := info.ToEvent()
+	prog := ev.Data["tts"].([]any)[0].(map[string]any)
+	assert.Equal(t, true, prog["supports_synthesize_streaming"])
 }
 
 func TestInfoBuilder_Build_WithEndpointsAndAliases(t *testing.T) {
