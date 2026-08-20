@@ -298,3 +298,18 @@ func TestSegmentsAreTrimmed(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, "The weather is sunny today and quite warm.", got[0])
 }
+
+// One Add can complete several segments, so it drains the buffer in a loop
+// rather than emitting at most one per call. The unterminated tail stays
+// buffered: it is not a boundary, because the next fragment may continue it.
+func TestAddEmitsSeveralSegmentsFromOneCall(t *testing.T) {
+	s := New(Config{FirstSegmentChars: 1, MinSegmentChars: 1, MaxSegmentChars: 400})
+
+	got := s.Add("One. Two! Three? Four")
+	assert.Equal(t, []string{"One.", "Two!", "Three?"}, got)
+
+	// take trims only the segment it emits, so the separating space in front
+	// of the tail is still buffered.
+	assert.Equal(t, " Four", s.Pending())
+	assert.Equal(t, []string{"Four"}, s.Flush())
+}
