@@ -202,9 +202,15 @@ func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 		// torn down when one of many connections closes.
 		//
 		// CloseConn blocks until the connection's background work has
-		// finished, and runs before the socket is closed so that work can
-		// still drain what it has already started. It is what makes
-		// Shutdown's wg.Wait genuinely wait for in-flight synthesis.
+		// finished, which is what makes Shutdown's wg.Wait genuinely wait for
+		// in-flight synthesis rather than abandoning it.
+		//
+		// It must not assume the socket is still writable. This defer runs it
+		// before closing the connection itself, but Shutdown closes every
+		// connection in s.conns to unblock ReadEvent before it waits — so on
+		// that path the socket is already gone by the time CloseConn is
+		// called. A teardown path therefore cancels and drains; it does not
+		// try to flush anything to the client.
 		if ch, ok := perConn.(ConnHandler); ok {
 			ch.CloseConn()
 		}
