@@ -313,3 +313,50 @@ func TestAddEmitsSeveralSegmentsFromOneCall(t *testing.T) {
 	assert.Equal(t, " Four", s.Pending())
 	assert.Equal(t, []string{"Four"}, s.Flush())
 }
+
+// Rune-by-rune arrival is the production input shape: Home Assistant emits
+// synthesize-chunk at token granularity, so the segmenter must behave
+// identically whether a sentence arrives whole or one character at a time.
+//
+// The text exercises, in order:
+//
+//   - a full-width terminator passed over on length — the candidate
+//     "これは日本語の文章です。" is 12 runes, below firstSegmentChars=24;
+//   - a second full-width terminator that becomes a boundary the instant it
+//     arrives, with no trailing whitespace, because full-width terminators
+//     carry no such guard — the candidate is now 26 runes, so it flushes;
+//   - an abbreviation period that must not split: "…shortly after Dr." is 64
+//     runes, above minSegmentChars=60, so only the abbreviation suppression
+//     keeps it from flushing there;
+//   - an ASCII terminator that is not yet a boundary while it is the last rune
+//     buffered, and becomes one only once the following space arrives — the
+//     82-rune candidate then clears minSegmentChars.
+func TestRuneByRuneArrival(t *testing.T) {
+	const text = "これは日本語の文章です。今日はとても良い天気ですね。" +
+		"The evening package will arrive at the station shortly after Dr. Nakamura returns. " +
+		"Please bring an umbrella"
+
+	want := []string{
+		"これは日本語の文章です。今日はとても良い天気ですね。",
+		"The evening package will arrive at the station shortly after Dr. Nakamura returns.",
+	}
+
+	s := New(DefaultConfig())
+	var got []string
+	for _, r := range text {
+		got = append(got, s.Add(string(r))...)
+	}
+	assert.Equal(t, want, got)
+
+	// take trims only the segment it emits, so the space separating the last
+	// segment from the tail is still buffered.
+	assert.Equal(t, " Please bring an umbrella", s.Pending())
+	assert.Equal(t, []string{"Please bring an umbrella"}, s.Flush())
+
+	// The property that matters: one rune at a time is indistinguishable from
+	// one call carrying the whole text.
+	one := New(DefaultConfig())
+	assert.Equal(t, got, one.Add(text))
+	assert.Equal(t, " Please bring an umbrella", one.Pending())
+	assert.Equal(t, []string{"Please bring an umbrella"}, one.Flush())
+}
