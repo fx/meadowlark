@@ -135,11 +135,14 @@ func (s *StreamSession) Start(ctx context.Context, w io.Writer, ev *wyoming.Synt
 		seg:       segment.New(s.cfg),
 		sem:       make(chan struct{}, maxInFlight),
 		ready:     make(chan *segJob, maxInFlight),
+		emitDone:  make(chan struct{}),
 	}
 	r.qcond = sync.NewCond(&r.qmu)
 	r.wg.Add(2)
 	go r.openLoop()
 	go r.emitLoop()
+	r.swg.Add(1)
+	go r.supervise()
 
 	s.run = r
 	s.armTimer(r)
@@ -318,6 +321,14 @@ type segJob struct {
 	err error
 }
 
+// segFailure is a domain failure recorded by the emitter for the supervisor to
+// turn into the session's terminator. An empty code means the connection itself
+// failed, so the session is quiesced but nothing is written.
+type segFailure struct {
+	err  error
+	code string
+}
+
 // queuedText is a segment of text waiting to be synthesized, carrying the
 // session's parsed input overrides so the opener can resolve the plan from the
 // first one.
@@ -367,6 +378,14 @@ type streamRun struct {
 	sem   chan struct{} // bounds open upstream requests to maxInFlight
 	ready chan *segJob  // ordered FIFO from the opener to the emitter
 	wg    sync.WaitGroup
+
+	// emitDone is closed by the emitter as it exits, after it has written any
+	// closing audio-stop and recorded any failure. swg tracks the supervisor
+	// that turns such a failure into the session's terminator; it is separate
+	// from wg because the supervisor joins wg itself.
+	emitDone chan struct{}
+	failure  *segFailure
+	swg      sync.WaitGroup
 
 	// plan is owned by the opener, format by the emitter.
 	plan   *synthesisPlan
@@ -470,14 +489,18 @@ func (r *streamRun) finish() error {
 
 	r.closeQueue()
 	r.wg.Wait()
+	r.swg.Wait()
 	r.drainReady()
 	r.discardQueue()
 
 	if r.writeErr != nil {
 		return r.writeErr
 	}
-	// A failure during the drain already spent the terminator on its error
-	// event, in which case this writes nothing.
+	if r.failed.Load() {
+		// A failure during the drain already spent the terminator on its error
+		// event. A session that errored gets no synthesize-stopped.
+		return nil
+	}
 	err := r.terminate(r.stoppedEvent)
 	if err != nil {
 		r.writeErr = err
@@ -506,6 +529,7 @@ func (r *streamRun) quiesce() {
 	r.cancel()
 	r.qcond.Broadcast()
 	r.wg.Wait()
+	r.swg.Wait()
 	r.drainReady()
 	r.discardQueue()
 }
@@ -640,6 +664,10 @@ func (r *streamRun) drainReady() {
 // so ordering is structural rather than a timing accident.
 func (r *streamRun) emitLoop() {
 	defer r.wg.Done()
+	// Closed only once every audio event this session will ever emit has been
+	// written, which is what lets the supervisor order the terminator after it.
+	defer close(r.emitDone)
+
 	for job := range r.ready {
 		if !r.emitOne(job) {
 			return
@@ -658,7 +686,7 @@ func (r *streamRun) emitOne(job *segJob) bool {
 		return false
 	}
 	if job.err != nil {
-		r.fail(job.err, "tts-error")
+		r.recordFailure(job.err, "tts-error")
 		return false
 	}
 	defer func() {
@@ -678,7 +706,7 @@ func (r *streamRun) emitOne(job *segJob) bool {
 		// opened without writing a byte, so it can still be rejected cleanly.
 		r.logger.Warn("audio format changed mid-session",
 			"first", formatString(r.format), "segment", formatString(format))
-		r.fail(fmt.Errorf("audio format changed mid-session: first segment %s, this segment %s",
+		r.recordFailure(fmt.Errorf("audio format changed mid-session: first segment %s, this segment %s",
 			formatString(r.format), formatString(format)), "tts-error")
 		return false
 	}
@@ -698,17 +726,16 @@ func (r *streamRun) emitOne(job *segJob) bool {
 		// cancelled us.
 		r.closeGroup(groupOpen)
 	case cw.err != nil:
-		// The connection itself failed. Nothing more can be written to it, and
-		// there is no terminator worth attempting.
-		r.logger.Error("failed to write audio event", "error", err)
+		// The connection itself failed. Nothing more can be written to it, so the
+		// session is quiesced with no terminator at all.
 		r.writeErr = err
-		r.failed.Store(true)
-		r.cancel()
+		r.recordFailure(err, "")
 	default:
 		// The upstream failed. Close the group first so the client is never left
-		// inside an unterminated one, then report.
+		// inside an unterminated one; the supervisor writes the error once this
+		// goroutine has been joined.
 		r.closeGroup(groupOpen)
-		r.fail(err, "tts-error")
+		r.recordFailure(err, "tts-error")
 	}
 	return false
 }
@@ -726,18 +753,51 @@ func (r *streamRun) closeGroup(open bool) {
 	}
 }
 
-// fail terminates the session with a Wyoming error event and leaves the tombstone
-// behind. It is called only from the emitter, which by then has closed any group
-// it had opened, so the error is the last thing the client sees for this message.
-func (r *streamRun) fail(err error, code string) {
+// recordFailure marks the session as failed and hands the failure to the
+// supervisor. It writes nothing: the error may only be written once the emitter
+// has been joined, and the emitter is what calls this.
+//
+// The tombstone is raised here rather than by the supervisor so that every event
+// arriving between the failure and its terminator is already absorbed.
+func (r *streamRun) recordFailure(err error, code string) {
 	r.logger.Error("streaming synthesis failed", "error", err, "code", code)
+	r.failure = &segFailure{err: err, code: code}
 	r.failed.Store(true)
 	r.cancel()
-	if r.teardown.Load() {
+}
+
+// supervise turns a failure recorded by the emitter into the session's single
+// terminator, performing R5's quiesce first — cancel, join the emitter, discard
+// the queue — so the error is the last thing the client sees for this message
+// and no prefetched body outlives it.
+//
+// It exists because the emitter cannot join itself, and because a client that
+// has gone quiet would otherwise never trigger the join: nothing but this
+// goroutine is guaranteed to run again after a mid-session failure.
+func (r *streamRun) supervise() {
+	defer r.swg.Done()
+
+	// The emitter has written its last audio event, including any closing
+	// audio-stop for a group it had opened.
+	<-r.emitDone
+	f := r.failure
+	if f == nil {
+		return
+	}
+
+	r.cancel()
+	r.qcond.Broadcast()
+	r.wg.Wait()
+	r.drainReady()
+	r.discardQueue()
+
+	// An empty code means the connection itself failed, and teardown means it is
+	// gone: either way there is nothing worth writing to it.
+	if f.code == "" || r.teardown.Load() {
 		return
 	}
 	if writeErr := r.terminate(func() error {
-		return r.write(&wyoming.Error{Text: err.Error(), Code: code})
+		return r.write(&wyoming.Error{Text: f.err.Error(), Code: f.code})
 	}); writeErr != nil {
 		r.logger.Error("failed to write TTS error event", "error", writeErr)
 		r.writeErr = writeErr

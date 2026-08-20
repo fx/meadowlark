@@ -1032,9 +1032,20 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 		r := &streamRun{
 			logger: testLogger(), w: w, ctx: ctx, cancel: cancel,
 			sem: make(chan struct{}, maxInFlight), ready: make(chan *segJob, maxInFlight),
+			emitDone: make(chan struct{}),
 		}
 		r.qcond = sync.NewCond(&r.qmu)
+		r.swg.Add(1)
+		go r.supervise()
 		return r
+	}
+	// failAndJoin plays the emitter's exit: record the failure, then close the
+	// group and the emitter, which is what releases the supervisor.
+	failAndJoin := func(r *streamRun, err error, code string) {
+		r.recordFailure(err, code)
+		close(r.ready)
+		close(r.emitDone)
+		r.swg.Wait()
 	}
 	openSeg := func() (*OpenSegment, *segTrackedBody) {
 		body := &segTrackedBody{Reader: bytes.NewReader(make([]byte, 16))}
@@ -1044,6 +1055,7 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 	t.Run("a prefetched segment taken after cancellation is closed unsynthesized", func(t *testing.T) {
 		w := &syncWriter{}
 		r := newRun(w)
+		defer close(r.emitDone)
 		seg, body := openSeg()
 		r.cancel()
 
@@ -1058,9 +1070,19 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 		r.teardown.Store(true)
 
 		r.closeGroup(true)
-		r.fail(errors.New("upstream exploded"), "tts-error")
+		failAndJoin(r, errors.New("upstream exploded"), "tts-error")
 
 		assert.Empty(t, w.snapshot())
+		assert.True(t, r.failed.Load())
+	})
+
+	t.Run("a connection write failure quiesces without a terminator", func(t *testing.T) {
+		w := &syncWriter{}
+		r := newRun(w)
+
+		failAndJoin(r, errors.New("connection gone"), "")
+
+		assert.Empty(t, w.snapshot(), "an empty code means nothing may be written")
 		assert.True(t, r.failed.Load())
 	})
 
@@ -1068,6 +1090,7 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 		wantErr := errors.New("connection gone")
 		w := &syncWriter{fail: func(int) error { return wantErr }}
 		r := newRun(w)
+		defer close(r.emitDone)
 
 		r.closeGroup(true)
 		assert.ErrorIs(t, r.writeErr, wantErr)
@@ -1081,7 +1104,7 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 		w := &syncWriter{fail: func(int) error { return wantErr }}
 		r := newRun(w)
 
-		r.fail(errors.New("upstream exploded"), "tts-error")
+		failAndJoin(r, errors.New("upstream exploded"), "tts-error")
 
 		assert.ErrorIs(t, r.writeErr, wantErr)
 		assert.True(t, r.failed.Load())
@@ -1090,6 +1113,7 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 
 	t.Run("a segment that cannot be handed to the emitter is not delivered", func(t *testing.T) {
 		r := newRun(&syncWriter{})
+		defer close(r.emitDone) // release the supervisor, which has no failure to act on
 		seg, body := openSeg()
 		// The emitter is gone and the queue is full, so the send can only lose to
 		// the cancellation.
@@ -1106,6 +1130,7 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 	t.Run("the writer refuses to write once the session is cancelled", func(t *testing.T) {
 		w := &syncWriter{}
 		r := newRun(w)
+		defer close(r.emitDone)
 		cw := &cancelWriter{w: r.w, ctx: r.ctx}
 
 		n, err := cw.Write([]byte("one"))
@@ -1119,4 +1144,75 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 		assert.Equal(t, 1, cw.ok)
 		assert.NoError(t, cw.err, "a cancelled write is not a connection failure")
 	})
+}
+
+// TestStreamSession_FailureReleasesPrefetchBeforeError pins the ordering R10
+// mandates for a failure: quiesce first — cancel, join the emitter, discard the
+// queue — and only then write the error. The prefetched segment's body is
+// therefore already closed by the time the client sees the error, without
+// waiting for a synthesize-stop that a failed client may never send.
+func TestStreamSession_FailureReleasesPrefetchBeforeError(t *testing.T) {
+	third := make(chan struct{})
+	var thirdOnce sync.Once
+	var aborted atomic.Int32
+
+	up := newFakeUpstream(t, func(n int, _ upstreamCall, w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(make([]byte, 4096))
+		w.(http.Flusher).Flush()
+		switch n {
+		case 0: // segment 1 completes
+		case 1: // segment 2 breaks, but only once segment 3 has been prefetched
+			select {
+			case <-third:
+			case <-time.After(5 * time.Second):
+			}
+			panic(http.ErrAbortHandler)
+		default: // segment 3 is held open until its body is closed
+			thirdOnce.Do(func() { close(third) })
+			select {
+			case <-r.Context().Done():
+				aborted.Add(1)
+			case <-time.After(5 * time.Second):
+			}
+		}
+	})
+	eps := map[string]*model.Endpoint{"ep-1": {
+		ID: "ep-1", Name: "Test", BaseURL: up.URL, Models: model.StringSlice{"tts-1"},
+		Enabled: true, StreamingEnabled: true, StreamSampleRate: 24000,
+	}}
+	s := newTestStreamSession(t, eps, up.Client(), 0)
+	w := &syncWriter{}
+
+	require.NoError(t, s.Start(context.Background(), w, &wyoming.SynthesizeStart{Voice: "alloy (Test, tts-1)"}))
+	for range 3 {
+		require.NoError(t, s.Chunk(&wyoming.SynthesizeChunk{
+			Text: "The kitchen light is now on and set to warm white for the evening. ",
+		}))
+	}
+
+	require.Eventually(t, func() bool { return len(errorEvents(t, w)) == 1 }, 10*time.Second, 5*time.Millisecond)
+	assert.Equal(t, int32(1), aborted.Load(),
+		"the prefetched body is closed before the error reaches the client")
+
+	types := w.types(t)
+	assert.Equal(t, wyoming.TypeError, types[len(types)-1])
+	assert.Equal(t, wyoming.TypeAudioStop, types[len(types)-2], "the broken group is closed first")
+	assert.Equal(t, 2, countType(types, wyoming.TypeAudioStart), "segment 3 is never emitted")
+	assert.Equal(t, 0, countType(types, wyoming.TypeSynthesizeStopped))
+
+	require.NoError(t, s.Stop())
+	assert.Equal(t, []string{wyoming.TypeError}, unique(w.types(t)[len(types)-1:]))
+}
+
+// unique collapses a type list to its distinct values, in order.
+func unique(types []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, ty := range types {
+		if !seen[ty] {
+			seen[ty] = true
+			out = append(out, ty)
+		}
+	}
+	return out
 }
