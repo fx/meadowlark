@@ -180,6 +180,8 @@ A connection MUST hold at most one streaming session. The session MUST be create
 | `synthesize` | Existing behaviour, unchanged: delegate to `Proxy.HandleSynthesize`. | Suppress (R7). |
 | `synthesize-stop` | Ignore; log at debug. Emit nothing. | Flush the remainder, wait for all segments to finish emitting, emit `synthesize-stopped`, close the session. |
 
+**Voice.** `synthesize-start`'s `voice` is the Wyoming voice name for the whole session and is the only thing that selects the endpoint and model. It MUST be resolved exactly as a `synthesize` event's voice is resolved today, including the empty case, which falls to the resolver's default-voice stage. A JSON or tag `voice` override in the message body MUST NOT participate in endpoint selection; it overrides only the `voice` parameter sent upstream, at input priority, as it does today.
+
 The session MUST derive its context from the `ctx` passed to `HandleEvent` at `synthesize-start`, via `context.WithCancel`. Cancelling it MUST abort in-flight upstream HTTP requests and close their response bodies. Both server shutdown (parent cancellation) and connection teardown (`CloseConn`) MUST therefore stop synthesis promptly.
 
 **Idle timeout.** The session MUST run an idle timer, armed when the session opens and **reset on every subsequent event belonging to that session** — each `synthesize-chunk`, and the compatibility `synthesize`. Only client events reset it; Meadowlark's own progress, such as a segment finishing, does not, because a session whose client has gone silent is dead regardless of how much audio is still draining.
@@ -235,9 +237,9 @@ The **candidate segment** is everything buffered up to and including the boundar
 
 #### Scenario: JSON-form input is not spoken
 
-- **GIVEN** a session whose chunks together spell `{"voice": "alloy", "input": "Turning on the lights now."}`, arriving in fragments
+- **GIVEN** a session opened with `synthesize-start` carrying voice `"nova (OpenAI, tts-1)"`, whose chunks together spell `{"voice": "alloy", "input": "Turning on the lights now."}`, arriving in fragments
 - **WHEN** `synthesize-stop` arrives
-- **THEN** no segment MUST have been flushed before `synthesize-stop`, the resolved voice MUST be `alloy`, the synthesized text MUST be `Turning on the lights now.`, and no brace or key name MUST appear in any synthesized segment
+- **THEN** no segment MUST have been flushed before `synthesize-stop`, the endpoint and model MUST be those resolved from `"nova (OpenAI, tts-1)"`, the `voice` sent upstream MUST be `alloy`, the synthesized text MUST be `Turning on the lights now.`, and no brace or key name MUST appear in any synthesized segment
 
 #### Scenario: tag-form input strips the tag
 
@@ -475,6 +477,13 @@ Running `ParseInput` on the first flushed segment therefore corrupts both forms.
 - **Anything else** → this is ordinary prose, which is what Home Assistant streams. `ParseInput` MUST NOT be run at all, and the raw text is segmented as it arrives. Not running it is deliberate: a prose message is not an override form, and parsing per-segment could only misfire.
 
 In both cases the overrides are known before the first segment is synthesized, so `resolveSynthesis` runs once and its plan is reused verbatim for every segment.
+
+**What selects the endpoint, and what only overrides a parameter.** These are two different things today and this change MUST NOT merge them:
+
+- **`synthesize-start`'s `voice`** is the Wyoming voice name. It is what `resolver.Resolve` consumes, and it alone selects the endpoint and model. When it is absent — R2 makes it optional — resolution falls to Stage 0 exactly as an empty `synthesize` voice does today, picking the first enabled endpoint with a default voice, and erroring with `"voice: no voice specified and no default voice configured"` when there is none.
+- **A JSON or tag `voice` override** is not a Wyoming voice name and never reaches the resolver. It flows through `voice.MergeParams` at input priority and becomes the `voice` field of the upstream `/audio/speech` request. That is the existing whole-message behaviour and it MUST be preserved unchanged.
+
+So a session may legitimately have no start voice and still carry a JSON `voice`: the endpoint comes from Stage 0, the upstream voice parameter comes from the JSON.
 
 Because the caller now owns input parsing, `resolveSynthesis` takes the already-parsed overrides rather than raw text:
 
