@@ -108,13 +108,10 @@ func (s *StreamSession) Start(ctx context.Context, w io.Writer, ev *wyoming.Synt
 	var writeErr error
 	if prev := s.run; prev != nil {
 		s.disarmTimer(prev)
-		prev.quiesce()
+		prev.quiesce(joinSupervisor)
 		// A terminated run already spent its single terminator on the error
 		// event, so this writes synthesize-stopped only for a run still open.
 		writeErr = prev.terminate(prev.stoppedEvent)
-		if writeErr == nil {
-			writeErr = prev.writeErr
-		}
 		s.run = nil
 	}
 
@@ -227,7 +224,7 @@ func (s *StreamSession) Stop() error {
 	if r.failed.Load() {
 		// Tombstone: the error already terminated this message. Join whatever
 		// is still unwinding and write nothing.
-		r.quiesce()
+		r.quiesce(joinSupervisor)
 		return r.writeErr
 	}
 	return r.finish()
@@ -250,7 +247,7 @@ func (s *StreamSession) Close() {
 	if r := s.run; r != nil {
 		s.disarmTimer(r)
 		r.teardown.Store(true)
-		r.quiesce()
+		r.quiesce(joinSupervisor)
 		s.run = nil
 	}
 }
@@ -301,13 +298,12 @@ func (s *StreamSession) onIdleTimeout(r *streamRun, gen int) {
 	}
 
 	s.logger.Warn("streaming session idle timeout", "timeout", s.idleTimeout)
-	r.quiesce()
+	r.quiesce(joinSupervisor)
 	r.failed.Store(true)
 	if err := r.terminate(func() error {
 		return r.write(&wyoming.Error{Text: "streaming session idle timeout", Code: "synthesize-timeout"})
 	}); err != nil {
-		r.writeErr = err
-		s.logger.Error("failed to write synthesize-timeout error event", "error", err)
+		s.logger.Error("synthesize-timeout error event not written", "error", err)
 	}
 }
 
@@ -416,9 +412,21 @@ func (r *streamRun) stoppedEvent() error { return r.write(&wyoming.SynthesizeSto
 // Home Assistant raises on error and breaks its read loop on synthesize-stopped,
 // so emitting both would leave an unconsumed terminator in the connection buffer
 // for the next stream to read as an immediate, silent end.
+//
+// It writes nothing once a write to this connection has failed, and reports that
+// earlier failure instead. That is what keeps the two halves of the error split
+// from colliding: the failure is handed back to the caller, which surfaces it as
+// the server's handler-error, so a terminator written here as well would be the
+// second one for the same message.
 func (r *streamRun) terminate(write func() error) error {
+	if r.writeErr != nil {
+		return r.writeErr
+	}
 	var err error
 	r.termOnce.Do(func() { err = write() })
+	if err != nil {
+		r.writeErr = err
+	}
 	return err
 }
 
@@ -493,19 +501,13 @@ func (r *streamRun) finish() error {
 	r.drainReady()
 	r.discardQueue()
 
-	if r.writeErr != nil {
-		return r.writeErr
-	}
 	if r.failed.Load() {
 		// A failure during the drain already spent the terminator on its error
-		// event. A session that errored gets no synthesize-stopped.
-		return nil
+		// event, or broke the connection. Either way a session that errored gets
+		// no synthesize-stopped.
+		return r.writeErr
 	}
-	err := r.terminate(r.stoppedEvent)
-	if err != nil {
-		r.writeErr = err
-	}
-	return err
+	return r.terminate(r.stoppedEvent)
 }
 
 // quiesce is the ordered shutdown every path that ends a session early must
@@ -525,11 +527,21 @@ func (r *streamRun) finish() error {
 // write it: cancelling a context does not synchronously stop a goroutine already
 // inside a write, so a terminating path that wrote the audio-stop itself and
 // then joined could still see an audio-chunk land after it.
-func (r *streamRun) quiesce() {
+// joinSupervisor / fromSupervisor name quiesce's only variation: the failure
+// supervisor performs the same shutdown, and is the one caller that must not
+// wait for itself.
+const (
+	joinSupervisor = true
+	fromSupervisor = false
+)
+
+func (r *streamRun) quiesce(join bool) {
 	r.cancel()
 	r.qcond.Broadcast()
 	r.wg.Wait()
-	r.swg.Wait()
+	if join {
+		r.swg.Wait()
+	}
 	r.drainReady()
 	r.discardQueue()
 }
@@ -748,6 +760,8 @@ func (r *streamRun) closeGroup(open bool) {
 		return
 	}
 	if err := r.write(&wyoming.AudioStop{}); err != nil {
+		// The connection is broken, so this session writes nothing further:
+		// terminate reports this error rather than adding a terminator to it.
 		r.logger.Error("failed to write closing audio-stop", "error", err)
 		r.writeErr = err
 	}
@@ -785,11 +799,7 @@ func (r *streamRun) supervise() {
 		return
 	}
 
-	r.cancel()
-	r.qcond.Broadcast()
-	r.wg.Wait()
-	r.drainReady()
-	r.discardQueue()
+	r.quiesce(fromSupervisor)
 
 	// An empty code means the connection itself failed, and teardown means it is
 	// gone: either way there is nothing worth writing to it.
@@ -799,8 +809,7 @@ func (r *streamRun) supervise() {
 	if writeErr := r.terminate(func() error {
 		return r.write(&wyoming.Error{Text: f.err.Error(), Code: f.code})
 	}); writeErr != nil {
-		r.logger.Error("failed to write TTS error event", "error", writeErr)
-		r.writeErr = writeErr
+		r.logger.Error("TTS error event not written", "error", writeErr)
 	}
 }
 

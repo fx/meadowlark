@@ -1127,6 +1127,27 @@ func TestStreamSession_EmitterTeardownPaths(t *testing.T) {
 		assert.Equal(t, int32(1), body.closes.Load())
 	})
 
+	t.Run("a broken connection stops the session writing anything at all", func(t *testing.T) {
+		wantErr := errors.New("connection gone")
+		w := &syncWriter{fail: func(n int) error {
+			if n == 1 {
+				return wantErr
+			}
+			return nil // the writer "recovers" — the session must not use it
+		}}
+		r := newRun(w)
+		defer close(r.emitDone)
+
+		r.closeGroup(true)
+		require.ErrorIs(t, r.writeErr, wantErr)
+
+		// A terminator here would be the second one for this message: the write
+		// failure is reported to the handler, which the server turns into its own
+		// handler-error event.
+		assert.ErrorIs(t, r.terminate(r.stoppedEvent), wantErr)
+		assert.Empty(t, w.snapshot())
+	})
+
 	t.Run("the writer refuses to write once the session is cancelled", func(t *testing.T) {
 		w := &syncWriter{}
 		r := newRun(w)
