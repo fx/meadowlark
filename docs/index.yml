@@ -38,7 +38,7 @@ changes:
     path: changes/0001-streaming-tts-client.md
     description: Add SynthesizeStream method for streaming PCM responses from TTS endpoints
     spec: tts-synthesis
-    status: draft
+    status: complete
     depends_on: []
 
   - id: "0002"
@@ -46,7 +46,7 @@ changes:
     path: changes/0002-streaming-proxy-integration.md
     description: Wire streaming into proxy, add endpoint config, database migration, API, and frontend
     spec: tts-synthesis
-    status: draft
+    status: complete
     depends_on: ["0001"]
 
   - id: "0003"
@@ -72,3 +72,11 @@ changes:
     spec: voice-resolution
     status: complete
     depends_on: ["0004"]
+
+  - id: "0006"
+    name: wyoming-synthesize-streaming
+    path: changes/0006-wyoming-synthesize-streaming.md
+    description: Implement Wyoming streaming synthesis input (synthesize-start/chunk/stop/stopped), per-connection session state, text segmentation, and multi-segment audio framing
+    spec: wyoming-protocol
+    status: draft
+    depends_on: ["0002"]

@@ -6,6 +6,11 @@ Living specification for Meadowlark's Wyoming protocol implementation — the TC
 
 Meadowlark implements a Wyoming protocol v1.8.0 TCP server that bridges Home Assistant voice requests to OpenAI-compatible TTS endpoints. The server accepts concurrent connections, dispatches events to a pluggable handler, and streams audio back as PCM chunks.
 
+Two synthesis input modes are defined:
+
+- **Whole-message (`synthesize`)** — the client sends one event carrying the complete text and receives one `audio-start`/`audio-chunk*`/`audio-stop` group.
+- **Streaming (`synthesize-start`/`synthesize-chunk`/`synthesize-stop`)** — *Planned — see [0006](../../changes/0006-wyoming-synthesize-streaming.md).* The client will stream text in as it is produced. Meadowlark will segment it, synthesize each segment, emit one audio group per segment, and terminate the session with `synthesize-stopped`. Serving this mode will also make the server construct a handler per connection rather than sharing one process-wide.
+
 **Package:** `internal/wyoming/`
 
 ## Wire Format
@@ -43,6 +48,8 @@ type header struct {
 - Payloads up to 1MB+ MUST be supported (tested with 1MB audio chunks).
 - Header parsing MUST handle data split across TCP read boundaries.
 
+> **Planned:** `WriteEvent` will assemble the complete message into a single buffer and issue exactly one `Write` call on the underlying writer, making an event atomic when several goroutines share one connection — see [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md) and [Write Serialization](#write-serialization). It currently issues a separate `Write` per message part.
+
 ### Scenarios
 
 **GIVEN** a Wyoming client sends a well-formed event with JSON data and a binary payload,
@@ -61,7 +68,11 @@ type header struct {
 |----------|-----------|---------|
 | `TypeDescribe` | `"describe"` | Client requests service capabilities |
 | `TypeInfo` | `"info"` | Server responds with capabilities |
-| `TypeSynthesize` | `"synthesize"` | Client requests TTS synthesis |
+| `TypeSynthesize` | `"synthesize"` | Client requests TTS synthesis for a whole message |
+| `TypeSynthesizeStart` | `"synthesize-start"` | Client opens a streaming synthesis session — *planned ([0006](../../changes/0006-wyoming-synthesize-streaming.md))* |
+| `TypeSynthesizeChunk` | `"synthesize-chunk"` | Client sends a fragment of text into the open session — *planned ([0006](../../changes/0006-wyoming-synthesize-streaming.md))* |
+| `TypeSynthesizeStop` | `"synthesize-stop"` | Client signals no further text — *planned ([0006](../../changes/0006-wyoming-synthesize-streaming.md))* |
+| `TypeSynthesizeStopped` | `"synthesize-stopped"` | Server terminates a completed streaming session — *planned ([0006](../../changes/0006-wyoming-synthesize-streaming.md))* |
 | `TypeAudioStart` | `"audio-start"` | Server begins audio stream |
 | `TypeAudioChunk` | `"audio-chunk"` | Server sends PCM audio data |
 | `TypeAudioStop` | `"audio-stop"` | Server ends audio stream |
@@ -86,7 +97,8 @@ type TtsProgram struct {
     Installed   bool
     Version     string
     Voices      []TtsVoice
-    Attribution map[string]any  // REQUIRED by Home Assistant
+
+    // Planned (0006): SupportsSynthesizeStreaming bool
 }
 
 type TtsVoice struct {
@@ -95,14 +107,17 @@ type TtsVoice struct {
     Installed   bool
     Languages   []string
     Speakers    []TtsVoiceSpeaker
-    Attribution map[string]any  // REQUIRED by Home Assistant
 }
 ```
 
+`Attribution` is not a struct field; `Info.ToEvent()` emits a constant `attribution` object on every program and voice.
+
 **Home Assistant Compatibility Requirements:**
 
-- `Attribution` MUST be present on both `TtsProgram` and `TtsVoice` (required by HA's `DataClassJsonMixin`).
+- An `attribution` object MUST be present on both `tts[]` entries and voice entries (required by HA's `DataClassJsonMixin`).
 - `Speakers` MUST be omitted entirely when empty (not serialized as `null` or `[]`).
+
+> **Planned (streaming input):** When implemented, `SupportsSynthesizeStreaming` MUST be serialized as `supports_synthesize_streaming` on each `tts[]` entry, MUST be parsed symmetrically by `InfoFromEvent` defaulting to `false` when the key is absent, and MUST be advertised as `true` unconditionally — the flag describes what the Wyoming service accepts on its input side, which Meadowlark can always satisfy by segmenting text, and `info` carries a single service-level program aggregating every endpoint, so there is no per-endpoint answer to give. Home Assistant reads this flag to choose between its buffering `async_get_tts_audio()` path and its streaming `async_stream_tts_audio()` path. See [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md).
 
 #### Synthesize
 
@@ -115,7 +130,38 @@ type Synthesize struct {
 }
 ```
 
-Wire format maps voice to nested object: `{"voice": {"name": "alloy"}}`.
+Wire format nests **only** the voice name: `{"text": ..., "voice": {"name": "alloy"}, "speaker": ..., "language": ...}`. `speaker` and `language` sit at the top level of the data object, not inside `voice`, and each optional field is omitted when empty.
+
+> **Planned:** Once streaming input ships, a `synthesize` event received while a streaming session is open on the same connection will be suppressed — see [Streaming Synthesis Input](#streaming-synthesis-input).
+
+#### Streaming Synthesis Events — *Planned*
+
+> **Not yet implemented.** See [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md) for the implementation plan.
+
+These four types will be added to `internal/wyoming/types.go`:
+
+```go
+type SynthesizeStart struct {
+    Voice      string
+    Language   string
+    Speaker    string
+    TextFormat string  // "text" (default) or "ssml"
+    Context    any     // opaque, round-tripped unchanged
+}
+
+type SynthesizeChunk struct {
+    Text string
+}
+
+type SynthesizeStop struct{}
+type SynthesizeStopped struct{}
+```
+
+- `SynthesizeStart` nests all three voice fields under `voice` — `{"voice": {"name": ..., "language": ..., "speaker": ...}}` — omitting each field when empty, and omitting the object itself only when all three are empty. A start event carrying only `language` or only `speaker` is valid and MUST survive a round trip.
+- **`Synthesize` and `SynthesizeStart` do not share a voice encoding.** `Synthesize` nests only `name` under `voice` and emits `speaker` and `language` at the top level of its data object. That is the shape existing Wyoming clients speak and it MUST NOT be changed to match `SynthesizeStart`; the two are encoded separately.
+- `text_format: "ssml"` is accepted without error and treated as plain text. SSML rendering is not supported.
+- `Context` is round-tripped but otherwise unused.
+- `SynthesizeStopped` is the only one of the four sent server → client.
 
 #### Audio Events
 
@@ -163,7 +209,16 @@ type Server struct {
 type Handler interface {
     HandleEvent(ctx context.Context, ev *Event, w io.Writer) error
 }
+
+// Planned (0006) — HandlerFactory produces a fresh Handler for each accepted
+// connection, and ConnHandler lets a per-connection handler release resources
+// when its connection is torn down:
+//
+//   type HandlerFactory interface { NewConnHandler() Handler }
+//   type ConnHandler    interface { CloseConn() }
 ```
+
+> **Planned:** `HandlerFactory` and `ConnHandler` will be optional interfaces — see [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md). A `Handler` that implements neither, including `HandlerFunc`, will continue to be used as a process-wide singleton exactly as it is today.
 
 ### Connection Lifecycle
 
@@ -174,12 +229,29 @@ type Handler interface {
 5. If the handler returns an error, an `Error` event is written to the client; the connection persists.
 6. On EOF or connection reset, the connection is cleaned up silently.
 
+> **Planned:** [0006](../../changes/0006-wyoming-synthesize-streaming.md) will insert two steps. Before step 3, if the server's handler implements `HandlerFactory`, `handleConn` will call `NewConnHandler()` exactly once and dispatch that connection's events to the result; otherwise it will dispatch to the shared handler as it does now. It will also wrap the connection in a mutex-guarded writer and pass that to `HandleEvent` and to its own error writes. At cleanup it will call `CloseConn()` when the per-connection handler implements `ConnHandler`.
+
+### Write Serialization
+
+> **Not yet implemented.** See [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md) for the implementation plan. Today a single goroutine writes to each connection, so the hazard below does not yet arise.
+
+A streaming session writes audio events from a background goroutine while the connection's read loop may concurrently write `pong` or `error` events to the same `net.Conn`. Wyoming events are multi-part, so an interleaved write corrupts framing for every event that follows.
+
+Two properties together make every emitted event atomic:
+
+- `WriteEvent` issues exactly one `Write` call per event (see [Read/Write Contract](#readwrite-contract)).
+- The server passes handlers a mutex-guarded writer wrapping the connection, and uses that same wrapper for the error events it writes itself.
+
+Neither is sufficient alone: a mutex around a multi-`Write` `WriteEvent` still interleaves, and one-`Write`-per-event without a mutex still depends on the underlying writer's own atomicity.
+
 ### Requirements
 
 - The server MUST support multiple concurrent clients (one goroutine per connection).
 - Handler errors MUST NOT close the connection — an `Error` event MUST be sent and the connection MUST continue accepting events.
 - Connection resets (`ECONNRESET`, `use of closed network connection`) MUST be handled gracefully without error logging.
 - `Shutdown()` MUST close the listener, close all active connections, and wait for all goroutines to complete.
+
+> **Planned (per-connection handlers):** When implemented, `NewConnHandler()` MUST be called exactly once per accepted connection with no two connections sharing a handler instance; `CloseConn()` MUST be called exactly once per connection before that connection's goroutine exits; `CloseConn()` MUST block until the connection's background work has finished, so `Shutdown()` drains in-flight synthesis rather than abandoning it; and every event written to a connection MUST be atomic with respect to any other goroutine writing to the same connection. See [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md).
 
 ### Scenarios
 
@@ -195,9 +267,11 @@ type Handler interface {
 **WHEN** `Shutdown()` is called,
 **THEN** all connections MUST be closed and all goroutines MUST complete before `Shutdown()` returns.
 
+*Planned ([0006](../../changes/0006-wyoming-synthesize-streaming.md)):* **GIVEN** a handler implementing `HandlerFactory` and `ConnHandler`, **WHEN** three clients connect and then disconnect, **THEN** `NewConnHandler()` MUST have been called three times and `CloseConn()` MUST have been called three times, once per connection.
+
 ## Event Handler Routing
 
-The `wyomingHandler` in `cmd/meadowlark/main.go` routes events:
+The `wyomingHandler` in `cmd/meadowlark/main.go` is a process-wide singleton and routes events:
 
 | Event Type | Action |
 |------------|--------|
@@ -206,29 +280,126 @@ The `wyomingHandler` in `cmd/meadowlark/main.go` routes events:
 | `ping` | Respond with `pong` |
 | Unknown | Log at debug level, ignore |
 
+> **Planned:** [0006](../../changes/0006-wyoming-synthesize-streaming.md) will make `wyomingHandler` implement `HandlerFactory`, producing a `connHandler` per connection that holds that connection's streaming session and delegates everything else to the process-wide `InfoBuilder` and `tts.Proxy`. The routing table will gain `synthesize-start` (open the session), `synthesize-chunk` (feed text into it) and `synthesize-stop` (flush and terminate it), and `synthesize` will be suppressed while a session is open, otherwise delegating to `tts.Proxy.HandleSynthesize()` exactly as it does today.
+
+## Streaming Synthesis Input
+
+> **Not yet implemented.** See [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md) for the implementation plan. Everything in this section describes behaviour that will exist once that change lands; none of it ships today.
+
+Home Assistant's Wyoming TTS entity chooses its path from `supports_synthesize_streaming`. On the streaming path (`async_stream_tts_audio()`) it sends, in order:
+
+```
+synthesize-start {voice}
+synthesize-chunk {text}      × N, as the LLM produces text
+synthesize       {text: <entire message>, voice}    ← backwards compatibility
+synthesize-stop
+```
+
+and reads back, per synthesized segment, `audio-start` / `audio-chunk`+ / `audio-stop`, terminated by a single `synthesize-stopped`.
+
+Two Home Assistant behaviours constrain what Meadowlark may emit:
+
+- **Only the first `audio-start` is honoured.** HA writes its WAV header from the first one it sees, sets a flag, and ignores every later one. Every segment of a session therefore MUST use an identical rate, width, and channel count.
+- **`synthesize-stopped` breaks HA's read loop; `error` raises.** HA does not break on `audio-stop`.
+
+### Session Semantics
+
+A connection holds at most one streaming session, in one of three states.
+
+| Event | `idle` (no session) | `open` | `terminated` (errored, awaiting `synthesize-stop`) |
+|---|---|---|---|
+| `synthesize-start` | Open a session; record voice, language, speaker, text format. | Quiesce the current session (below), emit `synthesize-stopped`, then open a new one. | Discard the tombstone and open a new session. |
+| `synthesize-chunk` | Ignore; log at debug. | Append text and flush any completed segments. | Absorb silently. |
+| `synthesize` | Handled as a whole-message request, unchanged. | Suppressed: recorded as fallback text, never synthesized directly. | Absorb silently; never handled as a whole-message request. |
+| `synthesize-stop` | Ignore; emit nothing. | Flush the remainder, wait for all segments to be emitted, emit `synthesize-stopped`, return to `idle`. | Emit nothing; return to `idle`. |
+
+### Quiescing a Session
+
+A single emitter goroutine is the only thing that writes audio events for a session, so it alone can correctly close a group it opened. Every path that ends a session early — a restart, a failure, the idle timeout, connection teardown — performs the same ordered shutdown before anything further is written to the connection:
+
+1. Cancel the session context, aborting in-flight and prefetched upstream requests and closing every held response body.
+2. Wait for the emitter to exit. On observing cancellation it stops mid-segment and, if it had opened an audio group that is not yet closed, writes that group's `audio-stop` itself as its final act.
+3. Discard buffered text and queued segments.
+
+Only then may a terminator be written or a replacement session open. On connection teardown the emitter skips its closing write and no terminator is sent, since nothing may be written to a closed connection; steps 1–3 still run.
+
+- Audio events for a session MUST be written by exactly one goroutine, which MUST also write the closing `audio-stop` for any group it opened.
+- Quiescing MUST complete before a `synthesize-stopped` or `error` is written, and before a replacement session opens.
+- The emitter MUST be joined before any terminator is written. A terminating path MUST NOT write a group's closing `audio-stop` itself and then join, because cancellation does not synchronously stop a goroutine already entering a write, so an `audio-chunk` could follow the `audio-stop`.
+- No audio event belonging to an ended session MUST be written after its terminator, or interleaved with a later session's audio.
+
+The `terminated` state exists because Home Assistant sends its compatibility `synthesize` after the chunks and before `synthesize-stop`. A session that failed early and simply closed would let that event fall through to the whole-message path and speak the entire message a second time, after the client had already raised on the `error`.
+
+### Requirements
+
+- A `synthesize` event received while a session is open MUST NOT produce audio; its text MUST be recorded as the session's fallback text.
+- If a session ends having received zero `synthesize-chunk` events and holding fallback text, that fallback text MUST be synthesized as the session's content — exactly once, and via the same whole-message override detection that chunked text receives, so a fallback carrying a tag or JSON form has its overrides applied rather than spoken.
+- A `synthesize` event received in the `idle` state MUST be handled exactly as a whole-message request, with no behavioural difference from a connection that never uses streaming. A `terminated` session is not idle and absorbs the event instead.
+- Each synthesized segment MUST be framed as `audio-start`, one or more `audio-chunk`, `audio-stop`.
+- Exactly one `synthesize-stopped` MUST terminate a successful session, after the final segment's `audio-stop`. It MUST NOT be emitted per segment.
+- All segments within a session MUST use an identical audio format.
+- A session MUST emit either a Wyoming `error` or a `synthesize-stopped`, never both, and never more than one of either. Emitting both would leave an unconsumed terminator that the next stream would read as an immediate end-of-stream.
+- A session terminated by an error MUST silently absorb **every** remaining event of that message — further `synthesize-chunk` events, the compatibility `synthesize`, and the trailing `synthesize-stop` — and MUST NOT hand any of them to the whole-message path.
+- When a segment fails after its `audio-start` was emitted, `audio-stop` MUST be emitted for that segment before the `error`.
+- A synthesis error MUST NOT close the connection.
+- A synthesis failure MUST be reported by the streaming session itself, as a single `error` event, and MUST NOT additionally surface as a handler error — the server converts a handler error into a second `error` event with code `handler-error`, which would break the exactly-one-terminator rule and report the wrong code.
+
+### Per-Connection Session State
+
+Session state is a field on the per-connection handler produced by `HandlerFactory`, not an entry in a shared map. That is what makes cleanup possible: `HandleEvent` is never called again after a client disconnects, so a map-keyed design has no point at which to cancel in-flight upstream requests, and `ConnHandler.CloseConn()` is called from the same teardown path that closes the connection.
+
+- The session's context MUST derive from the `ctx` passed to `HandleEvent` at `synthesize-start`, via `context.WithCancel`.
+- Cancelling that context MUST abort in-flight upstream HTTP requests and close their response bodies.
+- Connection teardown MUST cancel the session; server shutdown MUST cancel it through the parent context.
+- A session MUST run an idle timer, armed when the session opens, reset by every subsequent client event belonging to that session — each `synthesize-chunk` and the compatibility `synthesize` — and disarmed by `synthesize-stop`. Meadowlark's own progress MUST NOT reset it.
+- When the idle timer expires the session MUST be abandoned: quiesce, emit an `error` with code `synthesize-timeout`, and enter the `terminated` state without emitting `synthesize-stopped`. It MUST NOT return directly to `idle` — a timed-out session is an errored session, so its tombstone MUST keep absorbing until `synthesize-stop`, or a late compatibility `synthesize` would reach the whole-message path and speak the message after the timeout error. A timeout of `0` disables the timer entirely; a negative timeout is rejected at startup with a warning and the default is used, since a negative duration would otherwise fire the timer immediately and fail every session.
+
+### Scenarios
+
+**GIVEN** a Wyoming client sends `synthesize-start`, three `synthesize-chunk` events, a full `synthesize`, and `synthesize-stop`,
+**WHEN** the text segments into two segments,
+**THEN** the emitted sequence MUST be exactly `audio-start`, `audio-chunk`+, `audio-stop`, `audio-start`, `audio-chunk`+, `audio-stop`, `synthesize-stopped` — with the `synthesize` event contributing no audio.
+
+**GIVEN** a client sends `synthesize-start`, no `synthesize-chunk`, a `synthesize` carrying `"Hello world."`, and `synthesize-stop`,
+**WHEN** the session terminates,
+**THEN** `"Hello world."` MUST be synthesized exactly once.
+
+**GIVEN** a connection on which no `synthesize-start` has ever been sent,
+**WHEN** a `synthesize` event arrives,
+**THEN** the response MUST be `audio-start`, `audio-chunk`+, `audio-stop`, with no `synthesize-stopped`.
+
+**GIVEN** an open session whose second segment's upstream returns an error before any audio,
+**WHEN** the failure is observed,
+**THEN** the first segment's group MUST have been emitted in full, exactly one `error` MUST be emitted, no `synthesize-stopped` MUST be emitted, and the connection MUST remain open.
+
+**GIVEN** an open session with a segment being streamed,
+**WHEN** the client's connection drops,
+**THEN** the in-flight upstream request MUST be aborted and `CloseConn()` MUST NOT return until the session's goroutines have exited.
+
 ## Info Builder
 
 ### Purpose
 
-Aggregates voices from all enabled TTS endpoints and voice aliases into a single `Info` response for Wyoming `describe` requests.
+Aggregates persisted enabled voices from all enabled TTS endpoints, plus voice aliases, into a single `Info` response for Wyoming `describe` requests.
 
 ```go
 type InfoBuilder struct {
-    endpoints  EndpointLister
-    aliases    AliasLister
-    discoverer VoiceDiscoverer
-    version    string
-    cache      *Info  // Protected by sync.RWMutex
+    endpoints      EndpointLister
+    aliases        AliasLister
+    endpointVoices EndpointVoiceLister
+    version        string
+    cache          *Info  // Protected by sync.RWMutex
 }
 ```
 
-### Voice Discovery Process
+### Voice List Assembly
 
-1. List all enabled endpoints from the database.
-2. For each endpoint, call `VoiceDiscoverer.DiscoverVoices(ctx, endpoint)` in parallel with a 5-second timeout per endpoint.
-3. If voice discovery returns results, create canonical voice entries for each `voice x model` combination.
-4. If voice discovery fails (returns nil), fall back to using model names as voice entries.
-5. Append all enabled voice aliases to the voice list.
+1. List all endpoints from the database and skip the disabled ones.
+2. For each enabled endpoint, list its persisted `endpoint_voices` rows and skip the disabled ones (see [voice-resolution — Enabled Models and Voices](../voice-resolution/index.md#enabled-models-and-voices)).
+3. Create a canonical voice entry for each enabled `voice × enabled model` combination.
+4. Append all enabled voice aliases to the voice list.
+
+Assembly reads persisted state only; it does not live-probe upstream endpoints.
 
 ### Canonical Voice Naming
 
@@ -238,10 +409,12 @@ Example: `"alloy (OpenAI, tts-1)"`.
 
 ### Requirements
 
-- Voice discovery MUST run in parallel across all endpoints with a 5-second timeout per endpoint.
-- Discovery failure for one endpoint MUST NOT prevent other endpoints from being included.
+- Only voices whose `endpoint_voices` row is enabled, on an enabled endpoint, MUST appear in the canonical voice list.
+- `Build()` MUST NOT live-probe upstream endpoints.
 - The `Cached()` method MUST return the last successfully built `Info`, or nil if never built.
 - `Build()` MUST be called after endpoint/alias mutations to refresh the cache.
+
+> **Planned:** The built `TtsProgram` will set `SupportsSynthesizeStreaming: true`, regardless of endpoint configuration or how many endpoints exist — see [0006-wyoming-synthesize-streaming](../../changes/0006-wyoming-synthesize-streaming.md).
 
 ## Zeroconf / mDNS
 
@@ -276,13 +449,14 @@ type ZeroconfService struct {
 | `internal/wyoming/wyoming.go` | Package declaration |
 | `internal/wyoming/event.go` | Wire format `ReadEvent`/`WriteEvent` |
 | `internal/wyoming/types.go` | Event type constants and message structs |
-| `internal/wyoming/server.go` | TCP server and connection handling |
+| `internal/wyoming/server.go` | TCP server and connection handling; gains per-connection handler construction and write serialization with [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
 | `internal/wyoming/info.go` | Info builder and voice discovery aggregation |
 | `internal/wyoming/zeroconf.go` | mDNS service registration |
-| `cmd/meadowlark/main.go` | Event handler routing (`wyomingHandler`) |
+| `cmd/meadowlark/main.go` | Event handler routing (`wyomingHandler`); gains `connHandler` with [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
 
 ## Changelog
 
 | Date | Description | Document |
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
+| 2026-08-20 | Specify streaming synthesis input (planned, not yet implemented): four event types, `supports_synthesize_streaming`, per-connection handlers and session state, write serialization | [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
