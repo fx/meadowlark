@@ -339,7 +339,11 @@ Home Assistant's `_write_tts_message` sends, in order: `synthesize-start`, N × 
 
 While a session is open, a `synthesize` event MUST NOT be synthesized. Its text MUST instead be recorded as the session's fallback text.
 
-On `synthesize-stop`, if the session received **zero** `synthesize-chunk` events and fallback text is present, the fallback text MUST be fed through the segmenter and synthesized as the session's content. Otherwise the fallback text MUST be discarded.
+On `synthesize-stop`, if the session received **zero** `synthesize-chunk` events and fallback text is present, that fallback text MUST become the session's content. Otherwise the fallback text MUST be discarded.
+
+Fallback text MUST take exactly the same path as chunked text: it is a complete message, so R6's override-form rule applies to it unchanged. If its first non-whitespace character is `{` or `[`, it MUST be passed through `voice.ParseInput` and only its resulting `Input` segmented; otherwise it MUST be segmented directly with no override parsing. It MUST NOT be handed to the segmenter raw — a fallback of `[speed: 1.2] Hello.` would otherwise speak the tag aloud and drop the override, which is precisely the failure R6 exists to prevent.
+
+This is straightforward to satisfy: the fallback is already a whole message when it arrives, so the session applies the same detection it would have applied to a fully buffered override-form message.
 
 In the `idle` state — and only there — a `synthesize` event MUST be handled exactly as it is today, with no behavioural difference whatsoever. This is the non-streaming path used by Wyoming clients that do not implement streaming input. A `terminated` session is **not** idle: it absorbs the event (R10).
 
@@ -354,6 +358,12 @@ In the `idle` state — and only there — a `synthesize` event MUST be handled 
 - **GIVEN** an open session that has received no `synthesize-chunk` events
 - **WHEN** a `synthesize` event carrying `"Hello world."` arrives, followed by `synthesize-stop`
 - **THEN** the session MUST synthesize `"Hello world."` exactly once
+
+#### Scenario: zero-chunk fallback carrying an override
+
+- **GIVEN** an open session that has received no `synthesize-chunk` events
+- **WHEN** a `synthesize` event carrying `"[speed: 1.2] Hello."` arrives, followed by `synthesize-stop`
+- **THEN** the merged speed MUST be `1.2` and the synthesized text MUST be `Hello.` — the tag MUST NOT be spoken
 
 #### Scenario: bare synthesize is untouched
 

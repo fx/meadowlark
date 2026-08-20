@@ -332,7 +332,7 @@ The `terminated` state exists because Home Assistant sends its compatibility `sy
 ### Requirements
 
 - A `synthesize` event received while a session is open MUST NOT produce audio; its text MUST be recorded as the session's fallback text.
-- If a session ends having received zero `synthesize-chunk` events and holding fallback text, that fallback text MUST be synthesized as the session's content — exactly once.
+- If a session ends having received zero `synthesize-chunk` events and holding fallback text, that fallback text MUST be synthesized as the session's content — exactly once, and via the same whole-message override detection that chunked text receives, so a fallback carrying a tag or JSON form has its overrides applied rather than spoken.
 - A `synthesize` event received in the `idle` state MUST be handled exactly as a whole-message request, with no behavioural difference from a connection that never uses streaming. A `terminated` session is not idle and absorbs the event instead.
 - Each synthesized segment MUST be framed as `audio-start`, one or more `audio-chunk`, `audio-stop`.
 - Exactly one `synthesize-stopped` MUST terminate a successful session, after the final segment's `audio-stop`. It MUST NOT be emitted per segment.
@@ -350,7 +350,7 @@ Session state is a field on the per-connection handler produced by `HandlerFacto
 - Cancelling that context MUST abort in-flight upstream HTTP requests and close their response bodies.
 - Connection teardown MUST cancel the session; server shutdown MUST cancel it through the parent context.
 - A session MUST run an idle timer, armed when the session opens, reset by every subsequent client event belonging to that session — each `synthesize-chunk` and the compatibility `synthesize` — and disarmed by `synthesize-stop`. Meadowlark's own progress MUST NOT reset it.
-- When the idle timer expires the session MUST be abandoned: cancel in-flight work, discard buffered text, emit an `error` with code `synthesize-timeout`, and close the session without emitting `synthesize-stopped`. A timeout of `0` disables the timer entirely.
+- When the idle timer expires the session MUST be abandoned: quiesce, emit an `error` with code `synthesize-timeout`, and enter the `terminated` state without emitting `synthesize-stopped`. It MUST NOT return directly to `idle` — a timed-out session is an errored session, so its tombstone MUST keep absorbing until `synthesize-stop`, or a late compatibility `synthesize` would reach the whole-message path and speak the message after the timeout error. A timeout of `0` disables the timer entirely.
 
 ### Scenarios
 
