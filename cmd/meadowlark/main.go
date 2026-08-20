@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -17,6 +18,7 @@ import (
 	meadowlark "github.com/fx/meadowlark"
 	"github.com/fx/meadowlark/internal/api"
 	"github.com/fx/meadowlark/internal/model"
+	"github.com/fx/meadowlark/internal/segment"
 	"github.com/fx/meadowlark/internal/store"
 	"github.com/fx/meadowlark/internal/tts"
 	"github.com/fx/meadowlark/internal/voice"
@@ -27,6 +29,11 @@ var (
 	version = "dev"
 	commit  = "none"
 )
+
+// defaultSessionTimeout is how long a streaming synthesis session may sit idle
+// before it is abandoned. Zero disables the timer; a negative value is rejected
+// in favour of this default.
+const defaultSessionTimeout = 30 * time.Second
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
@@ -58,6 +65,16 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().String("zeroconf-name", hostname, "Zeroconf/mDNS service name")
 	cmd.Flags().Bool("no-zeroconf", false, "Disable Zeroconf registration")
 
+	// Streaming synthesis flags
+	cmd.Flags().Int("synthesize-first-segment-chars", segment.DefaultFirstSegmentChars,
+		"Minimum characters in a streaming session's first segment")
+	cmd.Flags().Int("synthesize-min-segment-chars", segment.DefaultMinSegmentChars,
+		"Minimum characters in every later streaming segment")
+	cmd.Flags().Int("synthesize-max-segment-chars", segment.DefaultMaxSegmentChars,
+		"Characters after which a streaming segment break is forced")
+	cmd.Flags().Duration("synthesize-session-timeout", defaultSessionTimeout,
+		"Idle timeout for a streaming synthesis session (0 disables it)")
+
 	// Logging flags
 	cmd.Flags().String("log-level", "info", "Log level: debug, info, warn, error")
 	cmd.Flags().String("log-format", "text", "Log format: text, json")
@@ -78,6 +95,10 @@ func newRootCmd() *cobra.Command {
 	_ = viper.BindPFlag("db_dsn", cmd.Flags().Lookup("db-dsn"))
 	_ = viper.BindPFlag("zeroconf_name", cmd.Flags().Lookup("zeroconf-name"))
 	_ = viper.BindPFlag("no_zeroconf", cmd.Flags().Lookup("no-zeroconf"))
+	_ = viper.BindPFlag("synthesize_first_segment_chars", cmd.Flags().Lookup("synthesize-first-segment-chars"))
+	_ = viper.BindPFlag("synthesize_min_segment_chars", cmd.Flags().Lookup("synthesize-min-segment-chars"))
+	_ = viper.BindPFlag("synthesize_max_segment_chars", cmd.Flags().Lookup("synthesize-max-segment-chars"))
+	_ = viper.BindPFlag("synthesize_session_timeout", cmd.Flags().Lookup("synthesize-session-timeout"))
 	_ = viper.BindPFlag("log_level", cmd.Flags().Lookup("log-level"))
 	_ = viper.BindPFlag("log_format", cmd.Flags().Lookup("log-format"))
 
@@ -111,6 +132,16 @@ func run(cmd *cobra.Command, args []string) error {
 		"log_format", viper.GetString("log_format"),
 	)
 
+	// Segmentation and session configuration are validated before anything is
+	// built, so a misconfigured process logs its warning at startup rather than
+	// on the first synthesis.
+	segCfg := segmentConfig(logger,
+		viper.GetInt("synthesize_first_segment_chars"),
+		viper.GetInt("synthesize_min_segment_chars"),
+		viper.GetInt("synthesize_max_segment_chars"),
+	)
+	idleTimeout := sessionTimeout(logger, viper.GetDuration("synthesize_session_timeout"))
+
 	// 1. Initialize database store.
 	db, err := openStore(ctx, viper.GetString("db_driver"), viper.GetString("db_dsn"))
 	if err != nil {
@@ -129,7 +160,7 @@ func run(cmd *cobra.Command, args []string) error {
 	proxy := tts.NewProxy(resolver, db, defaultClientFactory, logger)
 
 	// 4. Build Wyoming handler.
-	handler := newWyomingHandler(infoBuilder, proxy, logger)
+	handler := newWyomingHandler(infoBuilder, proxy, segCfg, idleTimeout, logger)
 
 	// 5. Start Wyoming TCP server.
 	wyomingAddr := fmt.Sprintf("%s:%d", viper.GetString("wyoming_host"), viper.GetInt("wyoming_port"))
@@ -236,15 +267,93 @@ func apiClientFactory(ep *model.Endpoint) *tts.Client {
 	return defaultClientFactory(ep)
 }
 
-// wyomingHandler dispatches Wyoming protocol events.
-type wyomingHandler struct {
-	info   *wyoming.InfoBuilder
-	proxy  *tts.Proxy
-	logger *slog.Logger
+// segmentConfig builds the segmentation configuration from the three character
+// thresholds, falling back to all three defaults when they are incoherent.
+//
+// The fallback is deliberately all-or-nothing. Honouring the coherent subset of
+// an invalid set would start the process with a segmenter the operator never
+// asked for and cannot infer from the flags they passed; using the documented
+// defaults for all three at least matches what the flag help says.
+func segmentConfig(logger *slog.Logger, first, minimum, maximum int) segment.Config {
+	cfg := segment.Config{
+		FirstSegmentChars: first,
+		MinSegmentChars:   minimum,
+		MaxSegmentChars:   maximum,
+	}
+	if err := cfg.Validate(); err != nil {
+		def := segment.DefaultConfig()
+		logger.Warn("invalid segmentation thresholds; falling back to defaults",
+			"error", err,
+			"first_segment_chars", first,
+			"min_segment_chars", minimum,
+			"max_segment_chars", maximum,
+			"default_first_segment_chars", def.FirstSegmentChars,
+			"default_min_segment_chars", def.MinSegmentChars,
+			"default_max_segment_chars", def.MaxSegmentChars,
+		)
+		return def
+	}
+	return cfg
 }
 
-func newWyomingHandler(info *wyoming.InfoBuilder, proxy *tts.Proxy, logger *slog.Logger) *wyomingHandler {
-	return &wyomingHandler{info: info, proxy: proxy, logger: logger}
+// sessionTimeout validates the streaming session idle timeout.
+//
+// A duration flag accepts values the character thresholds cannot, so it is
+// validated separately: a positive value enables the timer, zero disables it
+// entirely, and a negative value is rejected. Cobra and Viper both accept
+// "-1s" without complaint, and a negative duration fires a timer immediately —
+// every session would fail with synthesize-timeout the instant it opened.
+// Treating a negative as "disabled" would hide the operator's mistake instead.
+func sessionTimeout(logger *slog.Logger, d time.Duration) time.Duration {
+	if d < 0 {
+		logger.Warn("negative synthesize session timeout; falling back to default",
+			"synthesize_session_timeout", d.String(),
+			"default", defaultSessionTimeout.String(),
+		)
+		return defaultSessionTimeout
+	}
+	return d
+}
+
+// wyomingHandler dispatches Wyoming protocol events.
+//
+// It is both the process-wide handler and a wyoming.HandlerFactory: the server
+// builds one connHandler per connection so that each gets a private streaming
+// session, and HandleEvent below is the sessionless dispatch that a connHandler
+// falls back to for every event no session owns.
+type wyomingHandler struct {
+	info        *wyoming.InfoBuilder
+	proxy       *tts.Proxy
+	segCfg      segment.Config
+	idleTimeout time.Duration
+	logger      *slog.Logger
+}
+
+func newWyomingHandler(
+	info *wyoming.InfoBuilder,
+	proxy *tts.Proxy,
+	segCfg segment.Config,
+	idleTimeout time.Duration,
+	logger *slog.Logger,
+) *wyomingHandler {
+	return &wyomingHandler{
+		info:        info,
+		proxy:       proxy,
+		segCfg:      segCfg,
+		idleTimeout: idleTimeout,
+		logger:      logger,
+	}
+}
+
+// NewConnHandler gives one accepted connection its own handler, and with it its
+// own streaming synthesis session. Session state is then an ordinary field of a
+// private struct: no map keyed by connection, no lock around it, and a teardown
+// hook that actually runs when the connection drops.
+func (h *wyomingHandler) NewConnHandler() wyoming.Handler {
+	return &connHandler{
+		h:       h,
+		session: tts.NewStreamSession(h.proxy, h.segCfg, h.idleTimeout, h.logger),
+	}
 }
 
 func (h *wyomingHandler) HandleEvent(ctx context.Context, ev *wyoming.Event, w io.Writer) error {
@@ -272,6 +381,68 @@ func (h *wyomingHandler) HandleEvent(ctx context.Context, ev *wyoming.Event, w i
 		h.logger.Debug("ignoring unknown event type", "type", ev.Type)
 		return nil
 	}
+}
+
+// connHandler serves one connection. It owns that connection's streaming
+// synthesis session and dispatches the streaming events to it, delegating
+// everything else to the sessionless dispatch on wyomingHandler.
+//
+// Every error returned from here is a connection-write failure, never a
+// synthesis failure: a session reports its own failures as Wyoming error events
+// and returns nil, because the server turns a returned error into a second
+// error event with code handler-error.
+type connHandler struct {
+	h       *wyomingHandler
+	session *tts.StreamSession
+}
+
+func (c *connHandler) HandleEvent(ctx context.Context, ev *wyoming.Event, w io.Writer) error {
+	switch ev.Type {
+	case wyoming.TypeSynthesizeStart:
+		start, err := wyoming.SynthesizeStartFromEvent(ev)
+		if err != nil {
+			return fmt.Errorf("parse synthesize-start: %w", err)
+		}
+		return c.session.Start(ctx, w, start)
+
+	case wyoming.TypeSynthesizeChunk:
+		chunk, err := wyoming.SynthesizeChunkFromEvent(ev)
+		if err != nil {
+			return fmt.Errorf("parse synthesize-chunk: %w", err)
+		}
+		return c.session.Chunk(chunk)
+
+	case wyoming.TypeSynthesizeStop:
+		// synthesize-stop carries no payload, so there is nothing to parse.
+		return c.session.Stop()
+
+	case wyoming.TypeSynthesize:
+		synth, err := wyoming.SynthesizeFromEvent(ev)
+		if err != nil {
+			return fmt.Errorf("parse synthesize: %w", err)
+		}
+		if c.session.Compat(synth) {
+			// Home Assistant's compatibility event, carrying a message this
+			// session is already synthesizing from its chunks — or one whose
+			// session failed, in which case speaking it now would speak it a
+			// second time.
+			return nil
+		}
+		// No session owns it: an ordinary whole-message synthesize from a
+		// client that does not stream its input. Hand it to the sessionless
+		// dispatch, which is the single definition of what that means.
+		return c.h.HandleEvent(ctx, ev, w)
+
+	default:
+		return c.h.HandleEvent(ctx, ev, w)
+	}
+}
+
+// CloseConn tears the session down when the connection goes away. It blocks
+// until the session's goroutines have exited, which is what makes the server's
+// shutdown drain wait for in-flight synthesis rather than abandoning it.
+func (c *connHandler) CloseConn() {
+	c.session.Close()
 }
 
 func configureLogger(level, format string) *slog.Logger {
