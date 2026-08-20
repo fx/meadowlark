@@ -398,10 +398,9 @@ func TestNewServer_NilLogger(t *testing.T) {
 // factoryHandler implements HandlerFactory and ConnHandler, recording how many
 // per-connection handlers it built and closed.
 type factoryHandler struct {
-	mu       sync.Mutex
-	built    []*perConnHandler
-	closes   int
-	onHandle func(ctx context.Context, ev *Event, w io.Writer) error
+	mu     sync.Mutex
+	built  []*perConnHandler
+	closes int
 }
 
 func (f *factoryHandler) HandleEvent(context.Context, *Event, io.Writer) error {
@@ -450,13 +449,10 @@ type perConnHandler struct {
 	closed int
 }
 
-func (h *perConnHandler) HandleEvent(ctx context.Context, ev *Event, w io.Writer) error {
+func (h *perConnHandler) HandleEvent(_ context.Context, _ *Event, w io.Writer) error {
 	h.mu.Lock()
 	h.events++
 	h.mu.Unlock()
-	if h.parent.onHandle != nil {
-		return h.parent.onHandle(ctx, ev, w)
-	}
 	return WriteEvent(w, (&Pong{}).ToEvent())
 }
 
