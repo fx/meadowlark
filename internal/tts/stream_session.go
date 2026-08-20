@@ -413,11 +413,16 @@ func (r *streamRun) stoppedEvent() error { return r.write(&wyoming.SynthesizeSto
 // so emitting both would leave an unconsumed terminator in the connection buffer
 // for the next stream to read as an immediate, silent end.
 //
-// It writes nothing once a write to this connection has failed, and reports that
+// It writes nothing once a write for this session has failed, and reports that
 // earlier failure instead. That is what keeps the two halves of the error split
 // from colliding: the failure is handed back to the caller, which surfaces it as
 // the server's handler-error, so a terminator written here as well would be the
 // second one for the same message.
+//
+// The guard is per session, which is the scope the exactly-one-terminator rule
+// is written in. A connection whose write failed is gone — the server's own
+// follow-up write fails too and its read loop returns — so whether a later
+// synthesize-start could open another session on it is moot.
 func (r *streamRun) terminate(write func() error) error {
 	if r.writeErr != nil {
 		return r.writeErr
@@ -761,7 +766,7 @@ func (r *streamRun) closeGroup(open bool) {
 	}
 	if err := r.write(&wyoming.AudioStop{}); err != nil {
 		// The connection is broken, so this session writes nothing further:
-		// terminate reports this error rather than adding a terminator to it.
+		// terminate reports this error rather than adding a terminator after it.
 		r.logger.Error("failed to write closing audio-stop", "error", err)
 		r.writeErr = err
 	}
