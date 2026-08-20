@@ -209,7 +209,9 @@ Only then may a terminator (`synthesize-stopped` or `error`) be written, and onl
 
 **Why `terminated` is a distinct state and not simply a closed session.** Home Assistant sends its compatibility `synthesize` *after* the chunks and *before* `synthesize-stop`. If a segment fails early — an upstream error, a format mismatch, or an idle timeout — and the session were closed immediately, that compatibility event would arrive to find no session, fall through the `idle` row, and be synthesized in full: Meadowlark would speak the entire message a second time, long after Home Assistant had already raised on the `error`. The tombstone absorbs every remaining event of the failed message and is cleared only by `synthesize-stop`, a new `synthesize-start`, or connection teardown.
 
-**Voice.** `synthesize-start`'s `voice` is the Wyoming voice name for the whole session and is the only thing that selects the endpoint and model. It MUST be resolved exactly as a `synthesize` event's voice is resolved today, including the empty case, which falls to the resolver's default-voice stage. A JSON or tag `voice` override in the message body MUST NOT participate in endpoint selection; it overrides only the `voice` parameter sent upstream, at input priority, as it does today.
+**Voice.** `synthesize-start`'s `voice` is the Wyoming voice name for the whole session and is the only thing that selects the **endpoint**. It MUST be resolved exactly as a `synthesize` event's voice is resolved today, including the empty case, which falls to the resolver's default-voice stage. Resolution also yields the session's baseline `model` and `voice`.
+
+Input overrides then apply on top, unchanged from today: `voice.MergeParams` gives input priority over alias defaults over endpoint defaults, so a JSON or tag `model` or `voice` override MUST still win for the parameters sent upstream. What an override MUST NOT do is change which endpoint the session talks to — that is fixed by the start voice for the whole session.
 
 The session MUST derive its context from the `ctx` passed to `HandleEvent` at `synthesize-start`, via `context.WithCancel`. Cancelling it MUST abort in-flight upstream HTTP requests and close their response bodies. Both server shutdown (parent cancellation) and connection teardown (`CloseConn`) MUST therefore stop synthesis promptly.
 
@@ -274,7 +276,13 @@ The **candidate segment** is everything buffered up to and including the boundar
 
 - **GIVEN** a session opened with `synthesize-start` carrying voice `"nova (OpenAI, tts-1)"`, whose chunks together spell `{"voice": "alloy", "input": "Turning on the lights now."}`, arriving in fragments
 - **WHEN** `synthesize-stop` arrives
-- **THEN** no segment MUST have been flushed before `synthesize-stop`, the endpoint and model MUST be those resolved from `"nova (OpenAI, tts-1)"`, the `voice` sent upstream MUST be `alloy`, the synthesized text MUST be `Turning on the lights now.`, and no brace or key name MUST appear in any synthesized segment
+- **THEN** no segment MUST have been flushed before `synthesize-stop`, the endpoint MUST be the one resolved from `"nova (OpenAI, tts-1)"`, the `model` MUST be the resolved baseline `tts-1` because this input carries no `model` override, the `voice` sent upstream MUST be `alloy`, the synthesized text MUST be `Turning on the lights now.`, and no brace or key name MUST appear in any synthesized segment
+
+#### Scenario: model override survives a streaming session
+
+- **GIVEN** a session opened with voice `"alloy (OpenAI, tts-1)"` whose chunks together spell `[model: gpt-4o-mini-tts] Turning the lights on.`
+- **WHEN** the session is synthesized
+- **THEN** the endpoint MUST be the one resolved from the start voice, and every segment's upstream request MUST carry `model: gpt-4o-mini-tts` rather than `tts-1`
 
 #### Scenario: tag-form input strips the tag
 
@@ -449,6 +457,8 @@ Consequently:
 - Session failed → exactly one `error`, no `synthesize-stopped`. The session MUST then enter the `terminated` state of R5 rather than closing, so that **every** remaining event of that message — the compatibility `synthesize` included — is absorbed silently. Absorbing only the trailing `synthesize-stop` is not sufficient: a failure that happens before Home Assistant sends its compatibility `synthesize` would otherwise let the full message be synthesized a second time.
 - No session was ever opened and a `synthesize-stop` arrives → emit nothing.
 
+The session — not the Wyoming handler — owns reporting synthesis failures. A session method MUST emit its own `error` and return `nil`, never surface a synthesis failure as a returned error, because `Server.handleConn` converts a returned error into a second `error` event with code `handler-error`. Emitting both would break exactly-one-terminator and report the wrong code. See [the `tts.StreamSession` API](#ttsstreamsession-api) for the full split between domain failures and connection-write failures.
+
 This applies identically to every way a session can fail — an upstream error, a mid-session format mismatch (R8), and the idle timeout (R5).
 
 On failure the session MUST **quiesce** as defined in R5 — cancel, close the unterminated audio group, join the emitter, discard the queue — before the `error` is written. That ordering is what guarantees the `error` is the last thing the client sees for that message; without joining the emitter first, a stale `audio-chunk` can arrive after it. The connection MUST remain open and usable, matching the existing contract that handler errors never close the connection.
@@ -472,6 +482,12 @@ Step 2 of quiescing is what covers a segment failing **after** its `audio-start`
 - **GIVEN** a session abandoned by the idle timeout, which emitted `error` with code `synthesize-timeout`
 - **WHEN** a late compatibility `synthesize` arrives on the same connection before any new `synthesize-start`
 - **THEN** it MUST be absorbed silently rather than synthesized
+
+#### Scenario: an upstream failure produces exactly one error event
+
+- **GIVEN** a streaming session whose upstream returns HTTP 500
+- **WHEN** the failure is handled
+- **THEN** exactly one `error` event MUST reach the client, with code `tts-error`, and no `handler-error` event MUST be emitted — the session method MUST have returned `nil`
 
 #### Scenario: upstream disconnects mid-segment
 
@@ -527,6 +543,17 @@ func (s *StreamSession) Stop() error
 func (s *StreamSession) Close()                              // connection teardown; blocks
 ```
 
+**Error ownership.** The `error` these methods return is **not** a synthesis failure. `Server.handleConn` turns any non-nil handler error into a Wyoming `error` event with code `handler-error`, so if a session returned an upstream failure the client would receive both that event and the session's own `tts-error` — two errors for one message, breaking R10's exactly-one-terminator rule and reporting the wrong code.
+
+The split is therefore:
+
+| Failure | Who reports it | Method returns |
+|---|---|---|
+| Synthesis failure — upstream error, format mismatch, idle timeout | The session, as a Wyoming `error` per R10 | `nil` |
+| Writing to the connection itself failed | Nobody; the connection is already broken | the write error |
+
+So a session method MUST return `nil` for every domain failure, having already emitted its own `error` and entered `terminated`. It MUST return non-nil only when a write to the connection failed. `connHandler` MUST pass that through unchanged, so the server's existing logging and teardown path runs; the follow-up `handler-error` write will fail too, which is harmless on a connection that is already gone.
+
 `Compat` returns `true` when the session absorbed the event and `false` only when the session is `idle`, in which case the caller MUST fall through to the existing `Proxy.HandleSynthesize`. It therefore returns `true` in **both** the `open` state (R7 suppression) and the `terminated` state (R10 tombstone) — a failed session must keep absorbing, or the compatibility event escapes and the message is spoken twice. `Active()` reports the same two states for the same reason. That single boolean is the whole suppression contract, and it lives in a tested internal package rather than in `main`.
 
 #### Per-segment synthesis inside the proxy
@@ -559,12 +586,14 @@ Running `ParseInput` on the first flushed segment therefore corrupts both forms.
 
 In both cases the overrides are known before the first segment is synthesized, so `resolveSynthesis` runs once and its plan is reused verbatim for every segment.
 
-**What selects the endpoint, and what only overrides a parameter.** These are two different things today and this change MUST NOT merge them:
+**What selects the endpoint, and what only overrides a request parameter.** These are two different things today and this change MUST NOT merge them:
 
-- **`synthesize-start`'s `voice`** is the Wyoming voice name. It is what `resolver.Resolve` consumes, and it alone selects the endpoint and model. When it is absent — R2 makes it optional — resolution falls to Stage 0 exactly as an empty `synthesize` voice does today, picking the first enabled endpoint with a default voice, and erroring with `"voice: no voice specified and no default voice configured"` when there is none.
-- **A JSON or tag `voice` override** is not a Wyoming voice name and never reaches the resolver. It flows through `voice.MergeParams` at input priority and becomes the `voice` field of the upstream `/audio/speech` request. That is the existing whole-message behaviour and it MUST be preserved unchanged.
+- **`synthesize-start`'s `voice`** is the Wyoming voice name. It is what `resolver.Resolve` consumes, and it alone selects the **endpoint**, together with the baseline `model` and `voice` that resolution yields. When it is absent — R2 makes it optional — resolution falls to Stage 0 exactly as an empty `synthesize` voice does today, picking the first enabled endpoint with a default voice, and erroring with `"voice: no voice specified and no default voice configured"` when there is none.
+- **A JSON or tag override** never reaches the resolver. It flows through `voice.MergeParams` at input priority and sets the `voice`, `model`, `speed` and `instructions` fields of the upstream `/audio/speech` request. That is the existing whole-message behaviour and it MUST be preserved unchanged — including the `model` override, which wins over the resolved baseline exactly as it does for a whole-message request.
 
-So a session may legitimately have no start voice and still carry a JSON `voice`: the endpoint comes from Stage 0, the upstream voice parameter comes from the JSON.
+Concretely, the layering per segment is: the endpoint is fixed by the start voice; every request parameter is `MergeParams(input, alias, endpoint)`.
+
+So a session may legitimately have no start voice and still carry a JSON `voice` and `model`: the endpoint comes from Stage 0, while the upstream voice and model parameters come from the JSON.
 
 Because the caller now owns input parsing, `resolveSynthesis` takes the already-parsed overrides rather than raw text:
 
@@ -689,6 +718,9 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Resolve once, before the first segment is synthesized; reuse the plan for all later segments
   - [ ] Format recording and R8 mismatch abort
   - [ ] Three-state machine from R5: `idle` / `open` / `terminated`, with `Active()` and `Compat()` both treating `terminated` as absorbing
+  - [ ] Error ownership: session methods emit their own Wyoming `error` and return `nil` for every domain failure; a non-nil return means only that a connection write failed
+  - [ ] Test that an upstream failure yields exactly one `error` event with code `tts-error` and no `handler-error`
+  - [ ] Test that an input `model` override reaches every segment's upstream request while the endpoint stays the one resolved from the start voice
   - [ ] Terminator discipline from R10, including `audio-stop` before `error` when a segment fails after `audio-start`, and the tombstone that absorbs the compatibility `synthesize` after an early failure
   - [ ] Test that a failure occurring *before* the compatibility `synthesize` still suppresses it — the message MUST NOT be synthesized a second time
   - [ ] Idle timer: armed on `Start`, reset by `Chunk` and `Compat`, disarmed by `Stop`, `synthesize-timeout` error on expiry, disabled entirely when the timeout is `0`

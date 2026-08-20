@@ -341,6 +341,7 @@ The `terminated` state exists because Home Assistant sends its compatibility `sy
 - A session terminated by an error MUST silently absorb **every** remaining event of that message — further `synthesize-chunk` events, the compatibility `synthesize`, and the trailing `synthesize-stop` — and MUST NOT hand any of them to the whole-message path.
 - When a segment fails after its `audio-start` was emitted, `audio-stop` MUST be emitted for that segment before the `error`.
 - A synthesis error MUST NOT close the connection.
+- A synthesis failure MUST be reported by the streaming session itself, as a single `error` event, and MUST NOT additionally surface as a handler error — the server converts a handler error into a second `error` event with code `handler-error`, which would break the exactly-one-terminator rule and report the wrong code.
 
 ### Per-Connection Session State
 

@@ -363,7 +363,8 @@ Thresholds are process-level configuration, not per-endpoint: segmentation happe
 - Thresholds MUST satisfy `0 < firstSegmentChars ≤ minSegmentChars ≤ maxSegmentChars`; a configuration violating that ordering, or carrying a non-positive threshold, MUST log a warning at startup and fall back to all three defaults.
 - A forced hard cut MUST be rune-aligned and MUST NOT split a multi-byte rune.
 - `voice.ParseInput` MUST be given the complete message text or not run at all; it MUST NOT be run on an individual segment, because a fragment of a JSON-form input parses as plain text and would be spoken verbatim with its overrides dropped.
-- The session's endpoint and model MUST be selected from the Wyoming voice name supplied when the session opened, resolved exactly as a whole-message request's voice is. An input-override `voice` MUST NOT participate in that selection — it overrides only the `voice` parameter sent upstream, at input priority.
+- The session's **endpoint** MUST be selected from the Wyoming voice name supplied when the session opened, resolved exactly as a whole-message request's voice is, and MUST stay fixed for the whole session.
+- Input overrides MUST retain their existing priority for every upstream request parameter: an input-override `voice` or `model` still wins over the resolved baseline via `MergeParams`. Overrides affect the request parameters only, never which endpoint the session talks to.
 - Audio for segment N MUST be fully emitted, including its `audio-stop`, before any audio for segment N+1.
 - At most two upstream synthesis requests per session MUST be in flight at any time.
 - A segment's audio format MUST be determined before any `AudioStart` for that segment is written, so a mismatch can be detected without emitting anything.
