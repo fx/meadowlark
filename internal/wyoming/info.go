@@ -112,6 +112,15 @@ func (b *InfoBuilder) Build(ctx context.Context) (*Info, error) {
 				Installed:   true,
 				Version:     b.version,
 				Voices:      voices,
+				// Advertised unconditionally: the flag describes what the
+				// Wyoming service accepts on its input side, which is a
+				// property of Meadowlark rather than of any upstream endpoint.
+				// Meadowlark can always segment text and issue one upstream
+				// request per segment, whatever the endpoint supports — and
+				// info carries a single service-level program aggregating
+				// every endpoint, so there is no per-endpoint place to put a
+				// per-endpoint answer anyway.
+				SupportsSynthesizeStreaming: true,
 			},
 		},
 	}

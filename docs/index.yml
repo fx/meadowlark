@@ -78,5 +78,5 @@ changes:
     path: changes/0006-wyoming-synthesize-streaming.md
     description: Implement Wyoming streaming synthesis input (synthesize-start/chunk/stop/stopped), per-connection session state, text segmentation, and multi-segment audio framing
     spec: wyoming-protocol
-    status: draft
+    status: complete
     depends_on: ["0002"]
