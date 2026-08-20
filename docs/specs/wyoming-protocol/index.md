@@ -315,16 +315,17 @@ A connection holds at most one streaming session, in one of three states.
 
 ### Quiescing a Session
 
-Every path that ends a session early — a restart, a failure, the idle timeout, connection teardown — performs the same ordered shutdown before anything further is written to the connection:
+A single emitter goroutine is the only thing that writes audio events for a session, so it alone can correctly close a group it opened. Every path that ends a session early — a restart, a failure, the idle timeout, connection teardown — performs the same ordered shutdown before anything further is written to the connection:
 
 1. Cancel the session context, aborting in-flight and prefetched upstream requests and closing every held response body.
-2. Write the `audio-stop` for any segment whose `audio-start` was written but whose group is not yet closed.
-3. Wait for the emitter to exit; no further audio event for that session may be written afterwards.
-4. Discard buffered text and queued segments.
+2. Wait for the emitter to exit. On observing cancellation it stops mid-segment and, if it had opened an audio group that is not yet closed, writes that group's `audio-stop` itself as its final act.
+3. Discard buffered text and queued segments.
 
-Only then may a terminator be written or a replacement session open. On connection teardown step 2 and the terminator are skipped, since nothing may be written to a closed connection; steps 1, 3 and 4 still run.
+Only then may a terminator be written or a replacement session open. On connection teardown the emitter skips its closing write and no terminator is sent, since nothing may be written to a closed connection; steps 1–3 still run.
 
+- Audio events for a session MUST be written by exactly one goroutine, which MUST also write the closing `audio-stop` for any group it opened.
 - Quiescing MUST complete before a `synthesize-stopped` or `error` is written, and before a replacement session opens.
+- The emitter MUST be joined before any terminator is written. A terminating path MUST NOT write a group's closing `audio-stop` itself and then join, because cancellation does not synchronously stop a goroutine already entering a write, so an `audio-chunk` could follow the `audio-stop`.
 - No audio event belonging to an ended session MUST be written after its terminator, or interleaved with a later session's audio.
 
 The `terminated` state exists because Home Assistant sends its compatibility `synthesize` after the chunks and before `synthesize-stop`. A session that failed early and simply closed would let that event fall through to the whole-message path and speak the entire message a second time, after the client had already raised on the `error`.

@@ -196,16 +196,19 @@ A session is in exactly one of **three** states. The third exists because a sess
 | `synthesize` | Existing behaviour, unchanged: delegate to `Proxy.HandleSynthesize`. | Suppress (R7). | Absorb silently — **never** delegate. |
 | `synthesize-stop` | Ignore; log at debug. Emit nothing. | Flush the remainder, wait for all segments to finish emitting, emit `synthesize-stopped`, return to `idle`. | Emit nothing; return to `idle`. |
 
+**The emitter is the only goroutine that writes audio events.** That is a load-bearing invariant, not an implementation detail: it is what makes an ordered shutdown possible at all. Because the emitter alone writes `audio-start`, `audio-chunk` and `audio-stop`, it is also the only thing that can correctly close a group it has opened.
+
 **Quiescing a session.** Every path that ends a session early — a restart, a failure, the idle timeout, connection teardown — MUST perform the same ordered shutdown before anything else is written to the connection:
 
 1. Cancel the session context, so in-flight and prefetched upstream requests abort and every held response body is closed.
-2. If an `audio-start` has been written for a segment that has no matching `audio-stop`, write that `audio-stop`, so the client is never left inside an unterminated audio group.
-3. **Wait for the emitter goroutine to exit.** No further `audio-start`, `audio-chunk` or `audio-stop` for the old session may be written after this point.
-4. Discard buffered text and any queued segments.
+2. **Wait for the emitter goroutine to exit.** On observing cancellation the emitter stops mid-segment and, if it had written an `audio-start` with no matching `audio-stop`, writes that `audio-stop` itself as its final act before returning. After the join, no audio event for this session can ever be written again.
+3. Discard buffered text and any queued segments.
 
-Only then may a terminator (`synthesize-stopped` or `error`) be written, and only then may a replacement session open. Step 3 is the one that is easy to omit and the one that corrupts the stream if omitted: without joining the emitter, a stale `audio-chunk` can land after the old session's terminator or, worse, in the middle of the new session's audio — and Home Assistant has no way to tell the two apart.
+Only then may a terminator (`synthesize-stopped` or `error`) be written, and only then may a replacement session open.
 
-**On connection teardown, steps 2 and the terminator are skipped** — the connection is gone, so nothing may be written to it. Steps 1, 3 and 4 still run, and `CloseConn` returns only once step 3 has completed.
+**The join MUST come before any closing `audio-stop`, and the emitter MUST write it.** Having the terminating path write the `audio-stop` itself and *then* join is a race: cancelling a context does not synchronously stop a goroutine that is already inside a write or about to enter one, so the emitter can land an `audio-chunk` after that `audio-stop` and produce an invalid group. Giving the emitter sole ownership of its own closing write removes the race by construction rather than by timing.
+
+**On connection teardown the emitter skips its closing write and no terminator is sent** — the connection is gone, so nothing may be written to it. Steps 1–3 still run, and `CloseConn` returns only once step 2 has completed.
 
 **Why `terminated` is a distinct state and not simply a closed session.** Home Assistant sends its compatibility `synthesize` *after* the chunks and *before* `synthesize-stop`. If a segment fails early — an upstream error, a format mismatch, or an idle timeout — and the session were closed immediately, that compatibility event would arrive to find no session, fall through the `idle` row, and be synthesized in full: Meadowlark would speak the entire message a second time, long after Home Assistant had already raised on the `error`. The tombstone absorbs every remaining event of the failed message and is cleared only by `synthesize-stop`, a new `synthesize-start`, or connection teardown.
 
@@ -237,7 +240,7 @@ The `synthesize-stop` case is not a timer expiry — it terminates the session n
 
 - **GIVEN** an open session whose second segment has emitted `audio-start` and some `audio-chunk` events
 - **WHEN** a second `synthesize-start` arrives
-- **THEN** the emitted order MUST be exactly: that segment's `audio-stop`, then `synthesize-stopped`, then nothing from the old session at all — no `audio-chunk` or `audio-stop` from the old session MUST appear after the `synthesize-stopped`, or interleaved with the new session's audio
+- **THEN** the emitted order MUST be exactly: that segment's `audio-stop` written by the emitter as it exits, then `synthesize-stopped`, then nothing from the old session at all — no `audio-chunk` or `audio-stop` from the old session MUST appear after that `audio-stop`, after the `synthesize-stopped`, or interleaved with the new session's audio
 
 ### R6: Text segmentation
 
@@ -461,9 +464,9 @@ The session — not the Wyoming handler — owns reporting synthesis failures. A
 
 This applies identically to every way a session can fail — an upstream error, a mid-session format mismatch (R8), and the idle timeout (R5).
 
-On failure the session MUST **quiesce** as defined in R5 — cancel, close the unterminated audio group, join the emitter, discard the queue — before the `error` is written. That ordering is what guarantees the `error` is the last thing the client sees for that message; without joining the emitter first, a stale `audio-chunk` can arrive after it. The connection MUST remain open and usable, matching the existing contract that handler errors never close the connection.
+On failure the session MUST **quiesce** as defined in R5 — cancel, join the emitter, discard the queue — before the `error` is written. That ordering is what guarantees the `error` is the last thing the client sees for that message; without joining the emitter first, a stale `audio-chunk` can arrive after it. The connection MUST remain open and usable, matching the existing contract that handler errors never close the connection.
 
-Step 2 of quiescing is what covers a segment failing **after** its `audio-start` was emitted: that segment's `audio-stop` is written before the `error`, so the client is not left inside an unterminated audio group.
+A segment failing **after** its `audio-start` was emitted is covered by the emitter's own exit path: it writes that group's `audio-stop` as it returns, and only then — once the join completes — is the `error` written. The client is therefore never left inside an unterminated audio group, and no audio can follow the `error`.
 
 #### Scenario: upstream failure on the second segment
 
@@ -725,7 +728,8 @@ These settings are **orthogonal** to synthesize streaming and both dimensions co
   - [ ] Test that a failure occurring *before* the compatibility `synthesize` still suppresses it — the message MUST NOT be synthesized a second time
   - [ ] Idle timer: armed on `Start`, reset by `Chunk` and `Compat`, disarmed by `Stop`, `synthesize-timeout` error on expiry, disabled entirely when the timeout is `0`
   - [ ] Test that a session receiving one chunk and then stalling is abandoned after the timeout, and that a session receiving a chunk every half-timeout is not
-  - [ ] A single `quiesce` helper implementing R5's four ordered steps — cancel, close an unterminated audio group, **join the emitter**, discard the queue — used by the restart, failure, timeout and teardown paths alike, so none of them can skip the join
+  - [ ] A single `quiesce` helper implementing R5's three ordered steps — cancel, **join the emitter**, discard the queue — used by the restart, failure, timeout and teardown paths alike, so none of them can skip the join
+  - [ ] The emitter writes the closing `audio-stop` for a group it opened, as its own final act on cancellation; no other goroutine writes audio events, and no terminating path writes that `audio-stop` itself
   - [ ] `synthesize-start` while active: quiesce, emit `synthesize-stopped`, restart
   - [ ] Test under `-race` that a restart mid-audio emits the old group's `audio-stop`, then `synthesize-stopped`, and that no old-session audio event appears afterwards or interleaves with the new session's
   - [ ] Zero-chunk fallback text handling from R7
