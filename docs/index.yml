@@ -86,7 +86,7 @@ changes:
     path: changes/0007-vllm-omni-streaming-compat.md
     description: Send stream_format "audio" on streaming requests and reject text/event-stream responses, so vLLM-Omni streams raw PCM instead of SSE
     spec: tts-synthesis
-    status: draft
+    status: complete
     depends_on: ["0001"]
 
   - id: "0008"

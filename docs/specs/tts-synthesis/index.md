@@ -9,7 +9,7 @@ The TTS system receives Wyoming synthesis requests, resolves the voice configura
 Two **upstream** modes are supported, selected per endpoint:
 
 - **Buffered (WAV):** The default. The full WAV response is received, the header is parsed for audio format, and PCM data is chunked into Wyoming events. Works with all endpoints.
-- **Streaming (PCM):** Opt-in per endpoint via `StreamingEnabled`. Sends `"stream": true` with `response_format: "pcm"` — and, *planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md))*, `stream_format: "audio"`. Raw PCM bytes are forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format comes from endpoint configuration rather than a WAV header.
+- **Streaming (PCM):** Opt-in per endpoint via `StreamingEnabled`. Sends `"stream": true` with `response_format: "pcm"` and `stream_format: "audio"`. Raw PCM bytes are forwarded to Wyoming events as they arrive, reducing time-to-first-audio. Audio format comes from endpoint configuration rather than a WAV header.
 
 Two **inbound** modes are defined, selected by the Wyoming client:
 
@@ -94,16 +94,16 @@ type StreamSynthesizeRequest struct {
     Speed          *float64 `json:"speed,omitempty"`
     Instructions   *string  `json:"instructions,omitempty"`
     Stream         bool     `json:"stream"`            // Always true
-    StreamFormat   string   `json:"stream_format"`     // Always "audio" — planned (0007)
+    StreamFormat   string   `json:"stream_format"`     // Always "audio"
 }
 ```
 
-> **Planned:** the `stream_format` field does not exist yet — see [0007](../../changes/0007-vllm-omni-streaming-compat.md). Once it lands, every streaming request body carries `"stream": true`, `"response_format": "pcm"` and `"stream_format": "audio"`, whatever the caller set. `"audio"` asks for raw audio bytes rather than Server-Sent Events: vLLM-Omni answers a streaming request that omits it with an SSE event stream, while backends that do not know the field (qwen3-tts) ignore it and return raw audio as before. It is also a valid value of OpenAI's own `stream_format` parameter.
+Every streaming request body carries `"stream": true`, `"response_format": "pcm"` and `"stream_format": "audio"`, whatever the caller set. `"audio"` asks for raw audio bytes rather than Server-Sent Events: vLLM-Omni answers a streaming request that omits it with an SSE event stream, while backends that do not know the field (qwen3-tts) ignore it and return raw audio as before. It is also a valid value of OpenAI's own `stream_format` parameter.
 
 #### Response Format
 
 The endpoint MUST return raw PCM audio bytes via HTTP chunked transfer encoding:
-- **Content-Type:** `audio/pcm` (MAY vary by endpoint; not validated, except that `text/event-stream` will be rejected — *planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md))*, see [Response Validation](#response-validation-1))
+- **Content-Type:** `audio/pcm` (MAY vary by endpoint; not validated, except that `text/event-stream` is rejected — see [Response Validation](#response-validation-1))
 - **Format:** 16-bit signed little-endian PCM, mono, at the sample rate configured on the endpoint (typically 24000 Hz)
 - **No WAV header** — the response is a flat stream of PCM samples
 
@@ -111,7 +111,7 @@ The endpoint MUST return raw PCM audio bytes via HTTP chunked transfer encoding:
 
 Unlike `Synthesize`, `SynthesizeStream` MUST NOT perform RIFF magic byte validation. The response body is returned directly as an `io.ReadCloser`. Non-2xx status codes MUST still be detected and reported as errors.
 
-**Event-stream guard** — *planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md))*. After the non-2xx check, a 2xx response whose `Content-Type` media type is `text/event-stream` is rejected rather than returned. The match is on the media type alone: case-insensitive, surrounding whitespace and parameters (such as `; charset=utf-8`) ignored — including malformed parameters, which do not stop the media type matching. On a match `SynthesizeStream`:
+**Event-stream guard.** After the non-2xx check, a 2xx response whose `Content-Type` media type is `text/event-stream` is rejected rather than returned. The match is on the media type alone: case-insensitive, surrounding whitespace and parameters (such as `; charset=utf-8`) ignored — including malformed parameters, which do not stop the media type matching. On a match `SynthesizeStream`:
 
 1. logs at error level `tts: TTS endpoint returned an event stream instead of raw PCM`, with `status_code` and `content_type` — the same keys as the non-2xx log, but without `response_body`, because the body is a live stream of encoded audio rather than a diagnostic;
 2. closes the response body without reading it;
@@ -124,8 +124,8 @@ Through the proxy the error surfaces as any other streaming upstream failure, pr
 #### Requirements
 
 - `SynthesizeStream` MUST set `"stream": true` and `"response_format": "pcm"` in the request body.
-- *Planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md)):* `SynthesizeStream` MUST set `"stream_format": "audio"` in the request body, overriding any caller-supplied value.
-- *Planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md)):* `SynthesizeStream` MUST NOT return the body of a 2xx response whose media type is `text/event-stream`; it MUST close that body and return an error naming the `Content-Type`.
+- `SynthesizeStream` MUST set `"stream_format": "audio"` in the request body, overriding any caller-supplied value.
+- `SynthesizeStream` MUST NOT return the body of a 2xx response whose media type is `text/event-stream`; it MUST close that body and return an error naming the `Content-Type`.
 - The response body MUST be returned immediately without buffering — the caller reads PCM bytes incrementally.
 - Authorization MUST follow the same rules as `Synthesize`.
 - Non-2xx responses MUST be reported with the same error format as `Synthesize`.
@@ -143,8 +143,6 @@ Through the proxy the error surfaces as any other streaming upstream failure, pr
 **GIVEN** a streaming endpoint returns raw PCM bytes,
 **WHEN** the caller reads from the returned `io.ReadCloser`,
 **THEN** each read MUST return PCM bytes as they arrive from the HTTP response (no buffering).
-
-*Planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md)):*
 
 **GIVEN** a caller passes a `StreamSynthesizeRequest` with `StreamFormat` empty or set to `"sse"`,
 **WHEN** `SynthesizeStream` is called,
@@ -269,7 +267,7 @@ type ClientFactory func(ep *model.Endpoint) *Client
 5. **Build endpoint defaults** (speed, instructions from endpoint config).
 6. **Merge parameters** → `voice.MergeParams(input, aliasDefaults, endpointDefaults)`. Priority: input > alias > endpoint.
 7. **Call TTS API**, branching on `endpoint.StreamingEnabled`:
-   - **Streaming:** call `SynthesizeStream` with `response_format: "pcm"` and `stream: true` (and, *planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md))*, `stream_format: "audio"`, which `SynthesizeStream` forces). `AudioFormat` is `{StreamSampleRate, 2, 1}`, defaulting the rate to `24000` when zero.
+   - **Streaming:** call `SynthesizeStream` with `response_format: "pcm"` and `stream: true` (and `stream_format: "audio"`, which `SynthesizeStream` forces). `AudioFormat` is `{StreamSampleRate, 2, 1}`, defaulting the rate to `24000` when zero.
    - **Buffered:** call `Synthesize` with `response_format: "wav"`. Returns an error if the endpoint's `DefaultResponseFormat` is non-empty and not `"wav"`. `AudioFormat` comes from `WAVReader.ReadFormat()`.
 8. **Stream audio chunks**:
    - Send `AudioStart` event with rate, width, channels.
@@ -302,7 +300,7 @@ All errors in `doSynthesize` are caught by `HandleSynthesize`, which:
 | Unsupported response format (buffered) | `"unsupported response format ...; only \"wav\" is supported by proxy"` |
 | TTS API call fails (buffered) | `"tts api call: ..."` |
 | TTS API call fails (streaming) | `"tts api call (streaming): ..."` |
-| Streaming endpoint answers with an event stream — *planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md))* | `"tts api call (streaming): tts: endpoint returned an event stream instead of raw PCM (Content-Type: ...)"` |
+| Streaming endpoint answers with an event stream | `"tts api call (streaming): tts: endpoint returned an event stream instead of raw PCM (Content-Type: ...)"` |
 | WAV parsing fails (buffered only) | `"parse wav header: ..."` |
 | PCM read error | `"read pcm data: ..."` |
 | Segment audio format differs from the session's first segment (raised by the streaming session, not `doSynthesize`) | `"audio format changed mid-session: first segment ..., this segment ..."` |
@@ -320,7 +318,7 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 - Synthesis errors MUST result in a Wyoming `Error` event, never a crash.
 - The connection MUST remain usable after a synthesis error.
 - Streaming mode MUST be per-endpoint opt-in (default off), MUST use `response_format = "pcm"` and `stream = true`, and MUST derive audio format from endpoint config.
-- *Planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md)):* streaming mode MUST also send `stream_format = "audio"`, and an upstream answering with an event stream MUST produce a Wyoming `Error` with code `tts-error` and no `AudioStart` for that request or segment.
+- Streaming mode MUST also send `stream_format = "audio"`, and an upstream answering with an event stream MUST produce a Wyoming `Error` with code `tts-error` and no `AudioStart` for that request or segment.
 
 ### Scenarios
 
@@ -336,7 +334,7 @@ const chunkSize = 2048  // Bytes per audio-chunk event
 **WHEN** the endpoint is fetched,
 **THEN** the proxy MUST return an error stating the endpoint is disabled.
 
-**GIVEN** a streaming-enabled endpoint that answers `text/event-stream` — *planned ([0007](../../changes/0007-vllm-omni-streaming-compat.md))*,
+**GIVEN** a streaming-enabled endpoint that answers `text/event-stream`,
 **WHEN** a whole-message `synthesize` is handled,
 **THEN** the proxy MUST send a single Wyoming `Error` with code `"tts-error"` whose text names the event stream, and MUST NOT send `AudioStart`.
 
@@ -480,3 +478,4 @@ vLLM-Omni's streaming mode accepts only speed `1.0`. The streaming request carri
 | 2026-08-20 | Drop "planned" markers now that 0001/0002 have shipped; specify segmented streaming synthesis, text segmentation, and multi-segment proxy behaviour | [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
 | 2026-08-20 | Segmented streaming synthesis ships: `internal/segment` and `tts.StreamSession` land, and `doSynthesize` is re-expressed as the four-stage parse/resolve/open/emit pipeline they share | [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
 | 2026-10-22 | Specify `stream_format: "audio"` on streaming requests and the `text/event-stream` guard (planned); record the vLLM-Omni streaming speed limitation | [0007](../../changes/0007-vllm-omni-streaming-compat.md) |
+| 2026-10-22 | `stream_format: "audio"` and the `text/event-stream` guard ship; drop their "planned" markers | [0007](../../changes/0007-vllm-omni-streaming-compat.md) |

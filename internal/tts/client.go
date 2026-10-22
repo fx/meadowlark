@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"slices"
 )
@@ -41,6 +43,7 @@ type StreamSynthesizeRequest struct {
 	Speed          *float64 `json:"speed,omitempty"`
 	Instructions   *string  `json:"instructions,omitempty"`
 	Stream         bool     `json:"stream"`
+	StreamFormat   string   `json:"stream_format"`
 }
 
 // Client is an OpenAI-compatible TTS HTTP client.
@@ -136,6 +139,7 @@ func (c *Client) SynthesizeStream(ctx context.Context, req *StreamSynthesizeRequ
 	streamReq := *req
 	streamReq.Stream = true
 	streamReq.ResponseFormat = "pcm"
+	streamReq.StreamFormat = "audio"
 
 	body, err := json.Marshal(streamReq)
 	if err != nil {
@@ -168,7 +172,30 @@ func (c *Client) SynthesizeStream(ctx context.Context, req *StreamSynthesizeRequ
 		return nil, fmt.Errorf("tts: API error %d: %s", resp.StatusCode, truncated)
 	}
 
+	// Reject Server-Sent Events: the body is text events carrying encoded audio,
+	// not raw PCM. The body is not read for logging because it is a live stream.
+	contentType := resp.Header.Get("Content-Type")
+	if isEventStream(contentType) {
+		slog.Error("tts: TTS endpoint returned an event stream instead of raw PCM",
+			"status_code", resp.StatusCode,
+			"content_type", contentType,
+		)
+		resp.Body.Close()
+		return nil, fmt.Errorf("tts: endpoint returned an event stream instead of raw PCM (Content-Type: %s)", contentType)
+	}
+
 	return resp.Body, nil
+}
+
+// isEventStream reports whether a Content-Type header names the
+// text/event-stream media type. Parameters are ignored, including malformed
+// ones; a value whose media type does not parse names no media type.
+func isEventStream(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil && !errors.Is(err, mime.ErrInvalidMediaParameter) {
+		return false
+	}
+	return mediaType == "text/event-stream"
 }
 
 // truncateBody truncates a string to maxLen characters, appending "..." if truncated.

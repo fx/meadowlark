@@ -5,7 +5,7 @@
 Make streaming synthesis work against vLLM-Omni. `SynthesizeStream` will always send `stream_format: "audio"` alongside `stream: true` and `response_format: "pcm"`, so a backend that would otherwise answer a streaming request with Server-Sent Events returns raw PCM instead. It will also reject a successful response whose media type is `text/event-stream` with an error, so an SSE body is never played as PCM.
 
 **Spec:** [tts-synthesis](../specs/tts-synthesis/)
-**Status:** draft
+**Status:** complete
 **Depends On:** 0001
 
 ## Motivation
@@ -76,16 +76,16 @@ All code changes are in `internal/tts/client.go` and its tests:
 
 ## Tasks
 
-- [ ] Send `stream_format: "audio"` and reject SSE responses in `SynthesizeStream` (one PR)
-  - [ ] `internal/tts/client.go`: add `StreamFormat` (`json:"stream_format"`) to `StreamSynthesizeRequest`; force it to `"audio"` in `SynthesizeStream`
-  - [ ] `internal/tts/client.go`: after the non-2xx check, reject a `text/event-stream` media type — log, close the body, return the spec's error
-  - [ ] `internal/tts/client_test.go`: extend `TestSynthesizeStream_RequestBody` to assert `stream_format == "audio"`, including when the caller passes a different `StreamFormat`
-  - [ ] `internal/tts/client_test.go`: table test for the guard — `text/event-stream`, mixed case, with `; charset=utf-8`, with surrounding whitespace, with a malformed parameter (`text/event-stream; charset`) → error naming the media type, and the response body closed (assert via a body that records `Close`)
-  - [ ] `internal/tts/client_test.go`: accepted cases — `audio/pcm`, `application/octet-stream`, no `Content-Type` at all (suppress the test server's sniffing by setting the header to `nil`), and a value with no parseable media type (`/`) → body returned and readable
-  - [ ] `internal/tts/client_test.go`: a non-2xx response with `Content-Type: text/event-stream` still returns the existing `tts: API error <code>: ...` error
-  - [ ] `internal/tts/proxy_test.go`: a streaming endpoint answering `text/event-stream` produces a single Wyoming `error` with code `tts-error` and no `audio-start`
-  - [ ] Flip the "planned" markers for 0007 in [tts-synthesis](../specs/tts-synthesis/index.md) to current behaviour and add a changelog row
-  - [ ] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match
+- [x] Send `stream_format: "audio"` and reject SSE responses in `SynthesizeStream` (one PR)
+  - [x] `internal/tts/client.go`: add `StreamFormat` (`json:"stream_format"`) to `StreamSynthesizeRequest`; force it to `"audio"` in `SynthesizeStream`
+  - [x] `internal/tts/client.go`: after the non-2xx check, reject a `text/event-stream` media type — log, close the body, return the spec's error
+  - [x] `internal/tts/client_test.go`: extend `TestSynthesizeStream_RequestBody` to assert `stream_format == "audio"`, including when the caller passes a different `StreamFormat`
+  - [x] `internal/tts/client_test.go`: table test for the guard — `text/event-stream`, mixed case, with `; charset=utf-8`, with surrounding whitespace, with a malformed parameter (`text/event-stream; charset`) → error naming the media type, and the response body closed (assert via a body that records `Close`)
+  - [x] `internal/tts/client_test.go`: accepted cases — `audio/pcm`, `application/octet-stream`, no `Content-Type` at all (suppress the test server's sniffing by setting the header to `nil`), and a value with no parseable media type (`/`) → body returned and readable
+  - [x] `internal/tts/client_test.go`: a non-2xx response with `Content-Type: text/event-stream` still returns the existing `tts: API error <code>: ...` error
+  - [x] `internal/tts/proxy_test.go`: a streaming endpoint answering `text/event-stream` produces a single Wyoming `error` with code `tts-error` and no `audio-start`
+  - [x] Flip the "planned" markers for 0007 in [tts-synthesis](../specs/tts-synthesis/index.md) to current behaviour and add a changelog row
+  - [x] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match
 
 No new streaming-session test is needed: the guard's error reaches the session through `openSegment`, the same path `TestStreamSession_UpstreamFailureBeforeAudio` already covers.
 
