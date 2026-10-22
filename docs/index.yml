@@ -92,7 +92,7 @@ changes:
   - id: "0008"
     name: endpoint-test-real-voice
     path: changes/0008-endpoint-test-real-voice.md
-    description: Endpoint test synthesizes with the default voice, first enabled saved voice, or first reported voice before falling back to "test"
+    description: Endpoint test synthesizes with the default voice, first enabled saved voice, or first reported voice (skipping empty ids) before falling back to "test"
     spec: http-api
     status: draft
     depends_on: ["0005"]

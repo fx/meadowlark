@@ -111,13 +111,14 @@ Or on failure:
 The request's voice is the first of these that yields one:
 
 1. the endpoint's `default_voice`, when non-empty;
-2. the first **enabled** voice saved for the endpoint, in the order the store lists them (ascending `voice_id` — see [data-persistence — Store Interface](../data-persistence/index.md#requirements));
+2. the `voice_id` of the first voice saved for the endpoint that is **enabled** and has a non-empty `voice_id`, in the order the store lists them (ascending `voice_id` — see [data-persistence — Store Interface](../data-persistence/index.md#requirements)); a saved row that is disabled or has an empty `voice_id` is skipped;
 3. the first voice with a non-empty `id` that the endpoint reports from `GET {base_url}/audio/voices`;
 4. the literal `"test"`.
 
 A step that cannot produce a voice falls through to the next: a failure reading the saved voices is logged at warn level and does not fail the test, and a voice listing that fails, is empty, or is not understood yields nothing, as [`ListVoices`](../tts-synthesis/index.md#listvoices) already guarantees. Later steps are not attempted once a voice is found, so an endpoint with a `default_voice` is never asked for its voice list. The response does not report which voice was used.
 
 - *Planned ([0008](../../changes/0008-endpoint-test-real-voice.md)):* `TestEndpoint` MUST select its voice by the order above and MUST fall back to `"test"` only when no earlier step yields a voice.
+- *Planned ([0008](../../changes/0008-endpoint-test-real-voice.md)):* `TestEndpoint` MUST NOT send an empty voice: steps 2 and 3 MUST skip any candidate whose id is empty.
 - *Planned ([0008](../../changes/0008-endpoint-test-real-voice.md)):* A failure to read saved voices or to list the endpoint's voices MUST NOT change the HTTP status of the test response.
 
 **GIVEN** an endpoint with `default_voice` `"narrator"` and enabled saved voices,
@@ -128,11 +129,15 @@ A step that cannot produce a voice falls through to the next: a failure reading 
 **WHEN** the endpoint is tested,
 **THEN** the synthesis request MUST use voice `"bravo"`.
 
-**GIVEN** an endpoint with no `default_voice` and no enabled saved voice, whose `/audio/voices` lists `clone-a` then `clone-b`,
+**GIVEN** an endpoint with no `default_voice` whose saved voices are `""` (enabled) then `delta` (enabled),
+**WHEN** the endpoint is tested,
+**THEN** the synthesis request MUST use voice `"delta"`.
+
+**GIVEN** an endpoint with no `default_voice` and no saved voice that is both enabled and has a non-empty `voice_id`, whose `/audio/voices` lists `clone-a` then `clone-b`,
 **WHEN** the endpoint is tested,
 **THEN** the synthesis request MUST use voice `"clone-a"`.
 
-**GIVEN** an endpoint with no `default_voice`, no enabled saved voice, and a `/audio/voices` that answers 404,
+**GIVEN** an endpoint with no `default_voice`, no saved voice that is both enabled and has a non-empty `voice_id`, and a `/audio/voices` that answers 404,
 **WHEN** the endpoint is tested,
 **THEN** the synthesis request MUST use voice `"test"`.
 
