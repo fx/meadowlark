@@ -22,4 +22,4 @@
 | 0005 | [endpoint-voice-toggle](changes/0005-endpoint-voice-toggle.md) | [voice-resolution](specs/voice-resolution/) | complete | 0004 |
 | 0006 | [wyoming-synthesize-streaming](changes/0006-wyoming-synthesize-streaming.md) | [wyoming-protocol](specs/wyoming-protocol/) | complete | 0002 |
 | 0007 | [vllm-omni-streaming-compat](changes/0007-vllm-omni-streaming-compat.md) | [tts-synthesis](specs/tts-synthesis/) | complete | 0001 |
-| 0008 | [endpoint-test-real-voice](changes/0008-endpoint-test-real-voice.md) | [http-api](specs/http-api/) | draft | 0005 |
+| 0008 | [endpoint-test-real-voice](changes/0008-endpoint-test-real-voice.md) | [http-api](specs/http-api/) | complete | 0005 |

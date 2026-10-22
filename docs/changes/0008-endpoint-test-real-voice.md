@@ -5,7 +5,7 @@
 The endpoint **Test** action (`POST /api/v1/endpoints/{id}/test`) will synthesize with a voice the endpoint actually has, instead of the hard-coded voice `"test"`. It picks the endpoint's default voice, else its first saved voice that is enabled and has a non-empty id, else the first voice with a non-empty id that the endpoint reports, and only then falls back to `"test"`. It never sends an empty voice.
 
 **Spec:** [http-api](../specs/http-api/)
-**Status:** draft
+**Status:** complete
 **Depends On:** 0005
 
 ## Motivation
@@ -65,18 +65,18 @@ All code changes are in `internal/api/endpoints.go` and its tests. A small unexp
 
 ## Tasks
 
-- [ ] Pick a real voice for the endpoint test (one PR)
-  - [ ] `internal/api/endpoints.go`: add the voice-selection helper and use it in `TestEndpoint`, selecting before the latency timer starts
-  - [ ] `internal/api/endpoints_test.go`: extend the mock TTS server to record the requested voice and to serve `/audio/voices`; give `endpointMockStore.ListEndpointVoices` an injectable error
-  - [ ] Test: `DefaultVoice` set → it is used, even when enabled saved voices and reported voices exist, and `/audio/voices` is never requested
-  - [ ] Test: no `DefaultVoice`, saved voices `[a (disabled), b (enabled), c (enabled)]` → `b`
-  - [ ] Test: no `DefaultVoice`, saved voices `["" (enabled), d (enabled)]` → `d` (an enabled row with an empty `voice_id` is skipped)
-  - [ ] Test: no `DefaultVoice`, all saved voices disabled or none saved → the first voice `/audio/voices` reports
-  - [ ] Test: no saved voice usable, `/audio/voices` lists an entry with an empty `id` first, then `e` → `e`; and a list containing only empty ids → `"test"`
-  - [ ] Test: store error from `ListEndpointVoices` → falls through to the reported voices, and the test still returns `200`
-  - [ ] Test: `/audio/voices` answers 404, an empty list, or malformed JSON → `"test"`
-  - [ ] Update the [http-api spec — TestEndpoint](../specs/http-api/index.md#testendpoint) to drop the "planned" marker and add a changelog row
-  - [ ] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match
+- [x] Pick a real voice for the endpoint test (one PR)
+  - [x] `internal/api/endpoints.go`: add the voice-selection helper and use it in `TestEndpoint`, selecting before the latency timer starts
+  - [x] `internal/api/endpoints_test.go`: extend the mock TTS server to record the requested voice and to serve `/audio/voices`; give `endpointMockStore.ListEndpointVoices` an injectable error
+  - [x] Test: `DefaultVoice` set → it is used, even when enabled saved voices and reported voices exist, and `/audio/voices` is never requested
+  - [x] Test: no `DefaultVoice`, saved voices `[a (disabled), b (enabled), c (enabled)]` → `b`
+  - [x] Test: no `DefaultVoice`, saved voices `["" (enabled), d (enabled)]` → `d` (an enabled row with an empty `voice_id` is skipped)
+  - [x] Test: no `DefaultVoice`, all saved voices disabled or none saved → the first voice `/audio/voices` reports
+  - [x] Test: no saved voice usable, `/audio/voices` lists an entry with an empty `id` first, then `e` → `e`; and a list containing only empty ids → `"test"`
+  - [x] Test: store error from `ListEndpointVoices` → falls through to the reported voices, and the test still returns `200`
+  - [x] Test: `/audio/voices` answers 404, an empty list, or malformed JSON → `"test"`
+  - [x] Update the [http-api spec — TestEndpoint](../specs/http-api/index.md#testendpoint) to drop the "planned" marker and add a changelog row
+  - [x] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match
 
 ## Open Questions
 
