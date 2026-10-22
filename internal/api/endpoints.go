@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -302,9 +303,10 @@ func (s *Server) TestEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := s.clientFactory(ep)
+	voice := s.testVoice(r.Context(), ep, client)
 	start := time.Now()
 	body, synthErr := client.Synthesize(r.Context(), &tts.SynthesizeRequest{
-		Model: ep.EffectiveDefaultModel(), Voice: "test", Input: "test", ResponseFormat: "wav",
+		Model: ep.EffectiveDefaultModel(), Voice: voice, Input: "test", ResponseFormat: "wav",
 	})
 	latency := time.Since(start).Milliseconds()
 	if synthErr != nil {
@@ -313,6 +315,32 @@ func (s *Server) TestEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Close()
 	respondJSON(w, http.StatusOK, testEndpointResponse{OK: true, LatencyMS: latency})
+}
+
+// testVoice picks the voice TestEndpoint synthesizes with: the endpoint's
+// default voice, else its first enabled saved voice (in store order), else the
+// first voice the endpoint reports, else the literal "test". Empty ids are
+// skipped so the request never carries an empty voice.
+func (s *Server) testVoice(ctx context.Context, ep *model.Endpoint, client *tts.Client) string {
+	if ep.DefaultVoice != "" {
+		return ep.DefaultVoice
+	}
+	saved, err := s.store.ListEndpointVoices(ctx, ep.ID)
+	if err != nil {
+		slog.Warn("test endpoint: list saved voices", "endpoint_id", ep.ID, "error", err)
+	}
+	for _, v := range saved {
+		if v.Enabled && v.VoiceID != "" {
+			return v.VoiceID
+		}
+	}
+	reported, _ := client.ListVoices(ctx)
+	for _, v := range reported {
+		if v.ID != "" {
+			return v.ID
+		}
+	}
+	return "test"
 }
 
 // ListEndpointConfiguredModels returns the configured models list for an endpoint.

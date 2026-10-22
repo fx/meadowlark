@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -29,6 +30,7 @@ type endpointMockStore struct {
 	updateErr      error
 	deleteErr      error
 	upsertErr      error
+	listVoicesErr  error
 }
 
 func (m *endpointMockStore) ListEndpoints(_ context.Context) ([]model.Endpoint, error) {
@@ -70,6 +72,9 @@ func (m *endpointMockStore) CreateVoiceAlias(_ context.Context, _ *model.VoiceAl
 func (m *endpointMockStore) UpdateVoiceAlias(_ context.Context, _ *model.VoiceAlias) error { return nil }
 func (m *endpointMockStore) DeleteVoiceAlias(_ context.Context, _ string) error { return nil }
 func (m *endpointMockStore) ListEndpointVoices(_ context.Context, endpointID string) ([]model.EndpointVoice, error) {
+	if m.listVoicesErr != nil {
+		return nil, m.listVoicesErr
+	}
 	if m.endpointVoices == nil {
 		return nil, nil
 	}
@@ -499,6 +504,188 @@ func TestTestEndpoint_NotFound(t *testing.T) {
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err); defer resp.Body.Close()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+}
+
+// voiceRecordingTTS is a mock TTS backend for endpoint tests. It records the
+// voice each synthesis request asks for and serves voicesBody (with
+// voicesStatus) from /audio/voices, counting how often that list is requested.
+type voiceRecordingTTS struct {
+	*httptest.Server
+	mu             sync.Mutex
+	voices         []string
+	voicesRequests int
+}
+
+func newVoiceRecordingTTS(t *testing.T, voicesStatus int, voicesBody string) *voiceRecordingTTS {
+	t.Helper()
+	m := &voiceRecordingTTS{}
+	m.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/audio/voices":
+			m.mu.Lock(); m.voicesRequests++; m.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json"); w.WriteHeader(voicesStatus); _, _ = w.Write([]byte(voicesBody))
+		case "/audio/speech":
+			var req tts.SynthesizeRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			m.mu.Lock(); m.voices = append(m.voices, req.Voice); m.mu.Unlock()
+			w.Header().Set("Content-Type", "audio/wav"); w.WriteHeader(http.StatusOK); _, _ = w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(m.Close)
+	return m
+}
+
+// synthesizedVoices returns the voices requested so far, in order.
+func (m *voiceRecordingTTS) synthesizedVoices() []string {
+	m.mu.Lock(); defer m.mu.Unlock()
+	return append([]string(nil), m.voices...)
+}
+
+func (m *voiceRecordingTTS) voiceListRequests() int {
+	m.mu.Lock(); defer m.mu.Unlock()
+	return m.voicesRequests
+}
+
+// runEndpointTest posts to the endpoint's test route and returns the decoded
+// response after asserting it answered 200.
+func runEndpointTest(t *testing.T, ms *endpointMockStore, id string) testEndpointResponse {
+	t.Helper()
+	_, ts := newEndpointTestServer(ms); defer ts.Close()
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/endpoints/"+id+"/test", nil)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err); defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var body testEndpointResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	return body
+}
+
+func TestTestEndpoint_Voice_DefaultVoiceWins(t *testing.T) {
+	mock := newVoiceRecordingTTS(t, http.StatusOK, `{"data":[{"id":"reported"}]}`)
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mock.URL, Models: model.StringSlice{"tts-1"}, DefaultVoice: "narrator", Enabled: true}},
+		endpointVoices: map[string][]model.EndpointVoice{"ep1": {
+			{EndpointID: "ep1", VoiceID: "saved", Enabled: true},
+		}},
+	}
+	body := runEndpointTest(t, ms, "ep1")
+	assert.True(t, body.OK)
+	assert.Equal(t, []string{"narrator"}, mock.synthesizedVoices())
+	assert.Zero(t, mock.voiceListRequests(), "/audio/voices must not be requested when a default voice is set")
+}
+
+func TestTestEndpoint_Voice_FirstEnabledSavedVoice(t *testing.T) {
+	mock := newVoiceRecordingTTS(t, http.StatusOK, `{"data":[{"id":"reported"}]}`)
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mock.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}},
+		endpointVoices: map[string][]model.EndpointVoice{"ep1": {
+			{EndpointID: "ep1", VoiceID: "alpha", Enabled: false},
+			{EndpointID: "ep1", VoiceID: "bravo", Enabled: true},
+			{EndpointID: "ep1", VoiceID: "charlie", Enabled: true},
+		}},
+	}
+	body := runEndpointTest(t, ms, "ep1")
+	assert.True(t, body.OK)
+	assert.Equal(t, []string{"bravo"}, mock.synthesizedVoices())
+	assert.Zero(t, mock.voiceListRequests())
+}
+
+func TestTestEndpoint_Voice_SkipsEmptySavedVoiceID(t *testing.T) {
+	mock := newVoiceRecordingTTS(t, http.StatusOK, `{"data":[{"id":"reported"}]}`)
+	ms := &endpointMockStore{
+		endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mock.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}},
+		endpointVoices: map[string][]model.EndpointVoice{"ep1": {
+			{EndpointID: "ep1", VoiceID: "", Enabled: true},
+			{EndpointID: "ep1", VoiceID: "delta", Enabled: true},
+		}},
+	}
+	body := runEndpointTest(t, ms, "ep1")
+	assert.True(t, body.OK)
+	assert.Equal(t, []string{"delta"}, mock.synthesizedVoices())
+}
+
+func TestTestEndpoint_Voice_FirstReportedVoice(t *testing.T) {
+	cases := map[string]map[string][]model.EndpointVoice{
+		"all saved voices disabled": {"ep1": {
+			{EndpointID: "ep1", VoiceID: "alpha", Enabled: false},
+			{EndpointID: "ep1", VoiceID: "bravo", Enabled: false},
+		}},
+		"no saved voices": nil,
+	}
+	for name, saved := range cases {
+		t.Run(name, func(t *testing.T) {
+			mock := newVoiceRecordingTTS(t, http.StatusOK, `{"data":[{"id":"clone-a"},{"id":"clone-b"}]}`)
+			ms := &endpointMockStore{
+				endpoints:      []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mock.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}},
+				endpointVoices: saved,
+			}
+			body := runEndpointTest(t, ms, "ep1")
+			assert.True(t, body.OK)
+			assert.Equal(t, []string{"clone-a"}, mock.synthesizedVoices())
+			assert.Equal(t, 1, mock.voiceListRequests())
+		})
+	}
+}
+
+func TestTestEndpoint_Voice_SkipsEmptyReportedVoiceID(t *testing.T) {
+	cases := []struct {
+		name, voicesBody, want string
+	}{
+		{"empty id listed first", `{"data":[{"id":""},{"id":"echo"}]}`, "echo"},
+		{"only empty ids", `{"data":[{"id":""},{"id":""}]}`, "test"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := newVoiceRecordingTTS(t, http.StatusOK, tc.voicesBody)
+			ms := &endpointMockStore{
+				endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mock.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}},
+				endpointVoices: map[string][]model.EndpointVoice{"ep1": {
+					{EndpointID: "ep1", VoiceID: "alpha", Enabled: false},
+				}},
+			}
+			body := runEndpointTest(t, ms, "ep1")
+			assert.True(t, body.OK)
+			assert.Equal(t, []string{tc.want}, mock.synthesizedVoices())
+		})
+	}
+}
+
+func TestTestEndpoint_Voice_StoreErrorFallsThrough(t *testing.T) {
+	mock := newVoiceRecordingTTS(t, http.StatusOK, `{"data":[{"id":"clone-a"}]}`)
+	ms := &endpointMockStore{
+		endpoints:     []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mock.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}},
+		listVoicesErr: fmt.Errorf("database is locked"),
+	}
+	body := runEndpointTest(t, ms, "ep1")
+	assert.True(t, body.OK)
+	assert.Empty(t, body.Error)
+	assert.Equal(t, []string{"clone-a"}, mock.synthesizedVoices())
+}
+
+func TestTestEndpoint_Voice_FallsBackToTest(t *testing.T) {
+	cases := []struct {
+		name         string
+		voicesStatus int
+		voicesBody   string
+	}{
+		{"voice list 404", http.StatusNotFound, `{"error":"not found"}`},
+		{"empty voice list", http.StatusOK, `{"data":[]}`},
+		{"malformed voice list", http.StatusOK, `{not json`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := newVoiceRecordingTTS(t, tc.voicesStatus, tc.voicesBody)
+			ms := &endpointMockStore{
+				endpoints: []model.Endpoint{{ID: "ep1", Name: "Mock", BaseURL: mock.URL, Models: model.StringSlice{"tts-1"}, Enabled: true}},
+			}
+			body := runEndpointTest(t, ms, "ep1")
+			assert.True(t, body.OK)
+			assert.Equal(t, []string{"test"}, mock.synthesizedVoices())
+			assert.Equal(t, 1, mock.voiceListRequests())
+		})
+	}
 }
 
 func TestListEndpointConfiguredModels_ReturnsModels(t *testing.T) {
