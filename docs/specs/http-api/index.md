@@ -90,7 +90,7 @@ Applied to all routes in this order:
 
 #### TestEndpoint
 
-Makes a lightweight TTS request to the endpoint and returns:
+Makes a lightweight buffered TTS request to the endpoint — model `EffectiveDefaultModel()`, input `"test"`, `response_format: "wav"` — and returns `404 not_found` if the endpoint does not exist (`500 internal_error` if it cannot be read). Otherwise it responds `200` with:
 
 ```json
 {"ok": true, "latency_ms": 234}
@@ -101,6 +101,44 @@ Or on failure:
 ```json
 {"ok": false, "error": "connection refused", "latency_ms": 0}
 ```
+
+`latency_ms` measures the synthesis request alone.
+
+##### Test voice
+
+> **Planned:** see [0008](../../changes/0008-endpoint-test-real-voice.md). Today the request always uses the voice `"test"`, which a backend without a voice by that name rejects — so the test reports a working endpoint as broken.
+
+The request's voice is the first of these that yields one:
+
+1. the endpoint's `default_voice`, when non-empty;
+2. the first **enabled** voice saved for the endpoint, in the order the store lists them (ascending `voice_id` — see [data-persistence — Store Interface](../data-persistence/index.md#requirements));
+3. the first voice with a non-empty `id` that the endpoint reports from `GET {base_url}/audio/voices`;
+4. the literal `"test"`.
+
+A step that cannot produce a voice falls through to the next: a failure reading the saved voices is logged at warn level and does not fail the test, and a voice listing that fails, is empty, or is not understood yields nothing, as [`ListVoices`](../tts-synthesis/index.md#listvoices) already guarantees. Later steps are not attempted once a voice is found, so an endpoint with a `default_voice` is never asked for its voice list. The response does not report which voice was used.
+
+- *Planned ([0008](../../changes/0008-endpoint-test-real-voice.md)):* `TestEndpoint` MUST select its voice by the order above and MUST fall back to `"test"` only when no earlier step yields a voice.
+- *Planned ([0008](../../changes/0008-endpoint-test-real-voice.md)):* A failure to read saved voices or to list the endpoint's voices MUST NOT change the HTTP status of the test response.
+
+**GIVEN** an endpoint with `default_voice` `"narrator"` and enabled saved voices,
+**WHEN** the endpoint is tested,
+**THEN** the synthesis request MUST use voice `"narrator"` and `/audio/voices` MUST NOT be requested.
+
+**GIVEN** an endpoint with no `default_voice` whose saved voices are `alpha` (disabled), `bravo` (enabled), `charlie` (enabled),
+**WHEN** the endpoint is tested,
+**THEN** the synthesis request MUST use voice `"bravo"`.
+
+**GIVEN** an endpoint with no `default_voice` and no enabled saved voice, whose `/audio/voices` lists `clone-a` then `clone-b`,
+**WHEN** the endpoint is tested,
+**THEN** the synthesis request MUST use voice `"clone-a"`.
+
+**GIVEN** an endpoint with no `default_voice`, no enabled saved voice, and a `/audio/voices` that answers 404,
+**WHEN** the endpoint is tested,
+**THEN** the synthesis request MUST use voice `"test"`.
+
+**GIVEN** an endpoint with no `default_voice` whose saved voices cannot be read from the store,
+**WHEN** the endpoint is tested,
+**THEN** the response status MUST be `200`, and the synthesis request MUST use the endpoint's first reported voice.
 
 #### ProbeEndpoint
 
@@ -249,3 +287,4 @@ The embedded `web/dist/` filesystem is mounted at `/`. The SPA fallback logic:
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
 | 2026-05-04 | Documented `default_model` field on Create/Update Endpoint, response shapes for `/configured-models` vs `/remote-voices`, and the new `/endpoints/{id}/voices` toggle routes | [0003-alias-form-voice-fix](../../changes/0003-alias-form-voice-fix.md), [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |
+| 2026-10-22 | Documented TestEndpoint's request and 404; specified its test-voice selection order (planned) | [0008](../../changes/0008-endpoint-test-real-voice.md) |

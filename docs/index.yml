@@ -80,3 +80,19 @@ changes:
     spec: wyoming-protocol
     status: complete
     depends_on: ["0002"]
+
+  - id: "0007"
+    name: vllm-omni-streaming-compat
+    path: changes/0007-vllm-omni-streaming-compat.md
+    description: Send stream_format "audio" on streaming requests and reject text/event-stream responses, so vLLM-Omni streams raw PCM instead of SSE
+    spec: tts-synthesis
+    status: draft
+    depends_on: ["0001"]
+
+  - id: "0008"
+    name: endpoint-test-real-voice
+    path: changes/0008-endpoint-test-real-voice.md
+    description: Endpoint test synthesizes with the default voice, first enabled saved voice, or first reported voice before falling back to "test"
+    spec: http-api
+    status: draft
+    depends_on: ["0005"]
