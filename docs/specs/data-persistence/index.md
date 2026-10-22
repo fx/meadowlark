@@ -40,6 +40,7 @@ type Store interface {
 ### Requirements
 
 - `GetEndpoint` and `GetVoiceAlias` MUST return `nil, nil` (not an error) when the record doesn't exist.
+- `ListEndpointVoices` MUST return the endpoint's rows ordered by `voice_id` ascending, in the backend's collation (byte order in SQLite; the database collation in PostgreSQL). The endpoint test's voice selection depends on this order ([0008](../../changes/0008-endpoint-test-real-voice.md)).
 - `UpdateEndpoint` and `UpdateVoiceAlias` MUST set `UpdatedAt` to the current UTC time.
 - `UpdateEndpoint` and `DeleteEndpoint` MUST return an error if no rows are affected (record not found).
 - All methods MUST accept and respect context cancellation.
@@ -287,3 +288,4 @@ The `--db-driver` flag (or `MEADOWLARK_DB_DRIVER` env var) selects the implement
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
 | 2026-05-04 | Added `endpoints.default_model` column, `endpoint_voices` table, and corresponding `EndpointVoice` model + Store methods | [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |
+| 2026-10-22 | Documented the existing `ListEndpointVoices` ordering, which the endpoint test's voice selection relies on | [0008](../../changes/0008-endpoint-test-real-voice.md) |
