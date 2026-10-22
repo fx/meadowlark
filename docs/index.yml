@@ -94,5 +94,5 @@ changes:
     path: changes/0008-endpoint-test-real-voice.md
     description: Endpoint test synthesizes with the default voice, first enabled saved voice, or first reported voice (skipping empty ids) before falling back to "test"
     spec: http-api
-    status: draft
+    status: complete
     depends_on: ["0005"]
