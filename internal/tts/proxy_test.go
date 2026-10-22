@@ -711,6 +711,43 @@ func TestProxy_HandleSynthesize_StreamingAPIError(t *testing.T) {
 	assert.Equal(t, "tts-error", errEv.Code)
 }
 
+func TestProxy_HandleSynthesize_StreamingEventStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"audio\":\"AAAA\"}\n\n"))
+	}))
+	defer server.Close()
+
+	ep := &model.Endpoint{
+		ID:               "ep-1",
+		Name:             "SSEStream",
+		BaseURL:          server.URL,
+		APIKey:           "key",
+		Models:           model.StringSlice{"tts-1"},
+		Enabled:          true,
+		StreamingEnabled: true,
+		StreamSampleRate: 24000,
+	}
+
+	epStore := &mockEndpointStore{endpoints: map[string]*model.Endpoint{"ep-1": ep}}
+	aliasStore := &mockAliasStore{}
+	resolver := voice.NewResolver(epStore, aliasStore)
+	factory := func(e *model.Endpoint) *Client { return NewClient(e.BaseURL, e.APIKey, server.Client()) }
+
+	proxy := NewProxy(resolver, epStore, factory, slog.Default())
+
+	var buf bytes.Buffer
+	proxy.HandleSynthesize(context.Background(), &wyoming.Synthesize{Text: "Hello", Voice: "alloy"}, &buf)
+
+	events := readAllEvents(t, buf.Bytes())
+	require.Len(t, events, 1, "an event stream must produce a single error and no audio-start")
+	assert.Equal(t, wyoming.TypeError, events[0].Type)
+	errEv, _ := wyoming.ErrorFromEvent(events[0])
+	assert.Equal(t, "tts api call (streaming): tts: endpoint returned an event stream instead of raw PCM (Content-Type: text/event-stream)", errEv.Text)
+	assert.Equal(t, "tts-error", errEv.Code)
+}
+
 func TestProxy_HandleSynthesize_StreamingNonRegression(t *testing.T) {
 	// Non-streaming endpoint still works identically.
 	pcmData := make([]byte, 512)

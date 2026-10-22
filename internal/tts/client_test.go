@@ -1,11 +1,15 @@
 package tts
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -459,36 +463,42 @@ func TestSynthesize_WAVResponsePreservesBody(t *testing.T) {
 }
 
 func TestSynthesizeStream_RequestBody(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/audio/speech", r.URL.Path)
-		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+	for _, streamFormat := range []string{"", "sse"} {
+		t.Run("caller stream_format "+strconv.Quote(streamFormat), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/audio/speech", r.URL.Path)
+				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
-		var reqBody map[string]any
-		err := json.NewDecoder(r.Body).Decode(&reqBody)
-		require.NoError(t, err)
+				var reqBody map[string]any
+				err := json.NewDecoder(r.Body).Decode(&reqBody)
+				require.NoError(t, err)
 
-		assert.Equal(t, true, reqBody["stream"])
-		assert.Equal(t, "pcm", reqBody["response_format"])
-		assert.Equal(t, "tts-1", reqBody["model"])
-		assert.Equal(t, "alloy", reqBody["voice"])
-		assert.Equal(t, "Hello", reqBody["input"])
+				assert.Equal(t, true, reqBody["stream"])
+				assert.Equal(t, "pcm", reqBody["response_format"])
+				assert.Equal(t, "audio", reqBody["stream_format"])
+				assert.Equal(t, "tts-1", reqBody["model"])
+				assert.Equal(t, "alloy", reqBody["voice"])
+				assert.Equal(t, "Hello", reqBody["input"])
 
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("pcm-data"))
-	}))
-	defer srv.Close()
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("pcm-data"))
+			}))
+			defer srv.Close()
 
-	client := NewClient(srv.URL, "", nil)
-	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
-		Model:          "tts-1",
-		Voice:          "alloy",
-		Input:          "Hello",
-		Stream:         false,
-		ResponseFormat: "wav",
-	})
-	require.NoError(t, err)
-	defer body.Close()
+			client := NewClient(srv.URL, "", nil)
+			body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+				Model:          "tts-1",
+				Voice:          "alloy",
+				Input:          "Hello",
+				Stream:         false,
+				ResponseFormat: "wav",
+				StreamFormat:   streamFormat,
+			})
+			require.NoError(t, err)
+			defer body.Close()
+		})
+	}
 }
 
 func TestSynthesizeStream_AuthHeaderPresent(t *testing.T) {
@@ -567,6 +577,141 @@ func TestSynthesizeStream_NonSuccessTruncatesBody(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 	assert.Contains(t, err.Error(), "...")
+}
+
+// closeRecorder is a response body that records whether it was read or closed.
+type closeRecorder struct {
+	io.Reader
+	read   bool
+	closed bool
+}
+
+func (c *closeRecorder) Read(p []byte) (int, error) {
+	c.read = true
+	return c.Reader.Read(p)
+}
+
+func (c *closeRecorder) Close() error {
+	c.closed = true
+	return nil
+}
+
+// roundTripFunc adapts a function to http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// captureLog routes the default slog logger into a buffer for the duration of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+func TestSynthesizeStream_RejectsEventStream(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{"plain", "text/event-stream"},
+		{"mixed case", "Text/Event-Stream"},
+		{"with charset", "text/event-stream; charset=utf-8"},
+		{"mixed case with charset", "TEXT/event-STREAM; charset=UTF-8"},
+		{"surrounding whitespace", "  text/event-stream  "},
+		{"malformed parameter", "text/event-stream; charset"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs := captureLog(t)
+			rec := &closeRecorder{Reader: strings.NewReader("data: {\"audio\":\"AAAA\"}\n\n")}
+			httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{tt.contentType}},
+					Body:       rec,
+					Request:    r,
+				}, nil
+			})}
+
+			client := NewClient("http://tts.invalid", "", httpClient)
+			body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+				Model: "tts-1",
+				Voice: "alloy",
+				Input: "Hello",
+			})
+			assert.Nil(t, body)
+			require.Error(t, err)
+			assert.Equal(t, "tts: endpoint returned an event stream instead of raw PCM (Content-Type: "+tt.contentType+")", err.Error())
+			assert.True(t, rec.closed, "response body must be closed")
+			assert.False(t, rec.read, "response body must not be read")
+
+			var entry map[string]any
+			require.NoError(t, json.Unmarshal(logs.Bytes(), &entry))
+			assert.Equal(t, "ERROR", entry["level"])
+			assert.Equal(t, "tts: TTS endpoint returned an event stream instead of raw PCM", entry["msg"])
+			assert.Equal(t, float64(http.StatusOK), entry["status_code"])
+			assert.Equal(t, tt.contentType, entry["content_type"])
+			assert.NotContains(t, entry, "response_body")
+		})
+	}
+}
+
+func TestSynthesizeStream_AcceptsOtherContentTypes(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType []string // nil sends no Content-Type at all
+	}{
+		{"audio/pcm", []string{"audio/pcm"}},
+		{"application/octet-stream", []string{"application/octet-stream"}},
+		{"no content type", nil},
+		{"unparseable media type", []string{"/"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				// A nil entry suppresses the server's content sniffing.
+				w.Header()["Content-Type"] = tt.contentType
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("pcm-data"))
+			}))
+			defer srv.Close()
+
+			client := NewClient(srv.URL, "", nil)
+			body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+				Model: "tts-1",
+				Voice: "alloy",
+				Input: "Hello",
+			})
+			require.NoError(t, err)
+			defer body.Close()
+
+			data, err := io.ReadAll(body)
+			require.NoError(t, err)
+			assert.Equal(t, []byte("pcm-data"), data)
+		})
+	}
+}
+
+func TestSynthesizeStream_NonSuccessEventStreamReportsAPIError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("overloaded"))
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL, "", nil)
+	body, err := client.SynthesizeStream(context.Background(), &StreamSynthesizeRequest{
+		Model: "tts-1",
+		Voice: "alloy",
+		Input: "Hello",
+	})
+	assert.Nil(t, body)
+	require.Error(t, err)
+	assert.Equal(t, "tts: API error 503: overloaded", err.Error())
 }
 
 func TestSynthesizeStream_IncrementalRead(t *testing.T) {
