@@ -5,7 +5,7 @@
 Bring back a web UI for trying voices, as a **Playground** page that is also where aliases are created and edited — both are the same flow of trying endpoints, models, voices, speed and instructions until the output sounds right. A new stateless `POST /api/v1/synthesize` returns the audio as WAV through the same segment-opening path the Wyoming proxy uses, so a streaming endpoint sounds in the playground exactly as it does in Home Assistant. The playground keeps an in-memory history of takes with latency and format details, renders each take as an interactive waveform, and downloads it as WAV or MP3. The separate Aliases page is merged into the Voices page, whose rows open the playground, and `POST /api/v1/aliases/{id}/test` is removed.
 
 **Spec:** [frontend](../specs/frontend/), [http-api](../specs/http-api/), [tts-synthesis](../specs/tts-synthesis/)
-**Status:** in-progress
+**Status:** complete
 **Depends On:** 0005, 0007
 
 ## Motivation
@@ -60,7 +60,7 @@ Each `GET /api/v1/voices` entry MUST include `endpoint_id`, so a canonical voice
 
 ### R4: Playground page
 
-The frontend MUST serve a Playground at `/playground` (the default route; `/` redirects there) and `/playground/:aliasId` (alias mode). The [frontend spec — Playground Page](../specs/frontend/index.md#playground-page) owns its layout and behaviour. In summary:
+The frontend MUST serve a Playground at `/playground` (the default route; `/` redirects there) and `/playground/:aliasId` (alias mode). The [frontend spec — Playground Page](../specs/frontend/index.md#playground-page-playground) owns its layout and behaviour. In summary:
 
 - A settings panel (endpoint, model, free-text voice with the endpoint's enabled voices as suggestions, speed, instructions), a text area limited to 4096 characters, and Generate/Cancel.
 - Each generation becomes a **take**: kept in memory (at most 20, oldest evicted) across in-app navigation, listed newest first with its parameters, latency and duration, and selectable into the main player for A/B comparison.
@@ -82,7 +82,7 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
 ### Approach
 
 - **Backend.** `tts.OpenEndpointSegment` is extracted from `Proxy.openSegment`, which becomes a one-line delegate, and `tts.WAVHeader` encodes a PCM header. A new `Server.Synthesize` handler in `internal/api/synthesize.go` validates, merges parameters with `voice.MergeParams`, opens the segment, reads the PCM into memory, trims it to whole frames, and writes the rebuilt WAV. `statusWriter` gains `Unwrap` so `http.NewResponseController` can extend the write deadline through the request logger.
-- **Frontend.** Pure modules `lib/wav.ts` (parse), `lib/peaks.ts` (peak/RMS buckets), `lib/mp3.ts` (lazy-loaded `@breezystack/lamejs`), `lib/download.ts` and `lib/takes.ts` (module-level take store); a `Waveform` SVG component; a `PlaygroundPage` with a `PlaygroundSettings` panel; and a rewritten `VoicesPage`.
+- **Frontend.** Pure modules `lib/wav.ts` (parse), `lib/peaks.ts` (peak/RMS buckets), `lib/mp3.ts` (lazy-loaded `@breezystack/lamejs`), `lib/download.ts` and `lib/takes.ts` (module-level take store); a `Waveform` SVG component; `TakePlayer` and `TakeList` for the selected take and the history; a `PlaygroundPage` with a `PlaygroundSettings` panel; and a rewritten `VoicesPage`.
 
 ### Decisions
 
@@ -131,8 +131,8 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
   - [x] Navigation: Playground, Voices, Endpoints, Settings
   - [x] Remove the Aliases page and alias form
 - [x] Remove `POST /api/v1/aliases/{id}/test`
-- [ ] Update the [frontend](../specs/frontend/), [http-api](../specs/http-api/) and [tts-synthesis](../specs/tts-synthesis/) specs and [meadowlark.md](../meadowlark.md), with changelog rows
-- [ ] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match
+- [x] Update the [frontend](../specs/frontend/), [http-api](../specs/http-api/) and [tts-synthesis](../specs/tts-synthesis/) specs and [meadowlark.md](../meadowlark.md), with changelog rows
+- [x] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match
 
 ## Open Questions
 

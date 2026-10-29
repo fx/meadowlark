@@ -102,5 +102,5 @@ changes:
     path: changes/0009-voice-playground.md
     description: Playground page with a stateless WAV synthesize endpoint, waveform player, take history and WAV/MP3 downloads; aliases are created and edited there and merged into the Voices page
     spec: frontend
-    status: in-progress
+    status: complete
     depends_on: ["0005", "0007"]

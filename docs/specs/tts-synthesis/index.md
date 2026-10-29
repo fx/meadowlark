@@ -222,6 +222,14 @@ type WAVReader struct {
    - Other chunks (`LIST`, `JUNK`, etc.) → skip with byte-alignment padding (odd sizes padded to even).
 3. After `ReadFormat()`, `Read()` returns raw PCM data with no header bytes.
 
+### WAVHeader
+
+```go
+func WAVHeader(f AudioFormat, dataLen uint32) []byte
+```
+
+Returns the canonical 44-byte header of a PCM (format 1) WAV file in format `f` whose data chunk holds `dataLen` bytes: block align `Width × Channels`, byte rate `Rate × block align`, RIFF size `36 + dataLen`. `POST /api/v1/synthesize` writes it in front of the PCM it buffered, replacing whatever header (or none) the upstream sent. A header it writes round-trips through `WAVReader`.
+
 ### Requirements
 
 - `ReadFormat()` MUST be called before `Read()`. Calling `Read()` first MUST return an error.
@@ -280,8 +288,10 @@ The pipeline is split into four independently callable stages, so a segmented st
 |---|---|---|---|
 | **Input parsing** | 1 — `voice.ParseInput` over the complete message text | `voice.ParseInput` | No |
 | **Resolution** | 2–6 — takes the already-parsed overrides | `resolveSynthesis` | No |
-| **Open** | 7 — issue the upstream request and determine the audio format | `openSegment` | No |
+| **Open** | 7 — issue the upstream request and determine the audio format | `openSegment` → `OpenEndpointSegment` | No |
 | **Emission** | 8 — `AudioStart`, `AudioChunk`+, `AudioStop` | `emitSegment` | Yes |
+
+`openSegment` is a one-line delegate to the exported `OpenEndpointSegment(ctx, client, ep, params, text)`, which holds step 7 and needs no proxy: it takes the endpoint, a client bound to it, and the merged parameters (`params.Input` is ignored; `text` is what is sent). The HTTP API's stateless `POST /api/v1/synthesize` calls it directly, so the playground opens an endpoint exactly as Home Assistant's requests do — the same streaming/buffered branch, request fields, sample-rate default, and error messages — and inherits any change to them.
 
 Two of those boundaries are load-bearing rather than cosmetic. **Input parsing is separate from resolution** because a segmented session must run it over the whole message or not at all, never over one segment. **Open is separate from emission** because a segment's audio format must be known and accepted before its `AudioStart` is written. Both are explained under [Segmented Streaming Synthesis](#segmented-streaming-synthesis).
 
@@ -464,8 +474,8 @@ vLLM-Omni's streaming mode accepts only speed `1.0`. The streaming request carri
 |------|---------|
 | `internal/tts/tts.go` | Package declaration |
 | `internal/tts/client.go` | OpenAI-compatible HTTP client (buffered + streaming) |
-| `internal/tts/proxy.go` | Synthesis proxy orchestration: resolution and per-segment open/emission |
-| `internal/tts/wav.go` | WAV header parser and PCM reader (buffered mode only) |
+| `internal/tts/proxy.go` | Synthesis proxy orchestration: resolution and per-segment open/emission; `OpenEndpointSegment` |
+| `internal/tts/wav.go` | WAV header parser and PCM reader (buffered mode only); `WAVHeader` encoder |
 | `internal/tts/stream_session.go` | Segmented streaming session: buffering, ordered pipeline, terminators |
 | `internal/segment/segmenter.go` | Pure text segmenter (no I/O) |
 
@@ -479,3 +489,4 @@ vLLM-Omni's streaming mode accepts only speed `1.0`. The streaming request carri
 | 2026-08-20 | Segmented streaming synthesis ships: `internal/segment` and `tts.StreamSession` land, and `doSynthesize` is re-expressed as the four-stage parse/resolve/open/emit pipeline they share | [0006](../../changes/0006-wyoming-synthesize-streaming.md) |
 | 2026-10-22 | Specify `stream_format: "audio"` on streaming requests and the `text/event-stream` guard (planned); record the vLLM-Omni streaming speed limitation | [0007](../../changes/0007-vllm-omni-streaming-compat.md) |
 | 2026-10-22 | `stream_format: "audio"` and the `text/event-stream` guard ship; drop their "planned" markers | [0007](../../changes/0007-vllm-omni-streaming-compat.md) |
+| 2026-10-29 | Export the Open stage as `OpenEndpointSegment` (`Proxy.openSegment` delegates) so `POST /api/v1/synthesize` shares it; add the `WAVHeader` encoder | [0009](../../changes/0009-voice-playground.md) |
