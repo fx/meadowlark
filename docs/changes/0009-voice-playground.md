@@ -119,10 +119,10 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
   - [x] `internal/tts/proxy.go`: extract `OpenEndpointSegment`; `Proxy.openSegment` delegates to it
   - [x] `internal/tts/wav.go`: add `WAVHeader`
   - [x] Test: `WAVHeader` round-trips through `NewWAVReader`; `OpenEndpointSegment` streaming (configured and default rate) and buffered paths
-- [ ] Add the stateless synthesize endpoint
-  - [ ] `internal/api/synthesize.go`: validation, parameter merge, open, buffer, trim, rebuilt WAV, timeouts
-  - [ ] `internal/api/middleware.go`: `statusWriter.Unwrap`
-  - [ ] Test: buffered and streaming success, header rebuild, every validation and error case, endpoint defaults
+- [x] Add the stateless synthesize endpoint
+  - [x] `internal/api/synthesize.go`: validation, parameter merge, open, buffer, trim, rebuilt WAV, timeouts
+  - [x] `internal/api/middleware.go`: `statusWriter.Unwrap`
+  - [x] Test: buffered and streaming success, header rebuild, every validation and error case, endpoint defaults
 - [ ] Include `endpoint_id` in voice list entries
 - [ ] Add frontend audio helpers: WAV parsing, peaks, MP3 encoding, downloads, take store, `api.synthesize`
 - [ ] Add the waveform player component

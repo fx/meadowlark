@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -99,4 +100,26 @@ func TestJSONContentType(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+}
+
+func TestStatusWriter_Unwrap(t *testing.T) {
+	inner := httptest.NewRecorder()
+	sw := &statusWriter{ResponseWriter: inner, code: http.StatusOK}
+	assert.Same(t, inner, sw.Unwrap())
+}
+
+func TestRequestLogger_ResponseControllerReachesConnection(t *testing.T) {
+	// Through a real server, SetWriteDeadline only succeeds if the request
+	// logger's writer unwraps to the connection's writer.
+	var deadlineErr error
+	srv := httptest.NewServer(requestLogger(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		deadlineErr = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(time.Minute))
+		w.WriteHeader(http.StatusNoContent)
+	})))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.NoError(t, deadlineErr)
 }
