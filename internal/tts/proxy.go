@@ -174,8 +174,7 @@ func (p *Proxy) resolveSynthesis(ctx context.Context, voiceName string, parsed v
 }
 
 // openSegment issues the upstream request for one segment of text and
-// determines its audio format — from the endpoint's configured sample rate in
-// streaming mode, from the WAV header in buffered mode.
+// determines its audio format. It is OpenEndpointSegment bound to a plan.
 //
 // It writes nothing. That is the property R8 of change 0006 depends on: Home
 // Assistant honours only the first audio-start of a stream, so a segment whose
@@ -186,20 +185,31 @@ func (p *Proxy) resolveSynthesis(ctx context.Context, voiceName string, parsed v
 //
 // On success the caller owns the returned segment and MUST Close it.
 func (p *Proxy) openSegment(ctx context.Context, plan *synthesisPlan, text string) (*OpenSegment, error) {
-	ep := plan.Endpoint
+	return OpenEndpointSegment(ctx, plan.Client, plan.Endpoint, plan.Params, text)
+}
 
+// OpenEndpointSegment issues the upstream request for text against ep using
+// the merged request parameters, and determines the response's audio format —
+// from the endpoint's configured sample rate in streaming mode, from the WAV
+// header in buffered mode. params.Input is ignored; text is what is sent.
+//
+// It reads no PCM and writes nothing. It is shared by the Wyoming proxy and the
+// HTTP synthesize handler, so both hear an endpoint exactly the same way.
+//
+// On success the caller owns the returned segment and MUST Close it.
+func OpenEndpointSegment(ctx context.Context, client *Client, ep *model.Endpoint, params voice.ParsedInput, text string) (*OpenSegment, error) {
 	if ep.StreamingEnabled {
 		// Streaming mode: request raw PCM, no WAV header.
 		streamReq := &StreamSynthesizeRequest{
-			Model:          plan.Params.Model,
-			Voice:          plan.Params.Voice,
+			Model:          params.Model,
+			Voice:          params.Voice,
 			Input:          text,
 			ResponseFormat: "pcm",
-			Speed:          plan.Params.Speed,
-			Instructions:   plan.Params.Instructions,
+			Speed:          params.Speed,
+			Instructions:   params.Instructions,
 			Stream:         true,
 		}
-		body, streamErr := plan.Client.SynthesizeStream(ctx, streamReq)
+		body, streamErr := client.SynthesizeStream(ctx, streamReq)
 		if streamErr != nil {
 			return nil, fmt.Errorf("tts api call (streaming): %w", streamErr)
 		}
@@ -221,14 +231,14 @@ func (p *Proxy) openSegment(ctx context.Context, plan *synthesisPlan, text strin
 	}
 
 	req := &SynthesizeRequest{
-		Model:          plan.Params.Model,
-		Voice:          plan.Params.Voice,
+		Model:          params.Model,
+		Voice:          params.Voice,
 		Input:          text,
 		ResponseFormat: "wav",
-		Speed:          plan.Params.Speed,
-		Instructions:   plan.Params.Instructions,
+		Speed:          params.Speed,
+		Instructions:   params.Instructions,
 	}
-	body, synthErr := plan.Client.Synthesize(ctx, req)
+	body, synthErr := client.Synthesize(ctx, req)
 	if synthErr != nil {
 		return nil, fmt.Errorf("tts api call: %w", synthErr)
 	}

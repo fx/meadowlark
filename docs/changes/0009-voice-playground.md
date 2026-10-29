@@ -115,10 +115,10 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
 
 ## Tasks
 
-- [ ] Share endpoint segment opening and add a WAV header encoder
-  - [ ] `internal/tts/proxy.go`: extract `OpenEndpointSegment`; `Proxy.openSegment` delegates to it
-  - [ ] `internal/tts/wav.go`: add `WAVHeader`
-  - [ ] Test: `WAVHeader` round-trips through `NewWAVReader`; `OpenEndpointSegment` streaming (configured and default rate) and buffered paths
+- [x] Share endpoint segment opening and add a WAV header encoder
+  - [x] `internal/tts/proxy.go`: extract `OpenEndpointSegment`; `Proxy.openSegment` delegates to it
+  - [x] `internal/tts/wav.go`: add `WAVHeader`
+  - [x] Test: `WAVHeader` round-trips through `NewWAVReader`; `OpenEndpointSegment` streaming (configured and default rate) and buffered paths
 - [ ] Add the stateless synthesize endpoint
   - [ ] `internal/api/synthesize.go`: validation, parameter merge, open, buffer, trim, rebuilt WAV, timeouts
   - [ ] `internal/api/middleware.go`: `statusWriter.Unwrap`
