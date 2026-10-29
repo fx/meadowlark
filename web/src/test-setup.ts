@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom'
-import { afterEach, beforeAll } from 'vitest'
+import { afterEach, beforeAll, beforeEach, vi } from 'vitest'
 
 // Mock ResizeObserver for Radix UI components (Select, Switch use-size)
 globalThis.ResizeObserver = class ResizeObserver {
@@ -46,6 +46,20 @@ beforeAll(() => {
     }
   }
   window.addEventListener('unhandledrejection', handler)
+})
+
+// jsdom has no object URLs, media playback, or animation frames. Fresh mocks
+// per test keep call history from leaking between tests.
+let objectUrlCounter = 0
+beforeEach(() => {
+  URL.createObjectURL = vi.fn(() => `blob:mock/${++objectUrlCounter}`)
+  URL.revokeObjectURL = vi.fn()
+  HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve())
+  HTMLMediaElement.prototype.pause = vi.fn()
+  globalThis.requestAnimationFrame = vi.fn((cb: FrameRequestCallback) =>
+    Number(setTimeout(() => cb(performance.now()), 16)),
+  )
+  globalThis.cancelAnimationFrame = vi.fn((id: number) => clearTimeout(id))
 })
 
 afterEach(() => {

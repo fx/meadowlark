@@ -98,6 +98,7 @@ export interface ServerStatus {
 
 export interface ResolvedVoice {
   name: string
+  endpoint_id: string
   endpoint: string
   model: string
   voice: string
@@ -108,6 +109,15 @@ export interface TestResult {
   ok: boolean
   error?: string
   latency_ms?: number
+}
+
+export interface SynthesizeRequest {
+  endpoint_id: string
+  model: string
+  voice: string
+  text: string
+  speed?: number
+  instructions?: string
 }
 
 export interface ProbeModel {
@@ -197,6 +207,24 @@ function del<T = void>(url: string): Promise<T> {
   return request<T>(url, { method: 'DELETE' })
 }
 
+/** POST /api/v1/synthesize answers with WAV bytes on success and a JSON error otherwise. */
+async function synthesize(data: SynthesizeRequest, signal?: AbortSignal): Promise<ArrayBuffer> {
+  const res = await fetch('/api/v1/synthesize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+    signal,
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => undefined)) as ApiError | undefined
+    if (body?.error) {
+      throw new ApiRequestError(res.status, body.error.code, body.error.message)
+    }
+    throw new ApiRequestError(res.status, 'http_error', `HTTP ${res.status}`)
+  }
+  return res.arrayBuffer()
+}
+
 export const api = {
   endpoints: {
     list: () => get<Endpoint[]>('/api/v1/endpoints'),
@@ -224,6 +252,7 @@ export const api = {
     delete: (id: string) => del(`/api/v1/aliases/${id}`),
     test: (id: string) => post<TestResult>(`/api/v1/aliases/${id}/test`),
   },
+  synthesize,
   system: {
     status: () => get<ServerStatus>('/api/v1/status'),
     voices: () => get<ResolvedVoice[]>('/api/v1/voices'),
