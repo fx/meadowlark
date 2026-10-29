@@ -209,6 +209,19 @@ describe('VoicesPage', () => {
     expect(within(rowOf('Zed')).getByText('Unknown')).toBeInTheDocument()
   })
 
+  it.each(['/api/v1/aliases', '/api/v1/voices', '/api/v1/endpoints'])(
+    'treats a null %s list as empty',
+    async (url) => {
+      const real = fetchMock.getMockImplementation() as (url: string) => Promise<Response>
+      fetchMock.mockImplementation((u: string) => (u === url ? jsonResponse(null) : real(u)))
+      renderPage()
+      await waitFor(() => expect(screen.queryByText('Loading voices...')).not.toBeInTheDocument())
+      if (url !== '/api/v1/aliases') expect(screen.getByText('Butler')).toBeInTheDocument()
+      if (url !== '/api/v1/voices')
+        expect(screen.getByText('clone:me (Local, kokoro)')).toBeInTheDocument()
+    },
+  )
+
   it.each(['/api/v1/aliases', '/api/v1/voices'])('shows an error when %s fails', async (url) => {
     failUrl = url
     renderPage()

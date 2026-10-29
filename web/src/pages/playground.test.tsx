@@ -183,6 +183,12 @@ describe('PlaygroundPage — blank mode', () => {
     expect(screen.getByRole('link', { name: 'Add one' })).toHaveAttribute('href', '/endpoints')
   })
 
+  it('asks for an endpoint when the endpoint list is null', async () => {
+    overrides.push((url) => (url === '/api/v1/endpoints' ? jsonResponse(null) : undefined))
+    renderAt('/playground')
+    expect(await screen.findByText(/No endpoints configured/)).toBeInTheDocument()
+  })
+
   it('shows an endpoint load error', async () => {
     overrides.push((url) =>
       url === '/api/v1/endpoints' ? errorResponse(500, 'internal_error', 'db down') : undefined,

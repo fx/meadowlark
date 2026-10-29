@@ -272,6 +272,19 @@ describe('api.system', () => {
   })
 })
 
+describe('list responses', () => {
+  it.each([
+    ['endpoints.list', () => api.endpoints.list()],
+    ['endpoints.voices.list', () => api.endpoints.voices.list('ep-1')],
+    ['endpoints.voices.refresh', () => api.endpoints.voices.refresh('ep-1')],
+    ['aliases.list', () => api.aliases.list()],
+    ['system.voices', () => api.system.voices()],
+  ])('%s reads a null body as an empty list', async (_, call) => {
+    mockFetch.mockReturnValueOnce(jsonResponse(null))
+    expect(await call()).toEqual([])
+  })
+})
+
 describe('error handling', () => {
   it('throws ApiRequestError on HTTP error', async () => {
     mockFetch.mockReturnValueOnce(errorResponse(404, 'not_found', 'endpoint not found'))

@@ -201,6 +201,11 @@ function del<T = void>(url: string): Promise<T> {
   return request<T>(url, { method: 'DELETE' })
 }
 
+/** A JSON list response; a null body reads as an empty list. */
+async function orEmpty<T>(response: Promise<T[] | null>): Promise<T[]> {
+  return (await response) ?? []
+}
+
 /** POST /api/v1/synthesize answers with WAV bytes on success and a JSON error otherwise. */
 async function synthesize(data: SynthesizeRequest, signal?: AbortSignal): Promise<ArrayBuffer> {
   const res = await fetch('/api/v1/synthesize', {
@@ -221,7 +226,7 @@ async function synthesize(data: SynthesizeRequest, signal?: AbortSignal): Promis
 
 export const api = {
   endpoints: {
-    list: () => get<Endpoint[]>('/api/v1/endpoints'),
+    list: () => orEmpty(get<Endpoint[] | null>('/api/v1/endpoints')),
     get: (id: string) => get<Endpoint>(`/api/v1/endpoints/${id}`),
     create: (data: CreateEndpoint) => post<Endpoint>('/api/v1/endpoints', data),
     update: (id: string, data: UpdateEndpoint) => put<Endpoint>(`/api/v1/endpoints/${id}`, data),
@@ -230,8 +235,9 @@ export const api = {
       post<ProbeResult>('/api/v1/endpoints/probe', { url, api_key: apiKey }),
     voices: {
       list: (id: string, signal?: AbortSignal) =>
-        get<EndpointVoice[]>(`/api/v1/endpoints/${id}/voices`, { signal }),
-      refresh: (id: string) => post<EndpointVoice[]>(`/api/v1/endpoints/${id}/voices/refresh`),
+        orEmpty(get<EndpointVoice[] | null>(`/api/v1/endpoints/${id}/voices`, { signal })),
+      refresh: (id: string) =>
+        orEmpty(post<EndpointVoice[] | null>(`/api/v1/endpoints/${id}/voices/refresh`)),
       setEnabled: (id: string, voiceId: string, enabled: boolean) =>
         patch<EndpointVoice>(`/api/v1/endpoints/${id}/voices/${encodeURIComponent(voiceId)}`, {
           enabled,
@@ -239,7 +245,7 @@ export const api = {
     },
   },
   aliases: {
-    list: () => get<VoiceAlias[]>('/api/v1/aliases'),
+    list: () => orEmpty(get<VoiceAlias[] | null>('/api/v1/aliases')),
     get: (id: string) => get<VoiceAlias>(`/api/v1/aliases/${id}`),
     create: (data: CreateVoiceAlias) => post<VoiceAlias>('/api/v1/aliases', data),
     update: (id: string, data: UpdateVoiceAlias) => put<VoiceAlias>(`/api/v1/aliases/${id}`, data),
@@ -248,6 +254,6 @@ export const api = {
   synthesize,
   system: {
     status: () => get<ServerStatus>('/api/v1/status'),
-    voices: () => get<ResolvedVoice[]>('/api/v1/voices'),
+    voices: () => orEmpty(get<ResolvedVoice[] | null>('/api/v1/voices')),
   },
 }

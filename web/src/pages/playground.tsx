@@ -20,7 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { invalidateCache, useFetch } from '@/hooks/use-fetch'
+import { invalidateCache, useFetch, useFetchList } from '@/hooks/use-fetch'
 import { useMutation } from '@/hooks/use-mutation'
 import {
   api,
@@ -137,7 +137,7 @@ function NoEndpoints() {
 }
 
 function BlankPlayground() {
-  const { data: endpoints, error } = useFetch<Endpoint[]>('/api/v1/endpoints')
+  const { data: endpoints, error } = useFetchList<Endpoint>('/api/v1/endpoints')
   const search = useSearch()
 
   if (error) return <div className="p-4 text-destructive">Error: {error.message}</div>
@@ -153,7 +153,7 @@ function BlankPlayground() {
 }
 
 function AliasPlayground({ aliasId }: { aliasId: string }) {
-  const endpoints = useFetch<Endpoint[]>('/api/v1/endpoints')
+  const endpoints = useFetchList<Endpoint>('/api/v1/endpoints')
   const alias = useFetch<VoiceAlias>(`/api/v1/aliases/${aliasId}`)
 
   if (alias.error) {

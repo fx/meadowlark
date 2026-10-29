@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { invalidateCache, useFetch } from '@/hooks/use-fetch'
+import { invalidateCache, useFetchList } from '@/hooks/use-fetch'
 import { useMutation } from '@/hooks/use-mutation'
 import type { Endpoint, ResolvedVoice, UpdateVoiceAlias, VoiceAlias } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -45,9 +45,9 @@ function tryHref(voice: ResolvedVoice): string {
  * to edit them; canonical voices open it preset to try them.
  */
 function VoicesPage() {
-  const aliases = useFetch<VoiceAlias[]>('/api/v1/aliases')
-  const voices = useFetch<ResolvedVoice[]>('/api/v1/voices')
-  const { data: endpoints } = useFetch<Endpoint[]>('/api/v1/endpoints')
+  const aliases = useFetchList<VoiceAlias>('/api/v1/aliases')
+  const voices = useFetchList<ResolvedVoice>('/api/v1/voices')
+  const { data: endpoints } = useFetchList<Endpoint>('/api/v1/endpoints')
   const [, setLocation] = useLocation()
   const [search, setSearch] = useState('')
 
