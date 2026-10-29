@@ -223,7 +223,7 @@ Stateless synthesis for the playground: nothing is resolved by voice name and no
 | `text` at most 4096 code points | `text must be at most 4096 characters` |
 | `speed`, if present, in 0.25–4.0 | `speed must be between 0.25 and 4.0` |
 
-**Endpoint:** a store error is `500 internal_error` (`failed to get endpoint`); a missing endpoint is `400 bad_request` (`endpoint not found`), as for a body-supplied id in `CreateAlias`. A disabled endpoint is still synthesized.
+**Endpoint:** a store error is `500 internal_error` (`failed to get endpoint`); a missing endpoint is `400 bad_request` (`endpoint not found`). A disabled endpoint is still synthesized.
 
 **Parameters:** `voice.MergeParams` merges the request over the endpoint's `default_speed` and `default_instructions`, so an omitted `speed` or `instructions` falls back to the endpoint default exactly as it does for an alias in the Wyoming path. The text is sent literally — `voice.ParseInput` is not applied.
 
