@@ -82,10 +82,12 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
 ### Approach
 
 - **Backend.** `tts.OpenEndpointSegment` is extracted from `Proxy.openSegment`, which becomes a one-line delegate, and `tts.WAVHeader` encodes a PCM header. A new `Server.Synthesize` handler in `internal/api/synthesize.go` validates, merges parameters with `voice.MergeParams`, opens the segment, reads the PCM into memory, trims it to whole frames, and writes the rebuilt WAV. `statusWriter` gains `Unwrap` so `http.NewResponseController` can extend the write deadline through the request logger.
-- **Frontend.** Pure modules `lib/wav.ts` (parse), `lib/peaks.ts` (peak/RMS buckets), `lib/mp3.ts` (lazy-loaded `@breezystack/lamejs`), `lib/download.ts` and `lib/takes.ts` (module-level take store); a `Waveform` SVG component; `TakePlayer` and `TakeList` for the selected take and the history; a `PlaygroundPage` with a `PlaygroundSettings` panel; and a rewritten `VoicesPage`.
+- **Frontend.** Pure modules `lib/wav.ts` (parse), `lib/peaks.ts` (peak/RMS buckets), `lib/mp3.ts` (lazy-loaded `@breezystack/lamejs`), `lib/download.ts` and `lib/takes.ts` (module-level take store); a `Waveform` SVG component; `TakePlayer` and `TakeList` for the selected take and the history; a `PlaygroundPage` with a `PlaygroundSettings` panel; and a rewritten `VoicesPage`. The Dialog, AlertDialog and Sheet overlays forward their refs, which the save and delete dialogs need to open at all under Preact.
 
 ### Decisions
 
+- **List responses are always arrays.** Every list handler encodes an empty result as `[]`, and the frontend's list fetches read a `null` body as an empty list.
+  - **Why**: With no aliases, `GET /api/v1/aliases` returned `null`, which the Voices page took for "still loading" and never rendered.
 - **The text is not parsed for overrides.**
   - **Why**: The playground has fields for every override; parsing would make a JSON-looking test sentence silently change the request.
 - **Disabled endpoints may be synthesized.** They are marked "(disabled)" in the endpoint select.

@@ -148,7 +148,7 @@ Read-only server status displayed in Cards:
 - **Hover:** a ghost line and a monospace tooltip with the time under the pointer, hidden when the pointer leaves.
 - **Labels:** current and total time as `m:ss.s`.
 - **Seeking:** a transparent native `<input type="range" aria-label="Seek">` overlays the SVG (zero-width thumb), with `aria-valuetext` such as `0:01.2 of 0:03.4`. Click and drag seek natively; Home and End jump to the ends; the arrow keys step by 5% of the duration (at least 100 ms); Space plays and pauses. A focus ring shows on the waveform while the input has keyboard focus.
-- **Playback:** a play/pause button and an unrendered `Audio` element on the take's object URL. `autoPlay` plays on mount.
+- **Playback:** a play/pause button and an unrendered `Audio` element on the take's object URL. `autoPlay` plays on mount. On unmount or a source change the element is paused, its `src` attribute removed and `load()` called, so the browser releases the old take's media resource.
 - **Compact:** bars only — no audio, seeking, or labels; `active` draws them in the played colour.
 
 ### Take store
@@ -178,6 +178,8 @@ function useFetch<T>(url: string, ttl?: number): {
 - 5-second TTL cache (configurable).
 - Request deduplication (multiple components = 1 in-flight request).
 - AbortController cleanup on unmount.
+
+`useFetchList<T>(url, ttl?)` is `useFetch<T[]>` for a list endpoint, and the list methods of `api` (`endpoints.list`, `endpoints.voices.list` and `.refresh`, `aliases.list`, `system.voices`) do the same: a `null` body reads as an empty list, so a page never mistakes an empty list for one still loading. Every list a page fetches goes through one of them.
 - `mutate()` invalidates cache and refetches.
 - `invalidateCache(prefix)` for bulk invalidation.
 - `clearCache()` exposed for testing.
@@ -281,6 +283,8 @@ No global state library. Uses:
 
 All components use CVA for variant definitions and `cn()` (clsx + tailwind-merge) for class merging.
 
+The Dialog, AlertDialog and Sheet overlays are `forwardRef` components. Radix's dialog portal wraps each child in `Presence`, which reads the child's computed style through a ref; Preact hands a ref on a plain function component the component instance, not its DOM node, so an overlay that does not forward its ref throws and the dialog never opens.
+
 ## Testing
 
 ### Coverage Requirements
@@ -302,11 +306,11 @@ Required mocks for Radix UI compatibility in jsdom:
 - `@floating-ui/react-dom`
 - `@radix-ui/react-focus-scope`
 - `@phosphor-icons/react`
-- `@radix-ui/react-presence`
 - `react-remove-scroll`
 - `ResizeObserver`, `matchMedia`, `scrollIntoView`, pointer capture APIs
-- `URL.createObjectURL` (returns `blob:mock/<n>`) and `URL.revokeObjectURL`, `HTMLMediaElement.prototype.play` (resolves) and `pause`, `requestAnimationFrame` and `cancelAnimationFrame` — fresh mocks per test
+- `URL.createObjectURL` (returns `blob:mock/<n>`) and `URL.revokeObjectURL`, `HTMLMediaElement.prototype.play` (resolves), `pause` and `load`, `requestAnimationFrame` and `cancelAnimationFrame` — fresh mocks per test
 - `@/components/ui/select` via `src/test-select-mock.tsx`, where a test drives a select through its `onValueChange`, since Radix Select does not open in jsdom
+- `@radix-ui/react-presence` runs for real, so a dialog portal child that drops its ref fails the tests as it fails in a browser
 - wouter runs for real (inlined, with its `use-sync-external-store` shim aliased to `preact/compat`); page tests route with `wouter/memory-location`
 
 ### Build Configuration
@@ -369,3 +373,4 @@ Build order: `bun run build` produces `web/dist/` → `go build` embeds it.
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
 | 2026-05-04 | Documented endpoint form section restructure (toggle lists for models/voices, default-model radio, Enabled out of the speed grid); fixed alias form voice selection to fetch `/remote-voices` instead of `/configured-models` | [0003-alias-form-voice-fix](../../changes/0003-alias-form-voice-fix.md), [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |
 | 2026-10-29 | Added the Playground page (default route; blank and alias modes, takes, waveform player, WAV/MP3 downloads) and merged aliases into the Voices page; removed the Aliases page and its form, whose `/remote-voices` description had drifted from the implementation | [0009](../../changes/0009-voice-playground.md) |
+| 2026-10-29 | Dialog, AlertDialog and Sheet overlays forward their refs, so dialogs open in a browser; `@radix-ui/react-presence` is no longer mocked; list fetches read a `null` body as an empty list (`useFetchList` and the `api` list methods); the waveform releases its media source on cleanup | [0009](../../changes/0009-voice-playground.md) |

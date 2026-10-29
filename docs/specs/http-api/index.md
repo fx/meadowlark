@@ -238,7 +238,9 @@ Stateless synthesis for the playground: nothing is resolved by voice name and no
 | 502 | `upstream_error` | No whole frame of PCM: `endpoint returned no audio` |
 | 502 | `upstream_error` | More than 64 MiB of PCM: `audio exceeds the 64 MiB limit` |
 
-Nothing is written before an error. Logs carry `endpoint_id`, `model`, `voice`, `text_len`, `bytes`, and `duration`, never the text.
+Nothing is written before an error.
+
+**Logging:** the handler never logs the request's `text` field. Its success log carries `endpoint_id`, `model`, `voice`, `text_len`, `bytes`, and `duration`; its synthesis-failure log carries `endpoint_id`, `model`, `voice`, and the error. Upstream error bodies are not the request text but MAY echo the input: the TTS client logs a non-2xx body truncated to 500 characters, as on the Wyoming path ([tts-synthesis spec](../tts-synthesis/)), and the same truncated body is part of the error that the failure log and the `502` message carry.
 
 ##### Timeouts
 
@@ -308,6 +310,8 @@ All API errors MUST use this envelope:
 - `respondError(w, status, code, message)` — writes error envelope.
 - `respondNoContent(w)` — writes 204 (used for DELETE).
 
+A list response MUST encode an empty result as `[]`, never `null`: every list handler replaces a nil slice before encoding, and `model.StringSlice` fields such as `models` and `languages` marshal a nil slice as `[]`.
+
 ## Voice List Rebuild
 
 After any endpoint or alias mutation (create, update, delete), the server calls `infoBuilder.Build(ctx)` to rebuild the Wyoming voice list cache. Errors are logged but not returned to the client.
@@ -352,3 +356,4 @@ The embedded `web/dist/` filesystem is mounted at `/`. The SPA fallback logic:
 | 2026-10-22 | Documented TestEndpoint's request and 404; specified its test-voice selection order (planned) | [0008](../../changes/0008-endpoint-test-real-voice.md) |
 | 2026-10-22 | TestEndpoint selects a real test voice (default voice, first enabled saved voice, first reported voice, then `"test"`); planned marker removed | [0008](../../changes/0008-endpoint-test-real-voice.md) |
 | 2026-10-29 | Added `POST /api/v1/synthesize` (stateless WAV synthesis through the proxy's segment opening, with a per-request write deadline) and `endpoint_id` on voice list entries; removed `POST /api/v1/aliases/{id}/test`; documented `statusWriter.Unwrap` and the `upstream_error` code | [0009](../../changes/0009-voice-playground.md) |
+| 2026-10-29 | List responses and `StringSlice` fields encode an empty list as `[]`, never `null` (`ListAliases` and `ListEndpointConfiguredModels` returned `null`); clarified that `Synthesize` never logs the request text, while upstream error bodies, which may echo it, are logged truncated by the TTS client | [0009](../../changes/0009-voice-playground.md) |
