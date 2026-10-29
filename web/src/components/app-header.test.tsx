@@ -30,10 +30,25 @@ describe('AppHeader', () => {
 
   it('renders all navigation buttons', () => {
     renderHeader()
-    expect(screen.getByRole('button', { name: 'Endpoints' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Voices' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Aliases' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    const labels = screen
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label'))
+      .filter((l) => ['Playground', 'Voices', 'Endpoints', 'Settings', 'Aliases'].includes(l ?? ''))
+    expect(labels).toEqual(['Playground', 'Voices', 'Endpoints', 'Settings'])
+  })
+
+  it('marks Playground active on an alias playground', () => {
+    renderHeader('/playground/abc')
+    expect(screen.getByRole('button', { name: 'Playground' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(screen.getByRole('button', { name: 'Voices' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('does not treat a shared prefix as a sub-path', () => {
+    renderHeader('/playgrounds')
+    expect(screen.getByRole('button', { name: 'Playground' })).not.toHaveAttribute('aria-current')
   })
 
   it('highlights the active route', () => {

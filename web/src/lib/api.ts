@@ -105,12 +105,6 @@ export interface ResolvedVoice {
   is_alias: boolean
 }
 
-export interface TestResult {
-  ok: boolean
-  error?: string
-  latency_ms?: number
-}
-
 export interface SynthesizeRequest {
   endpoint_id: string
   model: string
@@ -250,7 +244,6 @@ export const api = {
     create: (data: CreateVoiceAlias) => post<VoiceAlias>('/api/v1/aliases', data),
     update: (id: string, data: UpdateVoiceAlias) => put<VoiceAlias>(`/api/v1/aliases/${id}`, data),
     delete: (id: string) => del(`/api/v1/aliases/${id}`),
-    test: (id: string) => post<TestResult>(`/api/v1/aliases/${id}/test`),
   },
   synthesize,
   system: {

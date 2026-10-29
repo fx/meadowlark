@@ -1,4 +1,4 @@
-import { GearSix, List, PlugsConnected, SpeakerHigh, TagSimple } from '@phosphor-icons/react'
+import { GearSix, List, PlugsConnected, SpeakerHigh, Waveform } from '@phosphor-icons/react'
 import { useState } from 'preact/hooks'
 import { useLocation } from 'wouter'
 import { useTheme } from '@/components/theme-provider'
@@ -23,9 +23,9 @@ function AppMobileMenu() {
         </SheetHeader>
         <nav className="flex flex-col gap-2 px-4 pt-4">
           {[
-            { path: '/endpoints', label: 'Endpoints', icon: PlugsConnected },
+            { path: '/playground', label: 'Playground', icon: Waveform },
             { path: '/voices', label: 'Voices', icon: SpeakerHigh },
-            { path: '/aliases', label: 'Aliases', icon: TagSimple },
+            { path: '/endpoints', label: 'Endpoints', icon: PlugsConnected },
             { path: '/settings', label: 'Settings', icon: GearSix },
           ].map(({ path, label, icon: Icon }) => (
             <Button

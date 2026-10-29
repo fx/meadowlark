@@ -126,10 +126,10 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
 - [x] Include `endpoint_id` in voice list entries
 - [x] Add frontend audio helpers: WAV parsing, peaks, MP3 encoding, downloads, take store, `api.synthesize`
 - [x] Add the waveform player component
-- [ ] Add the playground page and merge aliases into the Voices page
-  - [ ] `/` → `/playground`, `/aliases` → `/voices`, `/playground/:aliasId`
-  - [ ] Navigation: Playground, Voices, Endpoints, Settings
-  - [ ] Remove the Aliases page and alias form
+- [x] Add the playground page and merge aliases into the Voices page
+  - [x] `/` → `/playground`, `/aliases` → `/voices`, `/playground/:aliasId`
+  - [x] Navigation: Playground, Voices, Endpoints, Settings
+  - [x] Remove the Aliases page and alias form
 - [ ] Remove `POST /api/v1/aliases/{id}/test`
 - [ ] Update the [frontend](../specs/frontend/), [http-api](../specs/http-api/) and [tts-synthesis](../specs/tts-synthesis/) specs and [meadowlark.md](../meadowlark.md), with changelog rows
 - [ ] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match

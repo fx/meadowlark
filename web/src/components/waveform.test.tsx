@@ -74,7 +74,7 @@ function renderPlayer(props: Partial<Parameters<typeof Waveform>[0]> = {}) {
 }
 
 const seekInput = () => screen.getByRole('slider', { name: 'Seek' }) as HTMLInputElement
-const clipWidth = (container: HTMLElement) =>
+const clipWidth = (container: ParentNode) =>
   Number(container.querySelector('[data-testid="played-clip"]')?.getAttribute('width'))
 
 describe('formatTime', () => {

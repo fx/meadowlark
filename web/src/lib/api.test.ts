@@ -241,18 +241,6 @@ describe('api.aliases', () => {
       method: 'DELETE',
     })
   })
-
-  it('test calls POST /api/v1/aliases/:id/test', async () => {
-    const testResult = { ok: true }
-    mockFetch.mockReturnValueOnce(jsonResponse(testResult))
-    const result = await api.aliases.test('va-1')
-    expect(result).toEqual(testResult)
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/aliases/va-1/test', {
-      method: 'POST',
-      headers: undefined,
-      body: undefined,
-    })
-  })
 })
 
 describe('api.system', () => {

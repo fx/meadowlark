@@ -1,7 +1,7 @@
 // In-memory history of playground takes. It lives at module level so it
 // survives navigating between pages and switching aliases; it does not survive
 // a reload.
-import { useEffect, useState } from 'preact/hooks'
+import { useLayoutEffect, useState } from 'preact/hooks'
 import type { Peaks } from '@/lib/peaks'
 
 export const MAX_TAKES = 20
@@ -117,7 +117,9 @@ export function resetTakes(): void {
 
 export function useTakes(): TakesState {
   const [snapshot, setSnapshot] = useState(state)
-  useEffect(() => {
+  // A layout effect subscribes in the same commit as the first render, so no
+  // update can land before anyone is listening.
+  useLayoutEffect(() => {
     // Catch up on anything that changed between render and subscribe.
     setSnapshot(state)
     return subscribeTakes(() => setSnapshot(state))
