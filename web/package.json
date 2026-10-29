@@ -20,6 +20,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@breezystack/lamejs": "1.2.7",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@phosphor-icons/react": "^2.1.10",
     "@preact/preset-vite": "^2.10.3",

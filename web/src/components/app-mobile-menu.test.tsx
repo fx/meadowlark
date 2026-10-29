@@ -58,10 +58,11 @@ describe('AppMobileMenu', () => {
     const user = userEvent.setup()
     renderMenu()
     await openMenu(user)
+    expect(screen.getByRole('button', { name: 'Playground' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Endpoints' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Voices' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Aliases' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Aliases' })).not.toBeInTheDocument()
   })
 
   it('does not render navigation links when closed', () => {

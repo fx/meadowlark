@@ -43,6 +43,19 @@
   --radius-md: 0;
   --radius-lg: 0;
   --radius-xl: 0;
+  --animate-waveform-grow: waveform-grow 450ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Waveform bars rise from the centre line when a take appears. */
+@keyframes waveform-grow {
+  from {
+    scale: 1 0;
+    opacity: 0.4;
+  }
+  to {
+    scale: 1 1;
+    opacity: 1;
+  }
 }
 
 :root {

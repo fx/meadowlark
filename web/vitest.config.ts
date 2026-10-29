@@ -16,15 +16,19 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     server: {
       deps: {
-        inline: [/@radix-ui/, /@floating-ui/, /react-remove-scroll/],
+        // wouter imports react; inlining routes it through the preact/compat alias.
+        inline: [/@radix-ui/, /@floating-ui/, /react-remove-scroll/, /wouter/],
       },
     },
     alias: {
       '@phosphor-icons/react': resolve(__dirname, './src/test-phosphor-mock.tsx'),
       'react-remove-scroll': resolve(__dirname, './src/test-remove-scroll-mock.tsx'),
-      '@radix-ui/react-presence': resolve(__dirname, './src/test-presence-mock.tsx'),
+      // @radix-ui/react-presence stays real: it reads computed style through a ref,
+      // which is what catches a dialog portal child that drops its ref.
       '@radix-ui/react-focus-scope': resolve(__dirname, './src/test-focus-scope-mock.tsx'),
       '@floating-ui/react-dom': resolve(__dirname, './src/test-floating-ui-mock.tsx'),
+      // wouter's shim is CommonJS and would load real React; preact/compat has the hook.
+      'use-sync-external-store/shim/index.js': 'preact/compat',
     },
     coverage: {
       provider: 'v8',

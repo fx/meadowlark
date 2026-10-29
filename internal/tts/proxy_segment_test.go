@@ -689,3 +689,69 @@ func TestProxy_EmitSegment_Errors(t *testing.T) {
 		})
 	}
 }
+
+// --- OpenEndpointSegment ---------------------------------------------------
+
+func TestOpenEndpointSegment(t *testing.T) {
+	pcm := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+
+	t.Run("streaming uses the configured sample rate", func(t *testing.T) {
+		var got map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+			_, _ = w.Write(pcm)
+		}))
+		defer srv.Close()
+
+		ep := &model.Endpoint{ID: "ep", BaseURL: srv.URL, StreamingEnabled: true, StreamSampleRate: 16000}
+		seg, err := OpenEndpointSegment(context.Background(), NewClient(srv.URL, "", srv.Client()), ep,
+			voice.ParsedInput{Model: "m", Voice: "v", Input: "ignored"}, "spoken")
+		require.NoError(t, err)
+		defer seg.Close()
+
+		assert.Equal(t, AudioFormat{Rate: 16000, Width: 2, Channels: 1}, *seg.Format())
+		data, err := io.ReadAll(seg)
+		require.NoError(t, err)
+		assert.Equal(t, pcm, data)
+		assert.Equal(t, "spoken", got["input"])
+		assert.Equal(t, true, got["stream"])
+		assert.Equal(t, "pcm", got["response_format"])
+	})
+
+	t.Run("streaming defaults to 24000 Hz", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(pcm)
+		}))
+		defer srv.Close()
+
+		ep := &model.Endpoint{ID: "ep", BaseURL: srv.URL, StreamingEnabled: true}
+		seg, err := OpenEndpointSegment(context.Background(), NewClient(srv.URL, "", srv.Client()), ep,
+			voice.ParsedInput{Model: "m", Voice: "v"}, "hi")
+		require.NoError(t, err)
+		defer seg.Close()
+		assert.Equal(t, 24000, seg.Format().Rate)
+	})
+
+	t.Run("buffered parses the WAV header", func(t *testing.T) {
+		var got map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+			_, _ = w.Write(buildTestWAV(22050, 2, 2, pcm))
+		}))
+		defer srv.Close()
+
+		ep := &model.Endpoint{ID: "ep", BaseURL: srv.URL}
+		seg, err := OpenEndpointSegment(context.Background(), NewClient(srv.URL, "", srv.Client()), ep,
+			voice.ParsedInput{Model: "m", Voice: "v", Speed: floatPtr(1.5), Instructions: strPtr("calm")}, "hi")
+		require.NoError(t, err)
+		defer seg.Close()
+
+		assert.Equal(t, AudioFormat{Rate: 22050, Width: 2, Channels: 2}, *seg.Format())
+		data, err := io.ReadAll(seg)
+		require.NoError(t, err)
+		assert.Equal(t, pcm, data)
+		assert.Equal(t, "wav", got["response_format"])
+		assert.Equal(t, 1.5, got["speed"])
+		assert.Equal(t, "calm", got["instructions"])
+	})
+}

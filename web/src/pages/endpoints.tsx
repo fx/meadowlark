@@ -16,13 +16,13 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { useFetch } from '@/hooks/use-fetch'
+import { useFetchList } from '@/hooks/use-fetch'
 import { useMutation } from '@/hooks/use-mutation'
 import type { CreateEndpoint, Endpoint, EndpointVoice, UpdateEndpoint } from '@/lib/api'
 import { api } from '@/lib/api'
 
 function EndpointsPage() {
-  const { data: endpoints, error, isLoading, mutate } = useFetch<Endpoint[]>('/api/v1/endpoints')
+  const { data: endpoints, error, isLoading, mutate } = useFetchList<Endpoint>('/api/v1/endpoints')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const createMutation = useMutation<CreateEndpoint, Endpoint>('/api/v1/endpoints', 'POST')

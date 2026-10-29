@@ -119,3 +119,27 @@ func (w *WAVReader) Read(p []byte) (int, error) {
 	}
 	return w.r.Read(p)
 }
+
+// wavHeaderSize is the size of the canonical PCM WAV header WAVHeader writes.
+const wavHeaderSize = 44
+
+// WAVHeader returns the canonical 44-byte header of a PCM (format 1) WAV file
+// in format f whose data chunk holds dataLen bytes.
+func WAVHeader(f AudioFormat, dataLen uint32) []byte {
+	blockAlign := f.Width * f.Channels
+	h := make([]byte, wavHeaderSize)
+	copy(h[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(h[4:8], wavHeaderSize-8+dataLen)
+	copy(h[8:12], "WAVE")
+	copy(h[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(h[16:20], 16)
+	binary.LittleEndian.PutUint16(h[20:22], 1)
+	binary.LittleEndian.PutUint16(h[22:24], uint16(f.Channels))
+	binary.LittleEndian.PutUint32(h[24:28], uint32(f.Rate))
+	binary.LittleEndian.PutUint32(h[28:32], uint32(f.Rate*blockAlign))
+	binary.LittleEndian.PutUint16(h[32:34], uint16(blockAlign))
+	binary.LittleEndian.PutUint16(h[34:36], uint16(f.Width*8))
+	copy(h[36:40], "data")
+	binary.LittleEndian.PutUint32(h[40:44], dataLen)
+	return h
+}

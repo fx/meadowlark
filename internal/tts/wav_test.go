@@ -327,3 +327,39 @@ func (r *oneByteReader) Read(p []byte) (int, error) {
 	r.pos++
 	return 1, nil
 }
+
+func TestWAVHeader_RoundTripsThroughWAVReader(t *testing.T) {
+	cases := []struct {
+		name string
+		f    AudioFormat
+	}{
+		{"24kHz 16-bit mono", AudioFormat{Rate: 24000, Width: 2, Channels: 1}},
+		{"44.1kHz 16-bit stereo", AudioFormat{Rate: 44100, Width: 2, Channels: 2}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pcm := make([]byte, 400*tc.f.Width*tc.f.Channels)
+			for i := range pcm {
+				pcm[i] = byte(i)
+			}
+			h := WAVHeader(tc.f, uint32(len(pcm)))
+			require.Len(t, h, 44)
+
+			assert.Equal(t, uint32(36+len(pcm)), binary.LittleEndian.Uint32(h[4:8]))
+			assert.Equal(t, uint16(1), binary.LittleEndian.Uint16(h[20:22]))
+			assert.Equal(t, uint32(tc.f.Rate*tc.f.Width*tc.f.Channels), binary.LittleEndian.Uint32(h[28:32]))
+			assert.Equal(t, uint16(tc.f.Width*tc.f.Channels), binary.LittleEndian.Uint16(h[32:34]))
+			assert.Equal(t, uint32(len(pcm)), binary.LittleEndian.Uint32(h[40:44]))
+			// Same bytes as the reference builder the reader tests use.
+			assert.Equal(t, buildWAV(tc.f.Rate, tc.f.Width*8, tc.f.Channels, pcm)[:44], h)
+
+			wr := NewWAVReader(bytes.NewReader(append(h, pcm...)))
+			got, err := wr.ReadFormat()
+			require.NoError(t, err)
+			assert.Equal(t, tc.f, *got)
+			data, err := io.ReadAll(wr)
+			require.NoError(t, err)
+			assert.Equal(t, pcm, data)
+		})
+	}
+}

@@ -1,4 +1,4 @@
-import { GearSix, PlugsConnected, SpeakerHigh, TagSimple } from '@phosphor-icons/react'
+import { GearSix, PlugsConnected, SpeakerHigh, Waveform } from '@phosphor-icons/react'
 import { useLocation } from 'wouter'
 import { AppMobileMenu } from '@/components/app-mobile-menu'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -6,11 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Menubar, MenubarMenu, MenubarTrigger } from '@/components/ui/menubar'
 
 const NAV_ITEMS = [
-  { path: '/endpoints', label: 'Endpoints', icon: PlugsConnected },
+  { path: '/playground', label: 'Playground', icon: Waveform },
   { path: '/voices', label: 'Voices', icon: SpeakerHigh },
-  { path: '/aliases', label: 'Aliases', icon: TagSimple },
+  { path: '/endpoints', label: 'Endpoints', icon: PlugsConnected },
   { path: '/settings', label: 'Settings', icon: GearSix },
 ] as const
+
+/** A nav item is active on its own path and on any path below it. */
+function isActive(location: string, path: string): boolean {
+  return location === path || location.startsWith(`${path}/`)
+}
 
 function AppHeader({ version }: { version?: string }) {
   const [location, setLocation] = useLocation()
@@ -25,10 +30,10 @@ function AppHeader({ version }: { version?: string }) {
           {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
             <Button
               key={path}
-              variant={location === path ? 'secondary' : 'ghost'}
+              variant={isActive(location, path) ? 'secondary' : 'ghost'}
               size="icon"
               aria-label={label}
-              aria-current={location === path ? 'page' : undefined}
+              aria-current={isActive(location, path) ? 'page' : undefined}
               onClick={() => setLocation(path)}
             >
               <Icon className="h-4 w-4" />

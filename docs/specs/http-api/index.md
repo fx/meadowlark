@@ -19,6 +19,8 @@ Meadowlark exposes a JSON REST API on a configurable HTTP port (default 8080) fo
 | IdleTimeout | 120 seconds |
 | Graceful shutdown | 10 seconds |
 
+`POST /api/v1/synthesize` extends its own write deadline past the 30-second `WriteTimeout` (see [Synthesize — Timeouts](#timeouts)).
+
 ### Dependencies
 
 The API server receives these dependencies at construction:
@@ -32,10 +34,10 @@ The API server receives these dependencies at construction:
 
 Applied to all routes in this order:
 
-1. **requestLogger** — Logs method, path, status code, and duration via `slog`. Uses a `statusWriter` wrapper to capture response status.
+1. **requestLogger** — Logs method, path, status code, and duration via `slog`. Uses a `statusWriter` wrapper to capture response status; `statusWriter` implements `Unwrap() http.ResponseWriter`, so `http.NewResponseController` reaches the connection through it.
 2. **recovery** — Catches panics, logs the error, returns HTTP 500 JSON error.
 3. **cors** — Permissive CORS (all origins). Allows GET, POST, PUT, DELETE, OPTIONS. Allows `Content-Type` and `Authorization` headers. Responds 204 to OPTIONS preflight.
-4. **jsonContentType** (API routes only) — Sets `Content-Type: application/json`.
+4. **jsonContentType** (API routes only) — Sets `Content-Type: application/json`. A handler that answers with something else (`Synthesize`) overrides it before writing the status.
 
 ## Routes
 
@@ -156,7 +158,6 @@ Accepts `{"url": "...", "api_key": "..."}` and discovers models/voices without s
 | GET | `/api/v1/aliases/{id}` | `GetAlias` | Get alias by ID |
 | PUT | `/api/v1/aliases/{id}` | `UpdateAlias` | Update alias |
 | DELETE | `/api/v1/aliases/{id}` | `DeleteAlias` | Delete alias |
-| POST | `/api/v1/aliases/{id}/test` | `TestAlias` | Synthesize test audio |
 
 #### Create Alias Request
 
@@ -183,9 +184,67 @@ Accepts `{"url": "...", "api_key": "..."}` and discovers models/voices without s
 - `languages`: defaults to `["en"]`.
 - `enabled`: defaults to `true`.
 
-#### TestAlias
+There is no alias test route: the playground synthesizes through [`POST /api/v1/synthesize`](#synthesize) instead.
 
-Accepts optional `{"text": "..."}`. Defaults to `"Hello, this is a test."`. Synthesizes audio using the alias's configuration and returns a test result.
+### Synthesis
+
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| POST | `/api/v1/synthesize` | `Synthesize` | Synthesize text with explicit parameters; returns WAV |
+
+#### Synthesize
+
+Stateless synthesis for the playground: nothing is resolved by voice name and nothing is stored.
+
+**Request** (body capped at 64 KiB):
+
+```json
+{
+  "endpoint_id": "uuid",
+  "model": "string",
+  "voice": "string",
+  "text": "string",
+  "speed": 1.0,
+  "instructions": "string"
+}
+```
+
+`speed` and `instructions` are optional.
+
+**Validation**, in order, each failing with `400 bad_request`:
+
+| Rule | Message |
+|------|---------|
+| Body decodes as JSON within 64 KiB | `invalid JSON body` |
+| `endpoint_id` non-empty after trimming | `endpoint_id is required` |
+| `model` non-empty after trimming | `model is required` |
+| `voice` non-empty after trimming | `voice is required` |
+| `text` non-empty after trimming | `text is required` |
+| `text` at most 4096 code points | `text must be at most 4096 characters` |
+| `speed`, if present, in 0.25–4.0 | `speed must be between 0.25 and 4.0` |
+
+**Endpoint:** a store error is `500 internal_error` (`failed to get endpoint`); a missing endpoint is `400 bad_request` (`endpoint not found`). A disabled endpoint is still synthesized.
+
+**Parameters:** `voice.MergeParams` merges the request over the endpoint's `default_speed` and `default_instructions`, so an omitted `speed` or `instructions` falls back to the endpoint default exactly as it does for an alias in the Wyoming path. The text is sent literally — `voice.ParseInput` is not applied.
+
+**Upstream:** the request is opened with `tts.OpenEndpointSegment`, the function the Wyoming proxy uses ([tts-synthesis spec](../tts-synthesis/)): a streaming endpoint streams raw PCM at its `stream_sample_rate` (default 24000 Hz, 16-bit mono), a buffered endpoint returns WAV. The handler reads all PCM into memory (at most 64 MiB) and trims it to whole frames.
+
+**Responses:**
+
+| Status | Code | When |
+|--------|------|------|
+| 200 | — | Success. `Content-Type: audio/wav`, `Content-Length`, `Cache-Control: no-store`. The body is a canonical 44-byte PCM WAV header with correct RIFF and data sizes, then the PCM; the upstream's own header and extra chunks are not passed through. |
+| 502 | `upstream_error` | Any open or read failure — upstream non-2xx (its body included), non-WAV body, event stream, unsupported `default_response_format`, unparseable WAV header — as `synthesis failed: <error>` |
+| 502 | `upstream_error` | No whole frame of PCM: `endpoint returned no audio` |
+| 502 | `upstream_error` | More than 64 MiB of PCM: `audio exceeds the 64 MiB limit` |
+
+Nothing is written before an error.
+
+**Logging:** the handler never logs the request's `text` field. Its success log carries `endpoint_id`, `model`, `voice`, `text_len`, `bytes`, and `duration`; its synthesis-failure log carries `endpoint_id`, `model`, `voice`, and the error. Upstream error bodies are not the request text but MAY echo the input: the TTS client logs a non-2xx body truncated to 500 characters, as on the Wyoming path ([tts-synthesis spec](../tts-synthesis/)), and the same truncated body is part of the error that the failure log and the `502` message carry.
+
+##### Timeouts
+
+The upstream call runs under a 5-minute context. The handler extends the connection's write deadline to 5 minutes 10 seconds with `http.NewResponseController(w).SetWriteDeadline`, so a long text is not cut off by the server's 30-second `WriteTimeout`. A writer that does not support deadlines (e.g. `httptest.ResponseRecorder`) is logged at debug level and does not fail the request.
 
 ### System Routes
 
@@ -211,12 +270,12 @@ Accepts optional `{"text": "..."}`. Defaults to `"Hello, this is a test."`. Synt
 
 #### ListVoices
 
-Discovers voices from all enabled endpoints in parallel (5-second timeout per endpoint), falls back to model names if discovery fails, and appends enabled aliases. Returns:
+Discovers voices from all enabled endpoints in parallel (5-second timeout per endpoint), falls back to model names if discovery fails, and appends enabled aliases. Every entry carries the `endpoint_id` it targets, so a client can open the playground preset to a canonical voice. Returns:
 
 ```json
 [
-  {"name": "alloy (OpenAI, tts-1)", "endpoint": "OpenAI", "model": "tts-1", "voice": "alloy", "is_alias": false},
-  {"name": "my-narrator", "endpoint": "OpenAI", "model": "gpt-4o-mini-tts", "voice": "nova", "is_alias": true}
+  {"name": "alloy (OpenAI, tts-1)", "endpoint_id": "uuid", "endpoint": "OpenAI", "model": "tts-1", "voice": "alloy", "is_alias": false},
+  {"name": "my-narrator", "endpoint_id": "uuid", "endpoint": "OpenAI", "model": "gpt-4o-mini-tts", "voice": "nova", "is_alias": true}
 ]
 ```
 
@@ -242,6 +301,7 @@ All API errors MUST use this envelope:
 | `not_found` | 404 | Resource not found |
 | `conflict` | 409 | Duplicate name |
 | `internal_error` | 500 | Database/server errors |
+| `upstream_error` | 502 | The TTS endpoint failed or returned unusable audio (`Synthesize`) |
 | `not_implemented` | 501 | Unimplemented endpoints |
 
 ### Response Helpers
@@ -249,6 +309,8 @@ All API errors MUST use this envelope:
 - `respondJSON(w, status, v)` — writes JSON with status code.
 - `respondError(w, status, code, message)` — writes error envelope.
 - `respondNoContent(w)` — writes 204 (used for DELETE).
+
+A list response MUST encode an empty result as `[]`, never `null`: every list handler replaces a nil slice before encoding, and `model.StringSlice` fields such as `models` and `languages` marshal a nil slice as `[]`.
 
 ## Voice List Rebuild
 
@@ -279,7 +341,8 @@ The embedded `web/dist/` filesystem is mounted at `/`. The SPA fallback logic:
 |------|---------|
 | `internal/api/server.go` | HTTP server, chi router, middleware, route mounting |
 | `internal/api/endpoints.go` | Endpoint CRUD handlers, discovery, testing |
-| `internal/api/aliases.go` | Alias CRUD handlers, testing |
+| `internal/api/aliases.go` | Alias CRUD handlers |
+| `internal/api/synthesize.go` | Stateless WAV synthesis for the playground |
 | `internal/api/system.go` | Status, voice list, parallel discovery |
 | `internal/api/response.go` | JSON response helpers, error formatting |
 | `internal/api/middleware.go` | Logging, recovery, CORS, content-type |
@@ -292,3 +355,5 @@ The embedded `web/dist/` filesystem is mounted at `/`. The SPA fallback logic:
 | 2026-05-04 | Documented `default_model` field on Create/Update Endpoint, response shapes for `/configured-models` vs `/remote-voices`, and the new `/endpoints/{id}/voices` toggle routes | [0003-alias-form-voice-fix](../../changes/0003-alias-form-voice-fix.md), [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |
 | 2026-10-22 | Documented TestEndpoint's request and 404; specified its test-voice selection order (planned) | [0008](../../changes/0008-endpoint-test-real-voice.md) |
 | 2026-10-22 | TestEndpoint selects a real test voice (default voice, first enabled saved voice, first reported voice, then `"test"`); planned marker removed | [0008](../../changes/0008-endpoint-test-real-voice.md) |
+| 2026-10-29 | Added `POST /api/v1/synthesize` (stateless WAV synthesis through the proxy's segment opening, with a per-request write deadline) and `endpoint_id` on voice list entries; removed `POST /api/v1/aliases/{id}/test`; documented `statusWriter.Unwrap` and the `upstream_error` code | [0009](../../changes/0009-voice-playground.md) |
+| 2026-10-29 | List responses and `StringSlice` fields encode an empty list as `[]`, never `null` (`ListAliases` and `ListEndpointConfiguredModels` returned `null`); clarified that `Synthesize` never logs the request text, while upstream error bodies, which may echo it, are logged truncated by the TTS client | [0009](../../changes/0009-voice-playground.md) |

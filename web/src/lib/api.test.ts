@@ -241,18 +241,6 @@ describe('api.aliases', () => {
       method: 'DELETE',
     })
   })
-
-  it('test calls POST /api/v1/aliases/:id/test', async () => {
-    const testResult = { ok: true }
-    mockFetch.mockReturnValueOnce(jsonResponse(testResult))
-    const result = await api.aliases.test('va-1')
-    expect(result).toEqual(testResult)
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/aliases/va-1/test', {
-      method: 'POST',
-      headers: undefined,
-      body: undefined,
-    })
-  })
 })
 
 describe('api.system', () => {
@@ -284,6 +272,19 @@ describe('api.system', () => {
   })
 })
 
+describe('list responses', () => {
+  it.each([
+    ['endpoints.list', () => api.endpoints.list()],
+    ['endpoints.voices.list', () => api.endpoints.voices.list('ep-1')],
+    ['endpoints.voices.refresh', () => api.endpoints.voices.refresh('ep-1')],
+    ['aliases.list', () => api.aliases.list()],
+    ['system.voices', () => api.system.voices()],
+  ])('%s reads a null body as an empty list', async (_, call) => {
+    mockFetch.mockReturnValueOnce(jsonResponse(null))
+    expect(await call()).toEqual([])
+  })
+})
+
 describe('error handling', () => {
   it('throws ApiRequestError on HTTP error', async () => {
     mockFetch.mockReturnValueOnce(errorResponse(404, 'not_found', 'endpoint not found'))
@@ -306,5 +307,54 @@ describe('error handling', () => {
     expect(err.status).toBe(500)
     expect(err.code).toBe('internal_error')
     expect(err.message).toBe('something broke')
+  })
+})
+
+describe('api.synthesize', () => {
+  const req = { endpoint_id: 'ep-1', model: 'tts-1', voice: 'alloy', text: 'Hi' }
+
+  it('POSTs the request and returns the WAV bytes', async () => {
+    const buf = new ArrayBuffer(8)
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(buf) }),
+    )
+    const controller = new AbortController()
+    await expect(api.synthesize(req, controller.signal)).resolves.toBe(buf)
+    expect(mockFetch).toHaveBeenCalledWith('/api/v1/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: controller.signal,
+    })
+  })
+
+  it('throws the API error from a JSON error body', async () => {
+    mockFetch.mockReturnValueOnce(errorResponse(502, 'upstream_error', 'synthesis failed: boom'))
+    const err = await api.synthesize(req).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiRequestError)
+    expect(err).toMatchObject({
+      status: 502,
+      code: 'upstream_error',
+      message: 'synthesis failed: boom',
+    })
+  })
+
+  it('throws an HTTP error when the error body is not JSON', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({ ok: false, status: 504, json: () => Promise.reject(new SyntaxError('x')) }),
+    )
+    await expect(api.synthesize(req)).rejects.toMatchObject({
+      status: 504,
+      code: 'http_error',
+      message: 'HTTP 504',
+    })
+  })
+
+  it('throws an HTTP error when the JSON body is not an API error', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ detail: 'nope' }, 500))
+    await expect(api.synthesize(req)).rejects.toMatchObject({
+      code: 'http_error',
+      message: 'HTTP 500',
+    })
   })
 })

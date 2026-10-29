@@ -560,115 +560,13 @@ func TestDeleteAlias_NotFound(t *testing.T) {
 
 // --- Test Alias ---
 
-func TestTestAlias_Success(t *testing.T) {
-	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "audio/wav")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
-	}))
-	defer mockTTS.Close()
-
-	st := &aliasStore{
-		endpoints: []model.Endpoint{
-			{ID: "ep1", Name: "Mock", BaseURL: mockTTS.URL},
-		},
-		aliases: []model.VoiceAlias{
-			{ID: "a1", Name: "narrator", EndpointID: "ep1", Model: "tts-1", Voice: "nova"},
-		},
-	}
-	srv := newAliasTestServer(st)
-	srv.clientFactory = func(ep *model.Endpoint) *tts.Client {
-		return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
-	}
-	ts := httptest.NewServer(srv.setupRoutes())
+func TestTestAlias_RouteRemoved(t *testing.T) {
+	// The playground's POST /synthesize replaced the alias test action.
+	st := &aliasStore{aliases: []model.VoiceAlias{{ID: "a1", Name: "Narrator", Enabled: true}}}
+	ts := httptest.NewServer(newAliasTestServer(st).setupRoutes())
 	defer ts.Close()
 
 	resp := makeAliasRequest(t, ts, http.MethodPost, "/api/v1/aliases/a1/test", nil)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var body map[string]any
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	assert.True(t, body["ok"].(bool))
-}
-
-func TestTestAlias_Failure(t *testing.T) {
-	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("server error"))
-	}))
-	defer mockTTS.Close()
-
-	st := &aliasStore{
-		endpoints: []model.Endpoint{
-			{ID: "ep1", Name: "Mock", BaseURL: mockTTS.URL},
-		},
-		aliases: []model.VoiceAlias{
-			{ID: "a1", Name: "narrator", EndpointID: "ep1", Model: "tts-1", Voice: "nova"},
-		},
-	}
-	srv := newAliasTestServer(st)
-	srv.clientFactory = func(ep *model.Endpoint) *tts.Client {
-		return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
-	}
-	ts := httptest.NewServer(srv.setupRoutes())
-	defer ts.Close()
-
-	resp := makeAliasRequest(t, ts, http.MethodPost, "/api/v1/aliases/a1/test", nil)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var body map[string]any
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	assert.False(t, body["ok"].(bool))
-	assert.NotEmpty(t, body["error"])
-}
-
-func TestTestAlias_CustomText(t *testing.T) {
-	var receivedInput string
-	mockTTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req tts.SynthesizeRequest
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		receivedInput = req.Input
-		w.Header().Set("Content-Type", "audio/wav")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt "))
-	}))
-	defer mockTTS.Close()
-
-	st := &aliasStore{
-		endpoints: []model.Endpoint{
-			{ID: "ep1", Name: "Mock", BaseURL: mockTTS.URL},
-		},
-		aliases: []model.VoiceAlias{
-			{ID: "a1", Name: "narrator", EndpointID: "ep1", Model: "tts-1", Voice: "nova"},
-		},
-	}
-	srv := newAliasTestServer(st)
-	srv.clientFactory = func(ep *model.Endpoint) *tts.Client {
-		return tts.NewClient(ep.BaseURL, ep.APIKey, nil)
-	}
-	ts := httptest.NewServer(srv.setupRoutes())
-	defer ts.Close()
-
-	resp := makeAliasRequest(t, ts, http.MethodPost, "/api/v1/aliases/a1/test", map[string]any{
-		"text": "Custom test message",
-	})
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "Custom test message", receivedInput)
-}
-
-func TestTestAlias_NotFound(t *testing.T) {
-	st := &aliasStore{}
-	srv := newAliasTestServer(st)
-	ts := httptest.NewServer(srv.setupRoutes())
-	defer ts.Close()
-
-	resp := makeAliasRequest(t, ts, http.MethodPost, "/api/v1/aliases/nonexistent/test", nil)
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)

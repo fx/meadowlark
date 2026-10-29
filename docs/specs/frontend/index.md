@@ -4,7 +4,7 @@ Living specification for Meadowlark's Preact-based admin UI — routing, pages, 
 
 ## Overview
 
-Meadowlark's frontend is a Preact single-page application embedded in the Go binary via `//go:embed`. It provides a management interface for TTS endpoints and voice aliases, a read-only voice discovery view, and a server status dashboard. The UI uses Tailwind CSS v4 with an OKLch color palette, zero border-radius, JetBrains Mono font, and full dark mode support.
+Meadowlark's frontend is a Preact single-page application embedded in the Go binary via `//go:embed`. It provides a playground for trying voices and creating and editing voice aliases, a voice list that merges aliases with canonical voices, a management interface for TTS endpoints, and a server status dashboard. The UI uses Tailwind CSS v4 with an OKLch color palette, zero border-radius, JetBrains Mono font, and full dark mode support.
 
 **Directory:** `web/`
 
@@ -21,6 +21,7 @@ Meadowlark's frontend is a Preact single-page application embedded in the Go bin
 | Variant Styling | CVA | 0.7.1 |
 | Class Merging | clsx + tailwind-merge | 2.1.1 / 3.5.0 |
 | Font | JetBrains Mono | 5.2.8 |
+| MP3 encoding | @breezystack/lamejs (lazy-loaded) | 1.2.7 |
 | Testing | Vitest + @testing-library/preact | 4.0.18 |
 | Coverage | @vitest/coverage-v8 | v8 provider |
 | E2E | Playwright | 1.58.2 |
@@ -29,15 +30,19 @@ Meadowlark's frontend is a Preact single-page application embedded in the Go bin
 
 ## Routing
 
-Wouter provides client-side routing with four routes:
+Wouter provides client-side routing:
 
 | Path | Page | Description |
 |------|------|-------------|
-| `/` | (redirect) | Redirects to `/endpoints` |
+| `/` | (redirect) | Redirects to `/playground` |
+| `/playground` | PlaygroundPage | Try voices; save the settings as an alias |
+| `/playground/:aliasId` | PlaygroundPage | Edit an alias in the playground |
+| `/voices` | VoicesPage | Aliases and canonical voices |
+| `/aliases` | (redirect) | Redirects to `/voices` |
 | `/endpoints` | EndpointsPage | TTS endpoint management |
-| `/voices` | VoicesPage | Voice discovery listing |
-| `/aliases` | AliasesPage | Voice alias management |
 | `/settings` | SettingsPage | Server status dashboard |
+
+Both playground paths are one `<Route path="/playground/:aliasId?">`, so moving between them does not remount the route.
 
 The Go backend serves `index.html` for all non-API, non-file requests (SPA fallback).
 
@@ -47,10 +52,11 @@ The Go backend serves `index.html` for all non-API, non-file requests (SPA fallb
 
 Sticky top navigation bar with:
 - **Left:** "Meadowlark" brand text + icon-only nav buttons (Phosphor Icons):
-  - PlugsConnected → Endpoints
+  - Waveform → Playground
   - SpeakerHigh → Voices
-  - TagSimple → Aliases
+  - PlugsConnected → Endpoints
   - GearSix → Settings
+  - A nav item is active on its own path and on any path below it (`/playground/abc` highlights Playground).
 - **Right:** Version string + ThemeToggle dropdown
 - **Mobile (<md):** Hamburger button opens a self-managed Sheet with full navigation + theme buttons
 
@@ -85,33 +91,43 @@ The form is organized into clearly delimited sections (Card-grouped `<fieldset>`
 
 **Create:** "+ Add Endpoint" button expands a blank form at the top of the list. The Models and Voices sections render an empty state ("Probe the endpoint to discover models and voices") until the first probe succeeds.
 
+### Playground Page (`/playground`)
+
+Where voices are tried and aliases are made — both are the same loop of trying endpoints, models, voices, speed, and instructions until the output sounds right. Two columns at `md` and up (a `20rem` settings panel, then the text, player, and takes), stacked below.
+
+**Settings panel (PlaygroundSettings):**
+- Endpoint Select; disabled endpoints are listed with a "(disabled)" suffix and may still be synthesized. Changing the endpoint resets the model to its `default_model` (else its first model) and the voice to its `default_voice` (else empty).
+- Model Select over the endpoint's `models`.
+- Voice Combobox suggesting the endpoint's enabled saved voices (`GET /api/v1/endpoints/{id}/voices`, label `name || voice_id`, value `voice_id`). Free text is accepted, for `clone:*` and other voices the endpoint does not list. The lookup is aborted when the endpoint changes, and a late answer is ignored.
+- Speed (number, step 0.05, 0.25–4.0) and Instructions; empty means "endpoint default".
+- Alias mode only: an "Alias" fieldset with Name (required) and Languages (comma-separated).
+
+**Text:** a Textarea with an `n / 4096` counter in code points. Over the limit the counter turns destructive and Generate is disabled. Ctrl+Enter or ⌘+Enter generates. The text lives in the take store, so it survives navigation and switching aliases.
+
+**Generate:** disabled until endpoint, model, voice, and text are set. While a request is in flight it becomes Cancel (aborts it; no error is shown). It calls `api.synthesize` with `speed` only when set and `instructions` only when non-empty — the same fields an alias with those settings would send — and measures latency from send to the full body with `performance.now()`. The WAV is parsed and becomes a **take**, which is selected and auto-played (a rejected `play()` is ignored). API errors show inline in `text-destructive`; audio that does not parse shows "Could not decode audio".
+
+**Main player:** the selected take's [Waveform](#waveform), a format line (`24 kHz · 16-bit · mono · 3.42 s · 160 KB · 1.24 s latency`), and its downloads. With no takes, a dashed placeholder.
+
+**Takes:** newest first, at most 20. Each row shows `#n`, voice · model · endpoint, speed and instructions when set, the text (truncated), latency → duration, and a compact waveform drawn in the played colour when selected. Clicking the waveform selects the take and plays it from the start in the main player, for A/B comparison; clicking the take already selected restarts it. Row actions: **Restore settings** (copies the take's endpoint, model, voice, speed, instructions, and text into the panel), WAV and MP3 downloads, and Remove. "Clear" empties the list.
+
+**Downloads:** WAV is an `<a download>` over the take's object URL, so the file is the exact bytes the server returned. MP3 is encoded in the browser from those bytes at 128 kbps; it is disabled, with the title "MP3 needs a standard sample rate (got N Hz)", unless the rate is 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, or 48000 Hz. Files are named `meadowlark-<voice>-<YYYYMMDD-HHMMSS>.<ext>`, the voice made filename-safe (`clone:foo` → `clone-foo`).
+
+**Blank mode (`/playground`):** starts on the first enabled endpoint (else the first), its default model and voice, empty speed and instructions. `?endpoint=<id>&model=<m>&voice=<v>` presets it; an unknown endpoint is ignored, an unknown model for that endpoint falls back to its default, and the voice is taken as free text. With no endpoints the page links to `/endpoints`. **Save as alias** opens a dialog (Name required, Languages default `en`) that `POST`s the panel to `/api/v1/aliases`, shows errors such as `409` inside the dialog, and on success opens `/playground/<new id>`.
+
+**Alias mode (`/playground/:aliasId`):** loads `GET /api/v1/aliases/:id` into the panel, reloading when the id changes, under an "Editing alias <name>" header (with a "disabled" badge when it is). A missing alias shows "Alias not found" and a link to `/playground`. **Save** `PUT`s the panel and is enabled only when it differs from the alias; afterwards the panel is replaced from the response, so it shows what the server stored. **Save as new** opens the same dialog prefilled with `<name> copy` and the current languages, and opens the new alias.
+
+Every save invalidates the `/api/v1/aliases` and `/api/v1/voices` caches.
+
 ### Voices Page (`/voices`)
 
-Read-only voice discovery table.
+Every voice Meadowlark can speak with, in one table.
 
-**Features:**
-- Search/filter by voice name (client-side)
-- Table columns: Voice Name, Voice, Endpoint, Model, Type (Badge: "canonical" or "alias")
-
-### Aliases Page (`/aliases`)
-
-CRUD list with expandable inline forms.
-
-**Collapsed row:** Alias name, target voice, endpoint name badge, enabled switch.
-
-**Expanded form (AliasForm):**
-- Alias name
-- Endpoint selection (dropdown, loads from API)
-- Model selection — Select populated from the endpoint's enabled `models` list (`Endpoint.Models`).
-- Voice selection — Select populated by fetching `GET /api/v1/endpoints/{id}/remote-voices`, which returns `[]tts.Voice` (`{id, name}`). The dropdown MUST display the voice's `name` (with the `id` as a secondary label when they differ) and submit the `id`. If the live probe fails or returns an empty list, the form MUST fall back to a free-text Input so operators can still configure aliases that target voices the upstream did not enumerate (e.g. cloned voices created out-of-band). The Voice select MUST NOT be populated from `/configured-models` — that endpoint returns model IDs, not voice IDs, and using it conflates the two fields.
-- Speed (optional)
-- Instructions (optional)
-- Languages (comma-separated)
-- Enabled switch
-
-The Voice list is **not** filtered by the per-endpoint enabled-voices set. Aliases are an explicit opt-in by name and may target any voice the upstream provider exposes, including disabled or dynamic voices (e.g. `clone:*` from qwen3-tts).
-
-**Actions:** Test TTS (play button), delete with AlertDialog confirmation.
+- **Rows:** every alias from `GET /api/v1/aliases`, disabled ones included, sorted by name; then the canonical voices from `GET /api/v1/voices` (entries with `is_alias = false`). Alias endpoint names come from `GET /api/v1/endpoints`, falling back to "Unknown".
+- **Columns:** Voice Name, Voice, Endpoint, Model, Type (Badge "canonical" or "alias"; a disabled alias also gets a "disabled" badge and muted text), Actions.
+- **Alias row:** the name links to `/playground/:id`; an "Open in playground" button does the same; an enabled Switch (`PUT {enabled}`); delete with an AlertDialog confirmation. Each mutation refreshes both lists.
+- **Canonical row:** "Try in playground" opens `/playground?endpoint=<endpoint_id>&model=<m>&voice=<v>` (URL-encoded).
+- **"New alias"** opens a blank playground.
+- Search filters both kinds by name, case-insensitively. The page shows "Loading voices..." until aliases and voices have both loaded, and an error if either fails.
 
 ### Settings Page (`/settings`)
 
@@ -120,6 +136,31 @@ Read-only server status displayed in Cards:
 - Wyoming port, HTTP port
 - Database driver
 - Voice count, endpoint count, alias count
+
+## Playground Components
+
+### Waveform
+
+`web/src/components/waveform.tsx` — a custom SVG player, themed entirely by Tailwind fill classes so it follows light and dark mode with no JavaScript.
+
+- **Rendering:** an `aria-hidden` SVG with `viewBox="0 0 N 100"` and `preserveAspectRatio="none"`, one bucket per unit (200 buckets in the main player, 64 in the list). Each bucket is a mirrored bar (`<rect>`, no rounding) in two layers: the peak envelope, lighter, behind the RMS body. Bars are normalised to the loudest bucket and never shorter than a thin baseline. The bars are drawn twice — unplayed in `muted-foreground` tones, played in `primary` tones clipped by a `clipPath` rect of width `progress × N`. They rise from the centre line on mount, except under `prefers-reduced-motion`.
+- **Playhead:** a 1px `primary` line with a soft glow, moved every animation frame while playing (`requestAnimationFrame`, stopped on pause, end, and unmount) for a smooth sweep.
+- **Hover:** a ghost line and a monospace tooltip with the time under the pointer, hidden when the pointer leaves.
+- **Labels:** current and total time as `m:ss.s`.
+- **Seeking:** a transparent native `<input type="range" aria-label="Seek">` overlays the SVG (zero-width thumb), with `aria-valuetext` such as `0:01.2 of 0:03.4`. Click and drag seek natively; Home and End jump to the ends; the arrow keys step by 5% of the duration (at least 100 ms); Space plays and pauses. A focus ring shows on the waveform while the input has keyboard focus.
+- **Playback:** a play/pause button and an unrendered `Audio` element on the take's object URL. A `playRequest` number plays the take from the start whenever it changes, and on mount when present; the playground bumps it for every select-and-play action (a new take, a take clicked in the list), so asking again plays again without remounting. On unmount or a source change the element is paused, its `src` attribute removed and `load()` called, so the browser releases the old take's media resource.
+- **Compact:** bars only — no audio, seeking, or labels; `active` draws them in the played colour.
+
+### Take store
+
+`web/src/lib/takes.ts` keeps takes at module level, so they survive navigation but not a reload. Each take holds its parameters (with the endpoint name), text, the WAV `Blob` and its object URL, format, duration, main and mini peaks, latency, and creation time; raw samples are not kept (MP3 encoding re-parses the Blob). Adding a 21st take evicts the oldest. Evicted, removed, and cleared takes revoke their object URLs. `useTakes()` subscribes in a layout effect, so no update is missed between render and subscription.
+
+### Audio helpers
+
+- `lib/wav.ts` — `parseWav` decodes PCM WAV at 8, 16, 24, or 32 bits, skipping unknown chunks (with odd-size padding), and rejects non-RIFF, non-WAVE, non-PCM, a missing `fmt` or `data` chunk, `data` before `fmt`, and truncation.
+- `lib/peaks.ts` — `computePeaks(channelData, buckets)` returns per-bucket peak and RMS across channels.
+- `lib/mp3.ts` — `encodeMp3` loads `@breezystack/lamejs` with `import()` (its own chunk) and encodes mono or stereo; more channels fold to stereo.
+- `lib/download.ts` — download filenames and a temporary-anchor `downloadBlob` that revokes its URL afterwards.
 
 ## Data Fetching
 
@@ -140,6 +181,8 @@ function useFetch<T>(url: string, ttl?: number): {
 - `mutate()` invalidates cache and refetches.
 - `invalidateCache(prefix)` for bulk invalidation.
 - `clearCache()` exposed for testing.
+
+`useFetchList<T>(url, ttl?)` is `useFetch<T[]>` for a list endpoint, and the list methods of `api` (`endpoints.list`, `endpoints.voices.list` and `.refresh`, `aliases.list`, `system.voices`) do the same: a `null` body reads as an empty list, so a page never mistakes an empty list for one still loading. Every list a page fetches goes through one of them.
 
 ### useMutation Hook
 
@@ -174,17 +217,21 @@ api.endpoints.update(id, data)    // PUT /api/v1/endpoints/:id
 api.endpoints.delete(id)          // DELETE /api/v1/endpoints/:id
 api.endpoints.probe(url, apiKey)  // POST /api/v1/endpoints/probe
 
+api.endpoints.voices.list(id, signal?)  // GET /api/v1/endpoints/:id/voices
+
 api.aliases.list()                // GET /api/v1/aliases
+api.aliases.get(id)               // GET /api/v1/aliases/:id
 api.aliases.create(data)          // POST /api/v1/aliases
 api.aliases.update(id, data)      // PUT /api/v1/aliases/:id
 api.aliases.delete(id)            // DELETE /api/v1/aliases/:id
-api.aliases.test(id)              // POST /api/v1/aliases/:id/test
+
+api.synthesize(req, signal?)      // POST /api/v1/synthesize → ArrayBuffer (WAV)
 
 api.system.status()               // GET /api/v1/status
 api.system.voices()               // GET /api/v1/voices
 ```
 
-**Error handling:** `ApiRequestError` custom class with `status` and `code` fields.
+**Error handling:** `ApiRequestError` custom class with `status` and `code` fields. `api.synthesize` cannot use the JSON request helper: on success it returns the body as an `ArrayBuffer`; on failure it throws the JSON error envelope as an `ApiRequestError`, or `ApiRequestError(status, 'http_error', 'HTTP <status>')` when the body is not one.
 
 ## State Management
 
@@ -193,6 +240,7 @@ No global state library. Uses:
 1. **Context API** — `ThemeProvider` for dark/light/system theme.
 2. **Local useState** — form inputs and component state.
 3. **Cache-based state** — `useFetch()` in-memory cache with TTL serves as server state management.
+4. **Take store** — the playground's takes and text, at module level (see [Take store](#take-store)).
 
 ## Theme System
 
@@ -235,6 +283,8 @@ No global state library. Uses:
 
 All components use CVA for variant definitions and `cn()` (clsx + tailwind-merge) for class merging.
 
+The Dialog, AlertDialog and Sheet overlays are `forwardRef` components. Radix's dialog portal wraps each child in `Presence`, which reads the child's computed style through a ref; Preact hands a ref on a plain function component the component instance, not its DOM node, so an overlay that does not forward its ref throws and the dialog never opens.
+
 ## Testing
 
 ### Coverage Requirements
@@ -256,9 +306,12 @@ Required mocks for Radix UI compatibility in jsdom:
 - `@floating-ui/react-dom`
 - `@radix-ui/react-focus-scope`
 - `@phosphor-icons/react`
-- `@radix-ui/react-presence`
 - `react-remove-scroll`
 - `ResizeObserver`, `matchMedia`, `scrollIntoView`, pointer capture APIs
+- `URL.createObjectURL` (returns `blob:mock/<n>`) and `URL.revokeObjectURL`, `HTMLMediaElement.prototype.play` (resolves), `pause` and `load`, `requestAnimationFrame` and `cancelAnimationFrame` — fresh mocks per test
+- `@/components/ui/select` via `src/test-select-mock.tsx`, where a test drives a select through its `onValueChange`, since Radix Select does not open in jsdom
+- `@radix-ui/react-presence` runs for real, so a dialog portal child that drops its ref fails the tests as it fails in a browser
+- wouter runs for real (inlined, with its `use-sync-external-store` shim aliased to `preact/compat`); page tests route with `wouter/memory-location`
 
 ### Build Configuration
 
@@ -290,6 +343,11 @@ Build order: `bun run build` produces `web/dist/` → `go build` embeds it.
 | `web/src/app.tsx` | Root component with routing |
 | `web/src/lib/api.ts` | Typed API client + interfaces |
 | `web/src/lib/utils.ts` | `cn()` utility |
+| `web/src/lib/wav.ts` | PCM WAV decoder |
+| `web/src/lib/peaks.ts` | Waveform peak/RMS buckets |
+| `web/src/lib/mp3.ts` | Lazy-loaded MP3 encoding |
+| `web/src/lib/download.ts` | Download filenames and blob downloads |
+| `web/src/lib/takes.ts` | Playground take store |
 | `web/src/hooks/use-fetch.ts` | SWR-like data fetching |
 | `web/src/hooks/use-mutation.ts` | Mutation hook with cache invalidation |
 | `web/src/hooks/use-endpoint-probe.ts` | Endpoint discovery hook |
@@ -298,11 +356,13 @@ Build order: `bun run build` produces `web/dist/` → `go build` embeds it.
 | `web/src/components/theme-provider.tsx` | Dark/light/system theme context |
 | `web/src/components/theme-toggle.tsx` | Theme dropdown |
 | `web/src/components/endpoint-form.tsx` | Endpoint create/edit form |
-| `web/src/components/alias-form.tsx` | Alias create/edit form |
+| `web/src/components/playground-settings.tsx` | Playground settings panel |
+| `web/src/components/take-player.tsx` | Main take player, take list, downloads |
+| `web/src/components/waveform.tsx` | SVG waveform player |
 | `web/src/components/expandable-row.tsx` | Collapsible row wrapper |
 | `web/src/pages/endpoints.tsx` | Endpoints management page |
-| `web/src/pages/voices.tsx` | Voice listing page |
-| `web/src/pages/aliases.tsx` | Alias management page |
+| `web/src/pages/playground.tsx` | Playground page (blank and alias modes) |
+| `web/src/pages/voices.tsx` | Aliases and canonical voices |
 | `web/src/pages/settings.tsx` | Server status page |
 | `web/src/styles/globals.css` | Tailwind + OKLch theme tokens |
 
@@ -312,3 +372,6 @@ Build order: `bun run build` produces `web/dist/` → `go build` embeds it.
 |------|-------------|----------|
 | 2026-04-19 | Initial living spec created from implementation audit | --- |
 | 2026-05-04 | Documented endpoint form section restructure (toggle lists for models/voices, default-model radio, Enabled out of the speed grid); fixed alias form voice selection to fetch `/remote-voices` instead of `/configured-models` | [0003-alias-form-voice-fix](../../changes/0003-alias-form-voice-fix.md), [0004-endpoint-models-toggle](../../changes/0004-endpoint-models-toggle.md), [0005-endpoint-voice-toggle](../../changes/0005-endpoint-voice-toggle.md) |
+| 2026-10-29 | Added the Playground page (default route; blank and alias modes, takes, waveform player, WAV/MP3 downloads) and merged aliases into the Voices page; removed the Aliases page and its form, whose `/remote-voices` description had drifted from the implementation | [0009](../../changes/0009-voice-playground.md) |
+| 2026-10-29 | Dialog, AlertDialog and Sheet overlays forward their refs, so dialogs open in a browser; `@radix-ui/react-presence` is no longer mocked; list fetches read a `null` body as an empty list (`useFetchList` and the `api` list methods); the waveform releases its media source on cleanup | [0009](../../changes/0009-voice-playground.md) |
+| 2026-10-29 | Selecting a take plays it from the start even when it is already selected (a play request replaces mount-time `autoPlay`) | [0009](../../changes/0009-voice-playground.md) |

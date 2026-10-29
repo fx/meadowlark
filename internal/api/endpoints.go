@@ -356,7 +356,11 @@ func (s *Server) ListEndpointConfiguredModels(w http.ResponseWriter, r *http.Req
 		respondError(w, http.StatusNotFound, "not_found", "endpoint not found")
 		return
 	}
-	respondJSON(w, http.StatusOK, []string(ep.Models))
+	models := []string(ep.Models)
+	if models == nil {
+		models = []string{}
+	}
+	respondJSON(w, http.StatusOK, models)
 }
 
 // DiscoverModels queries a saved endpoint for available models.

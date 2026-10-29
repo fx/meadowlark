@@ -225,6 +225,7 @@ func TestListVoices_ReturnsCanonicalVoicesFromEnabledEndpointVoices(t *testing.T
 
 	require.Len(t, body, 2)
 	assert.Equal(t, "alloy (OpenAI, tts-1)", body[0].Name)
+	assert.Equal(t, "ep1", body[0].EndpointID)
 	assert.Equal(t, "OpenAI", body[0].Endpoint)
 	assert.Equal(t, "tts-1", body[0].Model)
 	assert.Equal(t, "alloy", body[0].Voice)
@@ -307,6 +308,7 @@ func TestListVoices_ReturnsAliasVoices(t *testing.T) {
 
 	alias := body[0]
 	assert.Equal(t, "my-narrator", alias.Name)
+	assert.Equal(t, "ep1", alias.EndpointID)
 	assert.Equal(t, "OpenAI", alias.Endpoint)
 	assert.Equal(t, "gpt-4o-mini-tts", alias.Model)
 	assert.Equal(t, "nova", alias.Voice)
@@ -365,4 +367,25 @@ func TestListVoices_SkipsDisabledEndpoints(t *testing.T) {
 	var body []voiceEntry
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.Empty(t, body)
+}
+
+func TestListVoices_EncodesEndpointID(t *testing.T) {
+	ms := &mockStore{
+		endpoints: []model.Endpoint{
+			{ID: "ep1", Name: "OpenAI", Models: model.StringSlice{"tts-1"}, Enabled: true},
+		},
+		endpointVoices: map[string][]model.EndpointVoice{
+			"ep1": {{EndpointID: "ep1", VoiceID: "alloy", Enabled: true}},
+		},
+	}
+	ts := httptest.NewServer(newSystemTestServer(ms).setupRoutes())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/api/v1/voices")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	var body []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body, 1)
+	assert.Equal(t, "ep1", body[0]["endpoint_id"])
 }

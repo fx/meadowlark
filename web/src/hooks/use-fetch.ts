@@ -118,6 +118,12 @@ export function useFetch<T>(url: string, ttl = DEFAULT_TTL): UseFetchResult<T> {
   return { data, error, isLoading, mutate }
 }
 
+/** useFetch for a JSON list; a null body reads as an empty list. */
+export function useFetchList<T>(url: string, ttl = DEFAULT_TTL): UseFetchResult<T[]> {
+  const result = useFetch<T[] | null>(url, ttl)
+  return { ...result, data: result.data === null ? [] : result.data }
+}
+
 /** Invalidate all cache entries whose key starts with the given prefix. */
 export function invalidateCache(prefix: string): void {
   for (const key of cache.keys()) {

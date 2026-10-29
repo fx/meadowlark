@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/preact'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearCache, invalidateCache, useFetch } from './use-fetch'
+import { clearCache, invalidateCache, useFetch, useFetchList } from './use-fetch'
 
 const mockFetch = vi.fn()
 
@@ -449,6 +449,28 @@ describe('useFetch', () => {
       expect(result1.current.isLoading).toBe(false)
     })
     expect(result1.current.data).toEqual({ id: 'survived' })
+  })
+})
+
+describe('useFetchList', () => {
+  it('starts in loading state', () => {
+    mockFetch.mockReturnValueOnce(new Promise(() => {}))
+    const { result } = renderHook(() => useFetchList('/api/list'))
+    expect(result.current.data).toBeUndefined()
+    expect(result.current.isLoading).toBe(true)
+  })
+
+  it('returns the list', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([1, 2]))
+    const { result } = renderHook(() => useFetchList<number>('/api/list'))
+    await waitFor(() => expect(result.current.data).toEqual([1, 2]))
+  })
+
+  it('reads a null body as an empty list', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(null))
+    const { result } = renderHook(() => useFetchList('/api/list'))
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.data).toEqual([])
   })
 })
 

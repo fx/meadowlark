@@ -492,7 +492,8 @@ Meadowlark exposes a RESTful JSON API for the admin frontend. All endpoints are 
 | `GET` | `/api/v1/aliases/:id` | Get a voice alias |
 | `PUT` | `/api/v1/aliases/:id` | Update a voice alias |
 | `DELETE` | `/api/v1/aliases/:id` | Delete a voice alias |
-| `POST` | `/api/v1/aliases/:id/test` | Test TTS with this alias |
+
+Aliases are tried before saving, and edited, in the frontend's Playground, which synthesizes through §8.5.
 
 ### 8.3 System API
 
@@ -507,6 +508,12 @@ Meadowlark exposes a RESTful JSON API for the admin frontend. All endpoints are 
 |---|---|---|
 | `GET` | `/` | Serve embedded Preact frontend (SPA) |
 | `GET` | `/assets/*` | Serve embedded static assets |
+
+### 8.5 Synthesis API
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/synthesize` | Synthesize text against an endpoint with explicit model, voice, speed, and instructions; returns `audio/wav`. Stateless, and opened exactly as the Wyoming proxy opens the endpoint, so streaming endpoints sound as they do in Home Assistant. |
 
 ---
 
@@ -675,7 +682,7 @@ The following design tokens must be used:
 
 ```
 +----------------------------------------------------------+
-| [Meadowlark]  [Endpoints] [Voices] [Aliases]  [Settings] |
+| [Meadowlark]  [Playground] [Voices] [Endpoints] [Settings] |
 +----------------------------------------------------------+
 |                                                          |
 |                    Page Content                           |
@@ -693,6 +700,13 @@ The following design tokens must be used:
 
 ### 10.5 Page Structure
 
+#### Playground Page (`/playground`, default route)
+- Try voices: endpoint, model, voice (suggested from the endpoint's enabled voices, or free text), speed, and instructions, plus the text to speak
+- Generate plays the result and keeps it as a take; takes (in memory, up to 20) show latency and format and can be replayed for A/B comparison, restored into the settings, and downloaded as WAV or MP3
+- Interactive waveform for every take: peak and RMS layers, played/unplayed colours, playhead, hover time, seeking
+- "Save as alias" turns the current settings into a voice alias
+- `/playground/:aliasId` edits an alias: Save, or Save as new
+
 #### Endpoints Page (`/endpoints`)
 - List all configured OpenAI-compatible endpoints
 - CRUD operations with inline edit forms (expandable rows)
@@ -701,17 +715,10 @@ The following design tokens must be used:
 - Fields: name, base URL, API key (masked), models, default speed, default instructions, enabled toggle
 
 #### Voices Page (`/voices`)
-- Read-only list of all resolved voices (canonical + aliases)
-- Shows: voice name, endpoint, model, type (canonical/alias)
+- Every alias (disabled ones included) and every canonical voice in one list; `/aliases` redirects here
+- Shows: voice name, voice, endpoint, model, type (canonical/alias)
+- Aliases open in the playground to edit, can be enabled/disabled, and deleted; canonical voices open a playground preset to them
 - Search/filter functionality
-
-#### Aliases Page (`/aliases`)
-- List all voice aliases
-- CRUD operations with inline edit forms
-- Endpoint + model + voice selector (populated from configured endpoints)
-- Override fields: speed slider, instructions textarea
-- Test button (synthesize sample text)
-- Fields: alias name, target endpoint, model, voice, speed, instructions, languages, enabled toggle
 
 #### Settings Page (`/settings`)
 - Display server status (version, uptime, Wyoming port, HTTP port)
@@ -720,7 +727,7 @@ The following design tokens must be used:
 
 ### 10.6 CRUD Pattern
 
-All list pages follow this shared pattern:
+The Endpoints page follows this pattern:
 1. Header with title, description, and "+ Add" button
 2. Items in `div.border.divide-y` containers
 3. Each item is an expandable row: click to expand inline edit form
