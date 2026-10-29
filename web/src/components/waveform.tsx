@@ -134,6 +134,9 @@ function WaveformPlayer({
       audio.removeEventListener('ended', onStop)
       audio.removeEventListener('seeked', onSeeked)
       audio.pause()
+      // Drop the source so the browser releases the old take's media resource.
+      audio.removeAttribute('src')
+      audio.load()
     }
   }, [audio, src])
 

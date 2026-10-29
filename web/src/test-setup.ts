@@ -56,6 +56,7 @@ beforeEach(() => {
   URL.revokeObjectURL = vi.fn()
   HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve())
   HTMLMediaElement.prototype.pause = vi.fn()
+  HTMLMediaElement.prototype.load = vi.fn()
   globalThis.requestAnimationFrame = vi.fn((cb: FrameRequestCallback) =>
     Number(setTimeout(() => cb(performance.now()), 16)),
   )

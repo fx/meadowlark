@@ -199,6 +199,21 @@ describe('Waveform player', () => {
     expect(audio.pause).toHaveBeenCalled()
   })
 
+  it('releases its media resource on unmount', () => {
+    const { unmount } = renderPlayer()
+    expect(audio.getAttribute('src')).toBe('blob:take/1')
+    unmount()
+    expect(audio.hasAttribute('src')).toBe(false)
+    expect(audio.load).toHaveBeenCalledOnce()
+  })
+
+  it('releases the old source before loading a new one', () => {
+    const { rerender } = renderPlayer()
+    rerender(<Waveform peaks={flatPeaks(200)} duration={4} src="blob:take/2" />)
+    expect(audio.load).toHaveBeenCalledOnce()
+    expect(audio.getAttribute('src')).toBe('blob:take/2')
+  })
+
   it('seeks from the range input', () => {
     const { container } = renderPlayer()
     fireEvent.input(seekInput(), { target: { value: '2' } })
