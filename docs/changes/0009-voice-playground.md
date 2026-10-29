@@ -125,7 +125,7 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
   - [x] Test: buffered and streaming success, header rebuild, every validation and error case, endpoint defaults
 - [x] Include `endpoint_id` in voice list entries
 - [x] Add frontend audio helpers: WAV parsing, peaks, MP3 encoding, downloads, take store, `api.synthesize`
-- [ ] Add the waveform player component
+- [x] Add the waveform player component
 - [ ] Add the playground page and merge aliases into the Voices page
   - [ ] `/` → `/playground`, `/aliases` → `/voices`, `/playground/:aliasId`
   - [ ] Navigation: Playground, Voices, Endpoints, Settings
