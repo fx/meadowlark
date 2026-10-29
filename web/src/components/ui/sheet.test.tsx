@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
+import { createRef } from 'preact'
 import { describe, expect, it } from 'vitest'
 import {
   Sheet,
@@ -7,6 +8,8 @@ import {
   SheetDescription,
   SheetFooter,
   SheetHeader,
+  SheetOverlay,
+  SheetPortal,
   SheetTitle,
   SheetTrigger,
 } from './sheet'
@@ -82,5 +85,18 @@ describe('Sheet', () => {
     expect(screen.getByText('T')).toHaveClass('title-class')
     expect(screen.getByText('D')).toHaveClass('desc-class')
     expect(screen.getByText('F')).toHaveClass('ftr-class')
+  })
+
+  it('forwards the overlay ref to its DOM node', () => {
+    const ref = createRef<HTMLDivElement>()
+    render(
+      <Sheet open>
+        <SheetPortal>
+          <SheetOverlay ref={ref} data-testid="overlay" />
+        </SheetPortal>
+      </Sheet>,
+    )
+    expect(ref.current).toBeInstanceOf(HTMLDivElement)
+    expect(ref.current).toBe(screen.getByTestId('overlay'))
   })
 })

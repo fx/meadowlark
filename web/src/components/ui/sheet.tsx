@@ -2,6 +2,7 @@ import { X } from '@phosphor-icons/react'
 import * as SheetPrimitive from '@radix-ui/react-dialog'
 import { cva, type VariantProps } from 'class-variance-authority'
 import type { ComponentProps } from 'preact'
+import { forwardRef } from 'preact/compat'
 import { cn } from '@/lib/utils'
 
 const Sheet = SheetPrimitive.Root
@@ -9,17 +10,21 @@ const SheetTrigger = SheetPrimitive.Trigger
 const SheetClose = SheetPrimitive.Close
 const SheetPortal = SheetPrimitive.Portal
 
-function SheetOverlay({ className, ...props }: ComponentProps<typeof SheetPrimitive.Overlay>) {
-  return (
+// The dialog portal hands each child a ref through Presence, which reads the
+// node's computed style; Preact gives a plain function component's instance
+// to that ref, so the overlay must forward it to the DOM node.
+const SheetOverlay = forwardRef<HTMLDivElement, ComponentProps<typeof SheetPrimitive.Overlay>>(
+  ({ className, ...props }, ref) => (
     <SheetPrimitive.Overlay
+      ref={ref}
       className={cn(
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50',
         className,
       )}
       {...props}
     />
-  )
-}
+  ),
+)
 
 const sheetVariants = cva(
   'bg-background fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 data-[state=open]:animate-in data-[state=closed]:animate-out',

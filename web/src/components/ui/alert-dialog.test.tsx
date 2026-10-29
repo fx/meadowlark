@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
+import { createRef } from 'preact'
 import { describe, expect, it } from 'vitest'
 import {
   AlertDialog,
@@ -9,6 +10,8 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogOverlay,
+  AlertDialogPortal,
   AlertDialogTitle,
   AlertDialogTrigger,
 } from './alert-dialog'
@@ -64,5 +67,18 @@ describe('AlertDialog', () => {
     expect(screen.getByText('C').parentElement).toHaveClass('ftr-class')
     expect(screen.getByText('C')).toHaveClass('cancel-class')
     expect(screen.getByText('A')).toHaveClass('action-class')
+  })
+
+  it('forwards the overlay ref to its DOM node', () => {
+    const ref = createRef<HTMLDivElement>()
+    render(
+      <AlertDialog open>
+        <AlertDialogPortal>
+          <AlertDialogOverlay ref={ref} data-testid="overlay" />
+        </AlertDialogPortal>
+      </AlertDialog>,
+    )
+    expect(ref.current).toBeInstanceOf(HTMLDivElement)
+    expect(ref.current).toBe(screen.getByTestId('overlay'))
   })
 })

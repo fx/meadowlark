@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/preact'
 import userEvent from '@testing-library/user-event'
+import { createRef } from 'preact'
 import { describe, expect, it } from 'vitest'
 import {
   Dialog,
@@ -7,6 +8,8 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogOverlay,
+  DialogPortal,
   DialogTitle,
   DialogTrigger,
 } from './dialog'
@@ -69,5 +72,18 @@ describe('Dialog', () => {
     expect(screen.getByText('T')).toHaveClass('title-class')
     expect(screen.getByText('D')).toHaveClass('desc-class')
     expect(screen.getByText('F')).toHaveClass('ftr-class')
+  })
+
+  it('forwards the overlay ref to its DOM node', () => {
+    const ref = createRef<HTMLDivElement>()
+    render(
+      <Dialog open>
+        <DialogPortal>
+          <DialogOverlay ref={ref} data-testid="overlay" />
+        </DialogPortal>
+      </Dialog>,
+    )
+    expect(ref.current).toBeInstanceOf(HTMLDivElement)
+    expect(ref.current).toBe(screen.getByTestId('overlay'))
   })
 })
