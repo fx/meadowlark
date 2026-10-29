@@ -19,11 +19,12 @@ type statusResponse struct {
 
 // voiceEntry is a single voice in the GET /api/v1/voices response.
 type voiceEntry struct {
-	Name     string `json:"name"`
-	Endpoint string `json:"endpoint"`
-	Model    string `json:"model"`
-	Voice    string `json:"voice"`
-	IsAlias  bool   `json:"is_alias"`
+	Name       string `json:"name"`
+	EndpointID string `json:"endpoint_id"`
+	Endpoint   string `json:"endpoint"`
+	Model      string `json:"model"`
+	Voice      string `json:"voice"`
+	IsAlias    bool   `json:"is_alias"`
 }
 
 // GetStatus returns system status information.
@@ -120,11 +121,12 @@ func (s *Server) ListVoices(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				voices = append(voices, voiceEntry{
-					Name:     ev.VoiceID + " (" + ep.Name + ", " + m + ")",
-					Endpoint: ep.Name,
-					Model:    m,
-					Voice:    ev.VoiceID,
-					IsAlias:  false,
+					Name:       ev.VoiceID + " (" + ep.Name + ", " + m + ")",
+					EndpointID: ep.ID,
+					Endpoint:   ep.Name,
+					Model:      m,
+					Voice:      ev.VoiceID,
+					IsAlias:    false,
 				})
 			}
 		}
@@ -135,11 +137,12 @@ func (s *Server) ListVoices(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		voices = append(voices, voiceEntry{
-			Name:     a.Name,
-			Endpoint: epNames[a.EndpointID],
-			Model:    a.Model,
-			Voice:    a.Voice,
-			IsAlias:  true,
+			Name:       a.Name,
+			EndpointID: a.EndpointID,
+			Endpoint:   epNames[a.EndpointID],
+			Model:      a.Model,
+			Voice:      a.Voice,
+			IsAlias:    true,
 		})
 	}
 
