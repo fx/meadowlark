@@ -178,11 +178,11 @@ function useFetch<T>(url: string, ttl?: number): {
 - 5-second TTL cache (configurable).
 - Request deduplication (multiple components = 1 in-flight request).
 - AbortController cleanup on unmount.
-
-`useFetchList<T>(url, ttl?)` is `useFetch<T[]>` for a list endpoint, and the list methods of `api` (`endpoints.list`, `endpoints.voices.list` and `.refresh`, `aliases.list`, `system.voices`) do the same: a `null` body reads as an empty list, so a page never mistakes an empty list for one still loading. Every list a page fetches goes through one of them.
 - `mutate()` invalidates cache and refetches.
 - `invalidateCache(prefix)` for bulk invalidation.
 - `clearCache()` exposed for testing.
+
+`useFetchList<T>(url, ttl?)` is `useFetch<T[]>` for a list endpoint, and the list methods of `api` (`endpoints.list`, `endpoints.voices.list` and `.refresh`, `aliases.list`, `system.voices`) do the same: a `null` body reads as an empty list, so a page never mistakes an empty list for one still loading. Every list a page fetches goes through one of them.
 
 ### useMutation Hook
 
