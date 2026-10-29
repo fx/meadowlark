@@ -196,7 +196,8 @@ function Workspace({ endpoints, initialForm, alias: loadedAlias }: WorkspaceProp
   const [savedAlias, setSavedAlias] = useState(loadedAlias)
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
-  const [autoPlayId, setAutoPlayId] = useState<string | null>(null)
+  /** The take last asked to play, and a count so asking again plays again. */
+  const [playRequest, setPlayRequest] = useState<{ id: string; n: number } | null>(null)
   const [dialog, setDialog] = useState<SaveDialogValues | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -206,6 +207,8 @@ function Workspace({ endpoints, initialForm, alias: loadedAlias }: WorkspaceProp
   const synthesisReady = Boolean(endpoint && form.model && form.voice.trim())
   const canGenerate = synthesisReady && text.trim() !== '' && !tooLong && !generating
   const selected = takes.find((t) => t.id === selectedId)
+
+  const requestPlay = (id: string) => setPlayRequest((prev) => ({ id, n: (prev?.n ?? 0) + 1 }))
 
   const generate = async () => {
     if (!canGenerate || !endpoint) return
@@ -249,7 +252,7 @@ function Workspace({ endpoints, initialForm, alias: loadedAlias }: WorkspaceProp
         latencyMs,
         createdAt: new Date(),
       })
-      setAutoPlayId(take.id)
+      requestPlay(take.id)
     } catch (err) {
       if (!controller.signal.aborted) setGenerateError(errorMessage(err))
     } finally {
@@ -269,7 +272,7 @@ function Workspace({ endpoints, initialForm, alias: loadedAlias }: WorkspaceProp
 
   const playTake = (take: Take) => {
     selectTake(take.id)
-    setAutoPlayId(take.id)
+    requestPlay(take.id)
   }
 
   const restoreTake = (take: Take) => {
@@ -382,7 +385,10 @@ function Workspace({ endpoints, initialForm, alias: loadedAlias }: WorkspaceProp
         </div>
 
         {selected ? (
-          <TakePlayer take={selected} autoPlay={selected.id === autoPlayId} />
+          <TakePlayer
+            take={selected}
+            playRequest={playRequest?.id === selected.id ? playRequest.n : undefined}
+          />
         ) : (
           <div className="flex h-36 items-center justify-center border border-dashed text-sm text-muted-foreground">
             Generate a take to hear it here.

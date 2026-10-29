@@ -103,11 +103,12 @@ function DownloadButtons({ take, compact }: DownloadButtonsProps) {
 
 type TakePlayerProps = {
   take: Take
-  autoPlay?: boolean
+  /** Plays the take from the start whenever it changes; see Waveform. */
+  playRequest?: number
 }
 
 /** The main player: the selected take's waveform, format line, and downloads. */
-function TakePlayer({ take, autoPlay }: TakePlayerProps) {
+function TakePlayer({ take, playRequest }: TakePlayerProps) {
   return (
     <section aria-label={`Take #${take.n}`} className="space-y-3 border bg-card p-4 pt-8">
       <Waveform
@@ -115,7 +116,7 @@ function TakePlayer({ take, autoPlay }: TakePlayerProps) {
         peaks={take.peaks}
         duration={take.duration}
         src={take.url}
-        autoPlay={autoPlay}
+        playRequest={playRequest}
       />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-mono text-xs text-muted-foreground tabular-nums">

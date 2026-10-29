@@ -78,8 +78,8 @@ describe('TakePlayer', () => {
     expect(wav).toHaveAttribute('download', 'meadowlark-alloy-20261029-140307.wav')
   })
 
-  it('auto-plays when asked', () => {
-    render(<TakePlayer take={take()} autoPlay />)
+  it('plays when a play request is present', () => {
+    render(<TakePlayer take={take()} playRequest={1} />)
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalled()
   })
 

@@ -356,6 +356,16 @@ describe('PlaygroundPage — takes', () => {
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalled()
   })
 
+  it('replays the selected take when it is clicked again', async () => {
+    addTake(makeNewTake({ text: 'only take' }))
+    renderAt('/playground')
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'Play take #1' }))
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Play take #1' }))
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2)
+  })
+
   it('restores a take’s settings and text into the panel', async () => {
     addTake(
       makeNewTake({

@@ -1,5 +1,5 @@
 import { Pause, Play } from '@phosphor-icons/react'
-import { useEffect, useId, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useId, useMemo, useState } from 'preact/hooks'
 import { Button } from '@/components/ui/button'
 import type { Peaks } from '@/lib/peaks'
 import { cn } from '@/lib/utils'
@@ -88,8 +88,11 @@ type WaveformProps = {
   compact?: boolean
   /** In compact mode, draw the bars in the played colour. */
   active?: boolean
-  /** Start playing on mount. A rejected play() (autoplay policy) is ignored. */
-  autoPlay?: boolean
+  /**
+   * A play request: each new value plays from the start, including a value
+   * present on mount. A rejected play() (autoplay policy) is ignored.
+   */
+  playRequest?: number
   className?: string
 }
 
@@ -104,7 +107,7 @@ function WaveformPlayer({
   peaks,
   duration,
   src,
-  autoPlay,
+  playRequest,
   className,
 }: Omit<WaveformProps, 'compact' | 'active'>) {
   // The element is never rendered: playback has no visible controls of its own.
@@ -112,7 +115,6 @@ function WaveformPlayer({
   const [time, setTime] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [hover, setHover] = useState<number | null>(null)
-  const autoPlayRef = useRef(autoPlay)
 
   useEffect(() => {
     const onPlay = () => setPlaying(true)
@@ -127,7 +129,6 @@ function WaveformPlayer({
     audio.addEventListener('pause', onStop)
     audio.addEventListener('ended', onStop)
     audio.addEventListener('seeked', onSeeked)
-    if (autoPlayRef.current) playQuietly(audio)
     return () => {
       audio.removeEventListener('play', onPlay)
       audio.removeEventListener('pause', onStop)
@@ -139,6 +140,12 @@ function WaveformPlayer({
       audio.load()
     }
   }, [audio, src])
+
+  useEffect(() => {
+    if (playRequest === undefined) return
+    audio.currentTime = 0
+    playQuietly(audio)
+  }, [audio, playRequest])
 
   // Follow the playhead every frame while playing, for a smooth sweep rather
   // than the coarse steps timeupdate gives.

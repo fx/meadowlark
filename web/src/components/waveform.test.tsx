@@ -291,16 +291,29 @@ describe('Waveform player', () => {
     expect(clipWidth(container)).toBe(0)
   })
 
-  it('auto-plays on mount when asked, ignoring a rejected play', async () => {
+  it('plays on mount when a play request is present, ignoring a rejected play', async () => {
     vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(new Error('NotAllowedError'))
-    renderPlayer({ autoPlay: true })
+    renderPlayer({ playRequest: 1 })
     expect(audio.play).toHaveBeenCalledOnce()
     await Promise.resolve()
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
   })
 
-  it('does not auto-play by default', () => {
+  it('does not play without a play request', () => {
     renderPlayer()
     expect(audio.play).not.toHaveBeenCalled()
+  })
+
+  it('plays again from the start on each new play request, without remounting', () => {
+    const { rerender } = renderPlayer({ playRequest: 1 })
+    currentTime = 2.5
+    rerender(<Waveform peaks={flatPeaks(200)} duration={4} src="blob:take/1" playRequest={1} />)
+    expect(audio.play).toHaveBeenCalledOnce()
+    expect(currentTime).toBe(2.5)
+
+    rerender(<Waveform peaks={flatPeaks(200)} duration={4} src="blob:take/1" playRequest={2} />)
+    expect(audio.play).toHaveBeenCalledTimes(2)
+    expect(currentTime).toBe(0)
+    expect(audio.load).not.toHaveBeenCalled()
   })
 })
