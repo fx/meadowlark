@@ -131,7 +131,6 @@ func (s *Server) setupRoutes() *chi.Mux {
 		r.Get("/aliases/{id}", s.GetAlias)
 		r.Put("/aliases/{id}", s.UpdateAlias)
 		r.Delete("/aliases/{id}", s.DeleteAlias)
-		r.Post("/aliases/{id}/test", s.TestAlias)
 
 		// Synthesis
 		r.Post("/synthesize", s.Synthesize)

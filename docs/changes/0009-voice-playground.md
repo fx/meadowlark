@@ -130,7 +130,7 @@ The Aliases page MUST be removed and `/aliases` MUST redirect to `/voices`. The 
   - [x] `/` → `/playground`, `/aliases` → `/voices`, `/playground/:aliasId`
   - [x] Navigation: Playground, Voices, Endpoints, Settings
   - [x] Remove the Aliases page and alias form
-- [ ] Remove `POST /api/v1/aliases/{id}/test`
+- [x] Remove `POST /api/v1/aliases/{id}/test`
 - [ ] Update the [frontend](../specs/frontend/), [http-api](../specs/http-api/) and [tts-synthesis](../specs/tts-synthesis/) specs and [meadowlark.md](../meadowlark.md), with changelog rows
 - [ ] Set this document's **Status** to `complete` and update `docs/index.yml` and `docs/index.md` to match
 

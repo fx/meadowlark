@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/fx/meadowlark/internal/model"
-	"github.com/fx/meadowlark/internal/tts"
 )
 
 // aliasRequest is the JSON body for create/update alias requests.
@@ -25,11 +24,6 @@ type aliasRequest struct {
 	Instructions *string           `json:"instructions,omitempty"`
 	Languages    model.StringSlice `json:"languages,omitempty"`
 	Enabled      *bool             `json:"enabled,omitempty"`
-}
-
-// testAliasRequest is the JSON body for POST /aliases/{id}/test.
-type testAliasRequest struct {
-	Text string `json:"text,omitempty"`
 }
 
 // ListAliases returns all voice aliases.
@@ -223,46 +217,6 @@ func (s *Server) DeleteAlias(w http.ResponseWriter, r *http.Request) {
 
 	s.rebuildVoiceList(r.Context())
 	respondNoContent(w)
-}
-
-// TestAlias synthesizes sample text using an alias's configuration.
-func (s *Server) TestAlias(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	alias, err := s.store.GetVoiceAlias(r.Context(), id)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "not_found", "alias not found")
-		return
-	}
-
-	ep, err := s.store.GetEndpoint(r.Context(), alias.EndpointID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "internal_error", "referenced endpoint not found")
-		return
-	}
-
-	text := "Hello, this is a test."
-	var req testAliasRequest
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.Text != "" {
-			text = req.Text
-		}
-	}
-
-	client := s.clientFactory(ep)
-	body, err := client.Synthesize(r.Context(), &tts.SynthesizeRequest{
-		Model:        alias.Model,
-		Voice:        alias.Voice,
-		Input:        text,
-		Speed:        alias.Speed,
-		Instructions: alias.Instructions,
-	})
-	if err != nil {
-		respondJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-	defer body.Close()
-
-	respondJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // rebuildVoiceList triggers a Wyoming voice list rebuild, logging any error.
