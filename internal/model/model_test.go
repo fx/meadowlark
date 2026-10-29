@@ -57,6 +57,25 @@ func TestStringSlice_Value(t *testing.T) {
 	}
 }
 
+func TestStringSlice_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		s    StringSlice
+		want string
+	}{
+		{name: "nil slice", s: nil, want: `[]`},
+		{name: "empty slice", s: StringSlice{}, want: `[]`},
+		{name: "populated slice", s: StringSlice{"en", "es"}, want: `["en","es"]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := json.Marshal(tt.s)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, string(got))
+		})
+	}
+}
+
 func TestEndpoint_JSONRoundTrip(t *testing.T) {
 	speed := 1.5
 	instructions := "speak clearly"

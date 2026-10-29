@@ -34,6 +34,9 @@ func (s *Server) ListAliases(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "internal_error", "failed to list aliases")
 		return
 	}
+	if aliases == nil {
+		aliases = []model.VoiceAlias{}
+	}
 	respondJSON(w, http.StatusOK, aliases)
 }
 

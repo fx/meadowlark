@@ -46,6 +46,15 @@ func (s StringSlice) Value() (driver.Value, error) {
 	return string(b), nil
 }
 
+// MarshalJSON encodes a nil StringSlice as [] rather than null, so API
+// clients always receive a list.
+func (s StringSlice) MarshalJSON() ([]byte, error) {
+	if s == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]string(s))
+}
+
 // Endpoint represents an OpenAI-compatible TTS API endpoint.
 type Endpoint struct {
 	ID                    string      `json:"id"`
