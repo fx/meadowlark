@@ -15,14 +15,14 @@ Meadowlark's frontend is a Preact single-page application embedded in the Go bin
 | Framework | Preact | 10.28.3 |
 | Router | Wouter | 3.9.0 |
 | Styling | Tailwind CSS v4 | 4.2.0 |
-| Build Tool | Vite | 7.3.1 |
+| Build Tool | Vite | 7.3.7 |
 | Icons | Phosphor Icons | 2.1.10 |
 | UI Primitives | Radix UI | 11 primitives |
 | Variant Styling | CVA | 0.7.1 |
 | Class Merging | clsx + tailwind-merge | 2.1.1 / 3.5.0 |
 | Font | JetBrains Mono | 5.2.8 |
 | MP3 encoding | @breezystack/lamejs (lazy-loaded) | 1.2.7 |
-| Testing | Vitest + @testing-library/preact | 4.0.18 |
+| Testing | Vitest + @testing-library/preact | 4.1.12 |
 | Coverage | @vitest/coverage-v8 | v8 provider |
 | E2E | Playwright | 1.58.2 |
 | Linting | Biome | 2.3.11 |
@@ -375,3 +375,4 @@ Build order: `bun run build` produces `web/dist/` → `go build` embeds it.
 | 2026-10-29 | Added the Playground page (default route; blank and alias modes, takes, waveform player, WAV/MP3 downloads) and merged aliases into the Voices page; removed the Aliases page and its form, whose `/remote-voices` description had drifted from the implementation | [0009](../../changes/0009-voice-playground.md) |
 | 2026-10-29 | Dialog, AlertDialog and Sheet overlays forward their refs, so dialogs open in a browser; `@radix-ui/react-presence` is no longer mocked; list fetches read a `null` body as an empty list (`useFetchList` and the `api` list methods); the waveform releases its media source on cleanup | [0009](../../changes/0009-voice-playground.md) |
 | 2026-10-29 | Selecting a take plays it from the start even when it is already selected (a play request replaces mount-time `autoPlay`) | [0009](../../changes/0009-voice-playground.md) |
+| 2026-11-04 | Bumped Vite to 7.3.7 and Vitest to 4.1.12 to clear `bun audit` security advisories | --- |
